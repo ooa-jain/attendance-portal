@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{% block title %}Attendance{% endblock %} · Office of Academics</title>
+<meta name="theme-color" content="#0A1324">
+
+<!-- ── App logo as favicon (all surfaces) ── -->
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="mask-icon" href="{{ url_for('static', filename='images/applogo.png') }}" color="#0A1324">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+
+{% if session.get('impersonator_id') %}
+<div class="oa-impersonate">
+  <span><i class="fas fa-user-secret"></i> Viewing as {{ current_user.username }}</span>
+  <a href="/admin/revert">Return to admin</a>
+</div>
+{% endif %}
+
+<div class="oa-shell">
+
+  <!-- ── Left rail (web) ── -->
+  <aside class="oa-rail">
+    <div class="oa-rail-head">
+      <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+      <div>
+        <div class="org">OFFICE OF ACADEMICS</div>
+        <div class="sub">JAIN (Deemed-to-be University)</div>
+      </div>
+    </div>
+    <nav class="oa-rail-nav">
+      {% block rail %}
+      {% if current_user.is_authenticated %}
+        <a class="oa-navitem" href="{{ url_for('index') }}"><i class="fas fa-house"></i> Dashboard</a>
+        <a class="oa-navitem danger" href="/logout"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</a>
+      {% endif %}
+      {% endblock %}
+    </nav>
+    <div class="oa-rail-foot">
+      Head Office · Bengaluru<br>
+      <span style="opacity:.65">Attendance Portal</span>
+    </div>
+  </aside>
+
+  <!-- ── Top bar ── -->
+  <header class="oa-topbar">
+    <img class="brandmark" src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+    <div class="titles">
+      <div class="org">{% block bartitle %}OFFICE OF ACADEMICS{% endblock %}</div>
+      <div class="sub">{% block barsub %}Attendance Portal{% endblock %}</div>
+    </div>
+    {% block barextra %}{% endblock %}
+  </header>
+
+  <main class="oa-main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="oa-flash {{ category }}">
+            <i class="fas fa-circle-info"></i><span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

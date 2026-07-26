@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Admin console · Office of Academics</title>
+<meta name="theme-color" content="#0A1324">
+
+<!-- App logo as favicon -->
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/applogo.png') }}">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin.css') }}">
+</head>
+<body>
+
+<div class="oa-shell">
+
+  <!-- ══ LEFT RAIL ════════════════════════════════════════════ -->
+  <aside class="oa-rail">
+    <div class="oa-rail-head">
+      <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+      <div>
+        <div class="org">OFFICE OF ACADEMICS</div>
+        <div class="sub">Admin console</div>
+      </div>
+    </div>
+    <nav class="oa-rail-nav">
+      <button class="oa-navitem on ad-tab" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave requests</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-id-card"></i> Face log</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations &amp; Map</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early sign-outs</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
+      <div class="oa-dsep"></div>
+      <button class="oa-navitem danger" onclick="logout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
+    </nav>
+    <div class="oa-rail-foot">
+      Signed in as <strong style="color:var(--gold-400)">{{ current_user.username }}</strong><br>
+      Head Office, Bengaluru
+      <div style="font-size:0.75rem;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:var(--t2)">
+        <i class="fas fa-location-dot" style="color:#0071e3"></i> JAIN Campus (12.9248, 77.5702)
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ TOP BAR ══════════════════════════════════════════════ -->
+  <header class="oa-topbar">
+    <img class="brandmark" src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+    <div class="titles">
+      <div class="org">ADMIN CONSOLE</div>
+      <div class="sub">Office of Academics · Head Office</div>
+    </div>
+    <div class="oa-pill" style="background:rgba(238,189,27,.14)">
+      <i class="fas fa-user-shield"></i> {{ current_user.username }}
+    </div>
+    <button class="oa-btn oa-btn-sm oa-only-mobile" style="background:rgba(255,255,255,.1);color:var(--on-ink)" onclick="logout()">
+      <i class="fas fa-arrow-right-from-bracket"></i>
+    </button>
+  </header>
+
+  <main class="oa-main">
+    <div id="alertContainer"></div>
+
+    <!-- Mobile tab strip (rail handles this on web) -->
+    <div class="ad-tabs oa-only-mobile">
+      <button class="ad-tab on" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
+      <button class="ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
+      <button class="ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave</button>
+      <button class="ad-tab" onclick="switchTab('face', event)"><i class="fas fa-id-card"></i> Face log</button>
+      <button class="ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations</button>
+      <button class="ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early outs</button>
+      <button class="ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
+    </div>
+
+    <!-- ════════ OVERVIEW ════════ -->
+    <div id="dashboard-tab" class="ad-panel on">
+      <div class="oa-masthead">
+        <div class="greet">Today at a glance</div>
+        <div class="who" style="font-size:1.45rem">Attendance Portal</div>
+        <div class="lede">Office of Academics · Head Office, Bengaluru</div>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:16px">
+        <div class="stat-card"><div class="value">{{ users|length }}</div><div class="label">People</div></div>
+        <div class="stat-card"><div class="value" id="todayAttendance">0</div><div class="label">Present today</div></div>
+        <div class="stat-card"><div class="value" id="pendingLeaves">0</div><div class="label">Leave pending</div></div>
+        <div class="stat-card"><div class="value" id="earlyLogouts">0</div><div class="label">Early sign-outs</div></div>
+        <div class="stat-card"><div class="value" id="faceLogs24h">0</div><div class="label">Face checks</div></div>
+        <div class="stat-card"><div class="value" id="faceFailures">0</div><div class="label">Face failures</div></div>
+      </div>
+
+      <section class="oa-card flush">
+        <div class="oa-card-head" style="padding:16px 18px;margin-bottom:0">
+          <h2>Recent activity</h2>
+        </div>
+        <div class="oa-tablewrap">
+          <table class="oa-table">
+            <thead>
+              <tr><th>Person</th><th>Date</th><th>Type</th><th>In</th><th>Out</th><th>Hours</th><th>Device</th></tr>
+            </thead>
+            <tbody id="recentActivity">
+              <tr><td colspan="7" style="text-align:center;color:var(--t3)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ════════ PEOPLE ════════ -->
+    <div id="users-tab" class="ad-panel">
+
+      <!-- ── Bulk shift control ── -->
+      <div class="ad-bulk">
+        <i class="fas fa-layer-group" style="font-size:1.4rem;color:var(--gold-400)"></i>
+        <div class="bd">
+          <div class="t">Shift attendance</div>
+          <div class="s">
+            Off by default for everyone. Switch it on per person below, or change it for all
+            non-admin accounts at once.
+          </div>
+        </div>
+        <div class="acts">
+          <button class="oa-btn oa-btn-ghost oa-btn-sm" data-bulk-shift onclick="setShiftForEveryone(false)">
+            <i class="fas fa-ban"></i> Disable for everyone
+          </button>
+          <button class="oa-btn oa-btn-gold oa-btn-sm" data-bulk-shift onclick="setShiftForEveryone(true)">
+            <i class="fas fa-check"></i> Enable for everyone
+          </button>
+        </div>
+      </div>
+
+      <section class="oa-card">
+        <div class="oa-card-head"><h2>Add a person</h2></div>
+        <form method="POST" action="{{ url_for('admin_create_user') }}">
+          <div class="oa-formgrid">
+            <div class="oa-field"><label for="nu">Username</label><input type="text" id="nu" name="username" required autocapitalize="none"></div>
+            <div class="oa-field"><label for="ne">Email</label><input type="email" id="ne" name="email"></div>
+            <div class="oa-field"><label for="np">Password</label><input type="password" id="np" name="password" required></div>
+            <div class="oa-field"><label for="nr">Role</label>
+              <select id="nr" name="role"><option value="intern">Intern</option><option value="admin">Admin</option></select>
+            </div>
+            <div class="oa-field"><label for="nh">Daily hours target</label><input type="number" id="nh" name="work_hours" step="0.5" value="8" required></div>
+          </div>
+          <button type="submit" class="oa-btn oa-btn-primary"><i class="fas fa-user-plus"></i> Create account</button>
+        </form>
+      </section>
+
+      <div class="ad-notice">
+        <i class="fas fa-shield-halved"></i>
+        <div>
+          <h4>Face ID and shifts are administrator-controlled</h4>
+          <p>
+            People cannot switch these on for themselves. Turn on <strong>Can register face</strong>
+            so someone can capture their photos, then turn on <strong>Require face on sign-in</strong>
+            to enforce the check. <strong>Shift attendance</strong> starts off for every new account.
+            Location is always recorded, whatever these are set to.
+          </p>
+        </div>
+      </div>
+
+      <div class="oa-rule"><span class="tick"></span><span class="lbl">All people ({{ users|length }})</span></div>
+
+      <div class="ad-usergrid">
+        {% for user in users %}
+        <div class="ad-user" id="ucard-{{ user._id }}">
+          <div class="ad-user-head">
+            <div class="ad-user-av">{{ user.username[0]|upper }}</div>
+            <span class="nm">{{ user.username }}</span>
+            <span class="oa-tag {% if user.role == 'admin' %}gold{% endif %}">{{ user.role }}</span>
+          </div>
+
+          <div class="ad-meta">
+            <div><i class="fas fa-envelope"></i> {{ user.email or 'No email on file' }}</div>
+            <div><i class="fas fa-clock"></i> Target {{ user.work_hours or 8 }} hours per day</div>
+          </div>
+
+          {% if user.role != 'admin' %}
+          <div class="ad-control">
+            <div class="ad-control-title"><i class="fas fa-camera"></i> Face ID</div>
+
+            <div class="ad-facereg">
+              {% if user.get('face_registered') and user.get('face_thumb') %}
+                <img src="data:image/jpeg;base64,{{ user.face_thumb }}" alt="Registered face">
+              {% else %}
+                <div class="ph"><i class="fas fa-user"></i></div>
+              {% endif %}
+              <div class="bd">
+                {% if user.get('face_registered') %}
+                  <span class="oa-tag ok"><i class="fas fa-check"></i> Registered</span>
+                  <div class="sub">{{ user.get('face_photo_count', 0) }} photo(s) on file</div>
+                {% else %}
+                  <span class="oa-tag"><i class="fas fa-xmark"></i> Not registered</span>
+                  <div class="sub">No face data yet</div>
+                {% endif %}
+              </div>
+              {% if user.get('face_registered') %}
+              <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="clearFaceData('{{ user._id }}','{{ user.username }}')">
+                <i class="fas fa-rotate-left"></i> Reset
+              </button>
+              {% endif %}
+            </div>
+
+            <div class="oa-toggle-row">
+              <div>
+                <div class="lb">Can register face</div>
+                <div class="sb">Lets this person capture their photos</div>
+              </div>
+              <label class="oa-toggle">
+                <input type="checkbox" data-uid="{{ user._id }}"
+                       {% if user.get('face_registration_enabled') %}checked{% endif %}
+                       onchange="toggleFaceSetting('{{ user._id }}','face_registration_enabled',this.checked,'{{ user.username }}')">
+                <span class="track"></span>
+              </label>
+            </div>
+
+            <div class="oa-toggle-row">
+              <div>
+                <div class="lb">Require face on sign-in</div>
+                <div class="sb">Blocks sign-in if the face check fails</div>
+              </div>
+              <label class="oa-toggle">
+                <input type="checkbox" data-uid="{{ user._id }}"
+                       {% if user.get('face_required') %}checked{% endif %}
+                       onchange="toggleFaceSetting('{{ user._id }}','face_required',this.checked,'{{ user.username }}')">
+                <span class="track"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="ad-control">
+            <div class="ad-control-title"><i class="fas fa-layer-group"></i> Shift attendance</div>
+            <div class="oa-toggle-row">
+              <div>
+                <div class="lb">Allow shift sign-in</div>
+                <div class="sb">Off by default — turn on only if this person works shifts</div>
+              </div>
+              <label class="oa-toggle">
+                <input type="checkbox" data-uid="{{ user._id }}" data-shift-toggle
+                       {% if user.get('shift_login_enabled', False) %}checked{% endif %}
+                       onchange="toggleFaceSetting('{{ user._id }}','shift_login_enabled',this.checked,'{{ user.username }}')">
+                <span class="track"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="ad-chips">
+            <span class="oa-tag {% if user.get('face_required') %}ok{% endif %}" id="chip-req-{{ user._id }}">
+              <i class="fas fa-{% if user.get('face_required') %}lock{% else %}lock-open{% endif %}"></i>
+              {% if user.get('face_required') %}Face ID on{% else %}Face ID off{% endif %}
+            </span>
+            <span class="oa-tag {% if user.get('face_registration_enabled') %}ok{% endif %}" id="chip-reg-{{ user._id }}">
+              <i class="fas fa-{% if user.get('face_registration_enabled') %}check{% else %}xmark{% endif %}"></i>
+              {% if user.get('face_registration_enabled') %}Can register{% else %}Cannot register{% endif %}
+            </span>
+            <span class="oa-tag {% if user.get('shift_login_enabled', False) %}ok{% endif %}" id="chip-shift-{{ user._id }}">
+              <i class="fas fa-{% if user.get('shift_login_enabled', False) %}layer-group{% else %}ban{% endif %}"></i>
+              {% if user.get('shift_login_enabled', False) %}Shifts on{% else %}Shifts off{% endif %}
+            </span>
+          </div>
+          {% else %}
+          <div class="ad-meta">
+            <div><i class="fas fa-shield-halved" style="color:var(--bad)"></i> Administrator — no attendance controls</div>
+          </div>
+          {% endif %}
+
+          <div style="display:flex;gap:7px;margin-top:13px">
+            <button class="oa-btn oa-btn-ghost oa-btn-sm" style="flex:1" onclick="viewUserDetails('{{ user._id }}')">
+              <i class="fas fa-eye"></i> Details &amp; hours
+            </button>
+            {% if user.role != 'admin' %}
+            <button class="oa-btn oa-btn-ghost oa-btn-sm" title="Sign in as this person"
+                    onclick="window.location.href='/admin/impersonate/{{ user._id }}'">
+              <i class="fas fa-user-secret"></i>
+            </button>
+            <button class="oa-btn oa-btn-ghost oa-btn-sm" style="color:var(--bad)" title="Delete this account"
+                    onclick="deleteUser('{{ user._id }}','{{ user.username }}')">
+              <i class="fas fa-trash"></i>
+            </button>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- ════════ LEAVE ════════ -->
+    <div id="leaves-tab" class="ad-panel">
+      <section class="oa-card flush">
+        <div class="oa-card-head" style="padding:16px 18px;margin-bottom:0;flex-wrap:wrap">
+          <h2>Leave requests</h2>
+          <span class="spacer"></span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="filterLeaves('all')">All</button>
+            <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="filterLeaves('pending')">Pending</button>
+            <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="filterLeaves('approved')">Approved</button>
+            <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="filterLeaves('denied')">Denied</button>
+          </div>
+        </div>
+        <div class="oa-tablewrap">
+          <table class="oa-table">
+            <thead><tr><th>Person</th><th>Date</th><th>Type</th><th>Reason</th><th>Status</th><th>Decision</th></tr></thead>
+            <tbody id="leavesTable">
+              {% for leave in leaves %}
+              <tr>
+                <td><strong>{{ leave.username }}</strong></td>
+                <td class="num">{{ leave.date }}</td>
+                <td>{{ leave.type }}</td>
+                <td>{{ leave.comments or '—' }}</td>
+                <td><span class="badge badge-{{ leave.status }}">{{ leave.status }}</span></td>
+                <td>
+                  {% if leave.status == 'pending' %}
+                  <button class="btn btn-success btn-sm" onclick="reviewLeave('{{ leave.id }}','approved')"><i class="fas fa-check"></i></button>
+                  <button class="btn btn-danger btn-sm" onclick="reviewLeave('{{ leave.id }}','denied')"><i class="fas fa-xmark"></i></button>
+                  {% else %}—{% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" style="text-align:center;color:var(--t3)">No leave requests in the last 90 days</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ════════ FACE LOG ════════ -->
+    <div id="face-tab" class="ad-panel">
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Face verification log</h2>
+          <span class="spacer"></span>
+          <span class="oa-tag gold" id="faceTotalBadge">Loading…</span>
+        </div>
+
+        <div class="oa-formgrid">
+          <div class="oa-field"><label for="filterUser">Person</label><input type="text" id="filterUser" placeholder="Any"></div>
+          <div class="oa-field"><label for="filterDate">Date</label><input type="date" id="filterDate"></div>
+          <div class="oa-field"><label for="filterMatch">Result</label>
+            <select id="filterMatch"><option value="">Any</option><option value="true">Matched</option><option value="false">Failed</option></select>
+          </div>
+          <div class="oa-field"><label for="filterShift">Type</label>
+            <select id="filterShift">
+              <option value="">Any</option><option value="normal">Normal</option>
+              <option value="shift1">Shift 1</option><option value="shift2">Shift 2</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="oa-btn oa-btn-primary oa-btn-sm" onclick="loadFaceLogs(1)"><i class="fas fa-filter"></i> Apply filters</button>
+          <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="clearFaceFilters()"><i class="fas fa-rotate-left"></i> Clear</button>
+        </div>
+      </section>
+
+      <section class="oa-card" style="border-color:var(--gold-400);background:var(--gold-050)">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <i class="fas fa-broom" style="font-size:1.2rem;color:var(--gold-600)"></i>
+          <div style="flex:1;min-width:190px">
+            <div style="font-size:.82rem;font-weight:800;color:var(--ink-800)">Clear out old snapshots</div>
+            <div style="font-size:.7rem;color:var(--t2)">Deletes face log entries older than the number of days you choose.</div>
+          </div>
+          <input type="number" id="purgedays" value="30" min="1" class="oa-input" style="width:96px">
+          <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="purgeOldLogs()"><i class="fas fa-trash"></i> Purge</button>
+        </div>
+      </section>
+
+      <div class="face-logs-grid" id="faceLogsGrid">
+        <div class="oa-empty" style="grid-column:1/-1"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+      </div>
+      <div id="facePagination" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:16px"></div>
+    </div>
+
+    <!-- ════════ LOCATIONS ════════ -->
+    <div id="locations-tab" class="ad-panel">
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Where people signed in</h2>
+          <span class="spacer"></span>
+          <input type="date" id="locationDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadLocations()">
+        </div>
+        <div id="adminLocationsMap"></div>
+      </section>
+      <div id="locationsList"></div>
+    </div>
+
+    <!-- ════════ EARLY SIGN-OUTS ════════ -->
+    <div id="early-tab" class="ad-panel">
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Signed out before target</h2>
+          <span class="spacer"></span>
+          <span class="oa-tag warn" data-early-count>0</span>
+        </div>
+        <div id="earlyLogoutsList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ════════ EXPORT ════════ -->
+    <div id="export-tab" class="ad-panel">
+      <section class="oa-card">
+        <div class="oa-card-head"><h2>Export attendance</h2></div>
+        <p style="font-size:.78rem;color:var(--t2);margin-bottom:16px">
+          Downloads a CSV with sign-in and sign-out times, hours, locations and device details
+          for every entry in the range.
+        </p>
+        <form method="GET" action="{{ url_for('admin_export') }}">
+          <div class="oa-formgrid">
+            <div class="oa-field"><label for="exStart">From</label><input type="date" id="exStart" name="start" required></div>
+            <div class="oa-field"><label for="exEnd">To</label><input type="date" id="exEnd" name="end" required></div>
+          </div>
+          <button type="submit" class="oa-btn oa-btn-primary"><i class="fas fa-file-csv"></i> Download CSV</button>
+        </form>
+      </section>
+    </div>
+  </main>
+</div>
+
+<!-- ══ USER DETAILS MODAL ═══════════════════════════════════════ -->
+<div class="ad-modal" id="userModal">
+  <div class="ad-modal-box">
+    <div class="ad-modal-head">
+      <h3>Person details</h3>
+      <button class="oa-btn oa-btn-quiet" onclick="closeUserModal()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="ad-modal-body" id="userDetails"></div>
+  </div>
+</div>
+
+<!-- ══ FACE DETAIL MODAL ════════════════════════════════════════ -->
+<div class="ad-modal" id="fullFaceModal">
+  <div class="ad-modal-box">
+    <div class="ad-modal-head">
+      <h3 id="fullFaceTitle">Face capture</h3>
+      <button class="oa-btn oa-btn-quiet" onclick="closeFaceImageModal()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="ad-modal-body" id="fullFaceContent"></div>
+  </div>
+</div>
+
+<script>
+  window.OA_MAPS_KEY = "{{ google_maps_api_key }}";
+  window.OA_TODAY = "{{ today_date }}";
+</script>
+<script src="{{ url_for('static', filename='js/admin-dashboard.js') }}"></script>
+</body>
+</html>

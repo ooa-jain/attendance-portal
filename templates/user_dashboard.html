@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>My attendance · Office of Academics</title>
+<meta name="theme-color" content="#0A1324">
+
+<!-- App logo as favicon -->
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+
+<style>
+  .tab { display: none; }
+  .tab.on { display: block; animation: tabIn .22s ease-out; }
+  @keyframes tabIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .pwa-banner {
+    display: none;
+    align-items: center; gap: 12px;
+    background: var(--gold-050);
+    border: 1px solid var(--gold-400);
+    border-radius: var(--r-lg);
+    padding: 13px 15px;
+    margin-bottom: 14px;
+  }
+  .pwa-banner.show { display: flex; }
+  .pwa-banner .bd { flex: 1; }
+  .pwa-banner .t { font-size: .8rem; font-weight: 800; color: var(--ink-800); }
+  .pwa-banner .s { font-size: .68rem; color: var(--t2); }
+
+  .seg { display: flex; gap: 5px; background: var(--card); border: 1px solid var(--line);
+         padding: 5px; border-radius: var(--r); margin-bottom: 14px; }
+  .seg button { flex: 1; padding: 10px; border-radius: var(--r-sm); font-size: .78rem;
+                font-weight: 700; color: var(--t2); transition: background .15s, color .15s; }
+  .seg button.on { background: var(--ink-800); color: var(--on-ink); }
+
+  .shiftblock { padding: 16px 0; border-bottom: 1px dashed var(--line-2); }
+  .shiftblock:last-of-type { border-bottom: none; }
+  .shiftblock > .hd { display: flex; align-items: center; justify-content: space-between;
+                      gap: 10px; margin-bottom: 10px; }
+  .shiftblock > .hd .nm { font-family: var(--display); font-size: 1.02rem;
+                          font-weight: 600; color: var(--ink-800); }
+
+  @media (min-width: 1024px) {
+    .dash-split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .95fr); gap: 20px; align-items: start; }
+  }
+</style>
+</head>
+<body>
+
+{% if session.get('impersonator_id') %}
+<div class="oa-impersonate">
+  <span><i class="fas fa-user-secret"></i> Viewing as {{ current_user.username }}</span>
+  <a href="/admin/revert">Return to admin</a>
+</div>
+{% endif %}
+
+<div class="oa-shell">
+
+  <!-- ══ LEFT RAIL (web) ══════════════════════════════════════ -->
+  <aside class="oa-rail">
+    <div class="oa-rail-head">
+      <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+      <div>
+        <div class="org">OFFICE OF ACADEMICS</div>
+        <div class="sub">JAIN (Deemed-to-be University)</div>
+      </div>
+    </div>
+    <nav class="oa-rail-nav">
+      <button class="oa-navitem on" data-tab="normal" onclick="goTab('normal')"><i class="fas fa-clock"></i> Today</button>
+      <button class="oa-navitem" data-tab="shift" onclick="goTab('shift')" style="display:none"><i class="fas fa-layer-group"></i> Shifts</button>
+      <button class="oa-navitem" data-tab="stats" onclick="goTab('stats')"><i class="fas fa-chart-simple"></i> Statistics</button>
+      <button class="oa-navitem" data-tab="calendar" onclick="goTab('calendar')"><i class="fas fa-calendar-days"></i> Calendar</button>
+      <button class="oa-navitem" onclick="scrollToLocationCard()"><i class="fas fa-location-dot"></i> Your location</button>
+      <div class="oa-dsep"></div>
+      <button class="oa-navitem" onclick="openLeave()"><i class="fas fa-calendar-xmark"></i> Apply for leave</button>
+      <button class="oa-navitem" id="di-face-reg-web" style="display:none" onclick="openFaceRegIfAllowed()"><i class="fas fa-camera"></i> Register face</button>
+      <div class="oa-dsep"></div>
+      <button class="oa-navitem danger" onclick="handleLogout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
+    </nav>
+    <div class="oa-rail-foot">
+      <strong style="color:var(--gold-400)">Head Office</strong><br>
+      Office of Academics, Bengaluru
+      <div style="font-size:0.75rem;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:var(--t2)" id="railLocFoot">
+        <i class="fas fa-location-dot" style="color:#34c759"></i> <span id="railLocText">Checking location…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ TOP BAR ══════════════════════════════════════════════ -->
+  <header class="oa-topbar">
+    <img class="brandmark" src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+    <div class="titles">
+      <div class="org">OFFICE OF ACADEMICS</div>
+      <div class="sub">Attendance Portal</div>
+    </div>
+    <div class="oa-clock" id="liveTime">--:--:--</div>
+    <button class="oa-burger" id="hbtn" onclick="toggleDrawer()" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+  </header>
+
+  <!-- ══ DRAWER (mobile) ══════════════════════════════════════ -->
+  <div class="oa-overlay" id="overlay" onclick="closeDrawer()"></div>
+  <nav class="oa-drawer" id="drawer">
+    <div class="oa-duser">
+      <div class="oa-avatar" id="davatar">?</div>
+      <div>
+        <div class="nm" id="dname">Loading…</div>
+        <div class="rl">Office of Academics</div>
+      </div>
+    </div>
+    <div style="padding:0 16px 12px">
+      <div class="oa-pill" id="dfacepill"><i class="fas fa-circle-notch spin"></i> <span>Checking…</span></div>
+    </div>
+    <div class="oa-dsep"></div>
+    <div style="padding:6px 12px; display:flex; flex-direction:column; gap:2px">
+      <button class="oa-navitem on" id="di-normal" data-tab="normal" onclick="goTab('normal');closeDrawer()"><i class="fas fa-clock"></i> Today</button>
+      <button class="oa-navitem" id="di-shift" data-tab="shift" onclick="goTab('shift');closeDrawer()" style="display:none"><i class="fas fa-layer-group"></i> Shifts</button>
+      <button class="oa-navitem" id="di-stats" data-tab="stats" onclick="goTab('stats');closeDrawer()"><i class="fas fa-chart-simple"></i> Statistics</button>
+      <button class="oa-navitem" id="di-calendar" data-tab="calendar" onclick="goTab('calendar');closeDrawer()"><i class="fas fa-calendar-days"></i> Calendar</button>
+      <button class="oa-navitem" onclick="scrollToLocationCard();closeDrawer()"><i class="fas fa-location-dot"></i> Your location</button>
+      <div class="oa-dsep"></div>
+      <button class="oa-navitem" onclick="openLeave();closeDrawer()"><i class="fas fa-calendar-xmark"></i> Apply for leave</button>
+      <button class="oa-navitem" id="di-face-reg" style="display:none" onclick="openFaceRegIfAllowed();closeDrawer()"><i class="fas fa-camera"></i> Register face</button>
+      <div class="oa-dsep"></div>
+      <button class="oa-navitem danger" onclick="handleLogout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
+    </div>
+  </nav>
+
+  <!-- ══ MAIN ═════════════════════════════════════════════════ -->
+  <main class="oa-main">
+    <div class="oa-toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastTxt"></span></div>
+
+    <!-- ════════ TODAY ════════ -->
+    <div id="tab-normal" class="tab on">
+
+      <div class="pwa-banner" id="pwaBanner">
+        <i class="fas fa-mobile-screen" style="font-size:1.3rem;color:var(--gold-600)"></i>
+        <div class="bd">
+          <div class="t">Keep this on your home screen</div>
+          <div class="s">Mark attendance in one tap, no browser needed</div>
+        </div>
+        <button class="oa-btn oa-btn-gold oa-btn-sm" id="pwaInstallBtn" onclick="installPWA()">Add</button>
+      </div>
+
+      <!-- ── Masthead + the Day Arc ── -->
+      <section class="oa-masthead">
+        <div class="greet" id="wgreet">Good morning,</div>
+        <div class="who" id="wname">Loading…</div>
+
+        <div class="oa-pills">
+          <div class="oa-pill"><i class="fas fa-building-columns"></i> Office of Academics · Head Office</div>
+          <div class="oa-pill" id="wfacebadge"><i class="fas fa-circle-notch spin"></i> <span id="wfacetext">Checking…</span></div>
+        </div>
+
+        <div class="oa-arc-wrap" style="margin-top:20px">
+          <div class="oa-arc">
+            <svg viewBox="0 0 200 118" role="img" aria-label="Hours logged today">
+              <defs>
+                <linearGradient id="oaGold" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%"  stop-color="#B8900E"/>
+                  <stop offset="55%" stop-color="#EEBD1B"/>
+                  <stop offset="100%" stop-color="#F5D257"/>
+                </linearGradient>
+              </defs>
+              <path class="track" d="M 20 100 A 80 80 0 0 1 180 100"/>
+              <path class="fill" id="arcFill" d="M 20 100 A 80 80 0 0 1 180 100"
+                    stroke-dasharray="251.3" stroke-dashoffset="251.3"/>
+              <line class="tickmark" x1="100" y1="16" x2="100" y2="26"/>
+              <line class="tickmark" x1="43"  y1="43" x2="50"  y2="50"/>
+              <line class="tickmark" x1="157" y1="43" x2="150" y2="50"/>
+              <circle class="marker" id="arcMark" cx="20" cy="100" r="7"/>
+            </svg>
+            <div class="oa-arc-centre">
+              <div class="val" id="arcVal">0.0<small>h</small></div>
+              <div class="cap" id="arcCap">of 8h logged today</div>
+            </div>
+          </div>
+
+          <div class="oa-arc-side">
+            <div class="oa-arc-stat">
+              <span class="k">This session</span>
+              <span class="v" id="nHoursSess">0.0</span>
+            </div>
+            <div class="oa-arc-stat">
+              <span class="k">Remaining</span>
+              <span class="v" id="arcRemain">—</span>
+            </div>
+            <div class="oa-arc-stat">
+              <span class="k">Daily target</span>
+              <span class="v dim" id="arcTarget">8.0h</span>
+            </div>
+            <div class="oa-arc-stat">
+              <span class="k">Status</span>
+              <span class="v dim" id="nSessStatus">Not signed in yet</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="dash-split">
+        <div>
+          <!-- ── Primary action ── -->
+          <section class="oa-card accent">
+            <div class="oa-card-title"><i class="fas fa-stamp"></i> Mark attendance</div>
+
+            <div class="oa-meter">
+              <div class="oa-meter-labels">
+                <span id="nHoursTodayWrap">Logged today: <strong class="oa-num" id="nHoursToday">0.0</strong>h</span>
+                <span class="r" id="nTarget">/ 8h</span>
+              </div>
+              <div class="oa-meter-track"><div class="oa-meter-fill" id="nProgBar" style="width:0%"></div></div>
+            </div>
+
+            <div class="oa-stamps">
+              <div class="oa-stamp in">
+                <div class="k">Signed in</div>
+                <div class="v" id="nLoginTime">--:--</div>
+                <div class="a" id="nLoginAddr">—</div>
+              </div>
+              <div class="oa-stamp out">
+                <div class="k">Signed out</div>
+                <div class="v" id="nLogoutTime">--:--</div>
+                <div class="a" id="nLogoutAddr">—</div>
+              </div>
+            </div>
+
+            <div class="oa-btnrow">
+              <button class="oa-btn oa-btn-ok" id="btnNLogin" onclick="doNLogin()">
+                <i class="fas fa-arrow-right-to-bracket"></i> Sign in
+              </button>
+              <button class="oa-btn oa-btn-bad" id="btnNLogout" onclick="doNLogout()" disabled>
+                <i class="fas fa-arrow-right-from-bracket"></i> Sign out
+              </button>
+            </div>
+
+            <button class="oa-btn oa-btn-ghost oa-btn-block" style="margin-top:9px" onclick="openLeave()">
+              <i class="fas fa-calendar-xmark"></i> Apply for leave
+            </button>
+          </section>
+
+          <!-- ── Status strips ── -->
+          <div class="oa-strip is-busy" id="locBanner" onclick="refreshLocation()" style="cursor:pointer">
+            <div class="ic" id="locIcon">📡</div>
+            <div class="bd">
+              <div class="t" id="locTitle">Checking your location…</div>
+              <div class="s" id="locSub">Tap to refresh your location</div>
+            </div>
+            <div class="chip" id="locChip">Checking</div>
+          </div>
+
+          <div class="oa-strip" id="faceStatusCard" onclick="handleFaceCardTap()" style="cursor:pointer">
+            <div class="ic" id="fscIcon">🔓</div>
+            <div class="bd">
+              <div class="t" id="fscTitle">Face ID not required</div>
+              <div class="s" id="fscSub">Sign in directly — no face scan needed</div>
+            </div>
+            <div class="chip" id="fscChip">Off</div>
+          </div>
+
+          <!-- ── Quick actions ── -->
+          <div class="oa-rule"><span class="tick"></span><span class="lbl">Quick actions</span></div>
+          <div class="oa-tiles">
+            <button class="oa-tile" onclick="handleFaceCardTap()">
+              <i class="fas fa-user-shield"></i><div class="t">Face ID</div><div class="s">Biometric</div>
+            </button>
+            <button class="oa-tile" onclick="openLeave()">
+              <i class="fas fa-calendar-plus"></i><div class="t">Leave</div><div class="s">Apply</div>
+            </button>
+            <button class="oa-tile" onclick="refreshLocation()">
+              <i class="fas fa-location-crosshairs"></i><div class="t">Location</div><div class="s">Re-check</div>
+            </button>
+            <button class="oa-tile" onclick="goTab('stats')">
+              <i class="fas fa-chart-simple"></i><div class="t">Statistics</div><div class="s">My hours</div>
+            </button>
+            <button class="oa-tile" onclick="goTab('calendar')">
+              <i class="fas fa-calendar-days"></i><div class="t">Calendar</div><div class="s">Holidays</div>
+            </button>
+            <button class="oa-tile" id="tileShift" onclick="goTab('shift')" style="display:none">
+              <i class="fas fa-layer-group"></i><div class="t">Shifts</div><div class="s">Shift 1 &amp; 2</div>
+            </button>
+          </div>
+
+          <!-- ── Recent ledger ── -->
+          <div class="oa-rule"><span class="tick"></span><span class="lbl">Recent entries</span></div>
+          <div id="nHistory" class="oa-ledger">
+            <div class="oa-empty"><i class="fas fa-book-open"></i><p>Loading…</p></div>
+          </div>
+        </div>
+
+        <div>
+          <!-- ── Who's on duty (with locations) ── -->
+          <section class="oa-card">
+            <div class="oa-card-head">
+              <h3>On duty today</h3>
+              <span class="spacer"></span>
+              <span class="oa-tag gold" data-team-count>Loading</span>
+            </div>
+            <div class="oa-roster" data-team-list>
+              <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading roster…</p></div>
+            </div>
+          </section>
+
+          <!-- ── Map ── -->
+          <section class="oa-card" id="userMapCard" style="display:none">
+            <div class="oa-card-head">
+              <h3>Where you are</h3>
+              <span class="spacer"></span>
+              <a id="userGmapsLink" href="#" target="_blank" rel="noopener"
+                 style="font-size:.7rem;font-weight:700;color:var(--ink-600)">
+                Open in Maps <i class="fas fa-arrow-up-right-from-square" style="font-size:.62rem"></i>
+              </a>
+            </div>
+            <!-- Address Search & Drag Pin Helper -->
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <input type="text" id="mapSearchInput" placeholder="Search address, landmark, or building..." 
+                     style="flex:1;padding:7px 12px;font-size:0.8rem;border:1px solid var(--line,#ccc);border-radius:8px;background:var(--bg,#fff);color:var(--t1);"
+                     onkeydown="if(event.key==='Enter') searchAddressOnMap()">
+              <button class="oa-btn oa-btn-quiet" onclick="searchAddressOnMap()" style="padding:6px 12px;font-size:0.78rem;flex-shrink:0;">
+                <i class="fas fa-magnifying-glass"></i> Search
+              </button>
+            </div>
+
+            <div class="oa-mapframe" style="height:260px;border-radius:12px;overflow:hidden;position:relative;border:1px solid var(--line,#e5e5e7);">
+              <div id="userLeafletMap" style="width:100%;height:100%;z-index:1;"></div>
+              <iframe id="userMapIframe" loading="lazy" allowfullscreen title="Your location" style="width:100%;height:100%;border:0;display:none;"></iframe>
+            </div>
+
+            <div style="font-size:0.72rem;color:var(--t2);margin-top:6px;display:flex;align-items:center;gap:4px;">
+              <i class="fas fa-hand-pointer" style="color:var(--accent,#0071e3)"></i> Tip: Drag the blue pin marker on the map to set your exact position.
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-top:8px">
+              <div style="font-size:.78rem;color:var(--t2);line-height:1.35;flex:1" id="userCoordsText">Coordinates</div>
+              <button class="oa-btn oa-btn-quiet" onclick="refreshLocation()" style="flex-shrink:0"><i class="fas fa-rotate"></i> GPS Refresh</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ SHIFTS ════════ -->
+    <div id="tab-shift" class="tab">
+      <section class="oa-masthead">
+        <div class="greet">Shift attendance</div>
+        <div class="who" style="font-size:1.3rem">Shift 1 &amp; Shift 2</div>
+        <div class="lede">Each shift is tracked separately against half your daily target.</div>
+        <div class="oa-pills">
+          <div class="oa-pill">
+            <i class="fas fa-hourglass-half"></i>
+            <span class="oa-num" id="sTotalDisp">0.0</span> / <span class="oa-num" id="sTargetDisp">8.0</span>h today
+          </div>
+        </div>
+      </section>
+
+      <div class="dash-split">
+        <div>
+          <div class="oa-strip" id="faceStatusCardS">
+            <div class="ic" id="fscIconS">🔓</div>
+            <div class="bd">
+              <div class="t" id="fscTitleS">Face ID not required</div>
+              <div class="s" id="fscSubS">Sign in directly</div>
+            </div>
+            <div class="chip" id="fscChipS">Off</div>
+          </div>
+
+          <div class="oa-strip is-busy" id="locBannerS" onclick="refreshLocation()" style="cursor:pointer">
+            <div class="ic" id="locIconS">📡</div>
+            <div class="bd">
+              <div class="t" id="locTitleS">Checking your location…</div>
+              <div class="s" id="locSubS">Tap to refresh your location</div>
+            </div>
+            <div class="chip" id="locChipS">Checking</div>
+          </div>
+
+          <section class="oa-card">
+            <div class="oa-card-title"><i class="fas fa-layer-group"></i> Today's shifts</div>
+
+            <!-- Shift 1 -->
+            <div class="shiftblock">
+              <div class="hd">
+                <span class="nm">Shift 1</span>
+                <span class="oa-tag" id="s1pill">Not started</span>
+              </div>
+              <div class="oa-meter">
+                <div class="oa-meter-labels"><span id="s1hl">0.0h worked</span><span class="r" id="s1tl">/ 4.0h</span></div>
+                <div class="oa-meter-track"><div class="oa-meter-fill" id="s1bar" style="width:0%"></div></div>
+              </div>
+              <div class="oa-stamps">
+                <div class="oa-stamp in"><div class="k">In</div><div class="v" id="s1lt">--:--</div><div class="a" id="s1la">—</div></div>
+                <div class="oa-stamp out"><div class="k">Out</div><div class="v" id="s1ot">--:--</div><div class="a" id="s1oa">—</div></div>
+              </div>
+              <div class="oa-btnrow">
+                <button class="oa-btn oa-btn-ok" id="btnS1L" onclick="doShiftLogin('shift1')"><i class="fas fa-play"></i> Start</button>
+                <button class="oa-btn oa-btn-bad" id="btnS1O" onclick="doShiftLogout('shift1')" disabled><i class="fas fa-stop"></i> End</button>
+              </div>
+            </div>
+
+            <!-- Shift 2 -->
+            <div class="shiftblock">
+              <div class="hd">
+                <span class="nm">Shift 2</span>
+                <span class="oa-tag" id="s2pill">Not started</span>
+              </div>
+              <div class="oa-meter">
+                <div class="oa-meter-labels"><span id="s2hl">0.0h worked</span><span class="r" id="s2tl">/ 4.0h</span></div>
+                <div class="oa-meter-track"><div class="oa-meter-fill" id="s2bar" style="width:0%"></div></div>
+              </div>
+              <div class="oa-stamps">
+                <div class="oa-stamp in"><div class="k">In</div><div class="v" id="s2lt">--:--</div><div class="a" id="s2la">—</div></div>
+                <div class="oa-stamp out"><div class="k">Out</div><div class="v" id="s2ot">--:--</div><div class="a" id="s2oa">—</div></div>
+              </div>
+              <div class="oa-btnrow">
+                <button class="oa-btn oa-btn-ok" id="btnS2L" onclick="doShiftLogin('shift2')"><i class="fas fa-play"></i> Start</button>
+                <button class="oa-btn oa-btn-bad" id="btnS2O" onclick="doShiftLogout('shift2')" disabled><i class="fas fa-stop"></i> End</button>
+              </div>
+            </div>
+
+            <button class="oa-btn oa-btn-ghost oa-btn-block" style="margin-top:12px" onclick="openLeave()">
+              <i class="fas fa-calendar-xmark"></i> Apply for leave
+            </button>
+          </section>
+        </div>
+
+        <div>
+          <!-- Same roster, mirrored into the shift view -->
+          <section class="oa-card">
+            <div class="oa-card-head">
+              <h3>On duty today</h3>
+              <span class="spacer"></span>
+              <span class="oa-tag gold" data-team-count>Loading</span>
+            </div>
+            <div class="oa-roster" data-team-list>
+              <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading roster…</p></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ STATISTICS ════════ -->
+    <div id="tab-stats" class="tab">
+      <div class="seg">
+        <button id="btnStatsWeek" class="on" onclick="switchStatsPeriod('week')">This week</button>
+        <button id="btnStatsMonth" onclick="switchStatsPeriod('month')">This month</button>
+      </div>
+
+      <div id="statsOut">
+        <div class="oa-statgrid">
+          <div class="oa-stat"><div class="v" id="svDays">0</div><div class="k">Days</div></div>
+          <div class="oa-stat"><div class="v" id="svHours">0</div><div class="k">Total hours</div></div>
+          <div class="oa-stat"><div class="v" id="svAvg">0</div><div class="k">Avg per day</div></div>
+          <div class="oa-stat"><div class="v" id="svLeaves">0</div><div class="k">Leave taken</div></div>
+          <div class="oa-stat"><div class="v" id="svEarly">0</div><div class="k">Early outs</div></div>
+          <div class="oa-stat"><div class="v" id="svSess">0</div><div class="k">Sessions</div></div>
+        </div>
+
+        <section class="oa-card">
+          <div class="oa-card-title"><i class="fas fa-chart-pie"></i> Hours by type</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">
+            <div><div class="oa-num" style="font-size:1.4rem;font-weight:700;color:var(--ink-800)" id="svS1">0</div><div class="k" style="font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-top:4px">Shift 1</div></div>
+            <div><div class="oa-num" style="font-size:1.4rem;font-weight:700;color:var(--gold-600)" id="svS2">0</div><div class="k" style="font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-top:4px">Shift 2</div></div>
+            <div><div class="oa-num" style="font-size:1.4rem;font-weight:700;color:var(--ok)" id="svNorm">0</div><div class="k" style="font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-top:4px">Normal</div></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="oa-rule"><span class="tick"></span><span class="lbl">Entries in this period</span></div>
+      <div id="stHistory" class="oa-ledger">
+        <div class="oa-empty"><i class="fas fa-chart-simple"></i><p>Pick a period above</p></div>
+      </div>
+    </div>
+
+    <!-- ════════ CALENDAR ════════ -->
+    <div id="tab-calendar" class="tab">
+      <div class="oa-cal">
+        <div class="oa-cal-head">
+          <div class="mon" id="calMon">—</div>
+          <div class="oa-cal-nav">
+            <button onclick="moveCal(-1)" aria-label="Previous month"><i class="fas fa-chevron-left"></i></button>
+            <button onclick="moveCal(1)" aria-label="Next month"><i class="fas fa-chevron-right"></i></button>
+          </div>
+        </div>
+        <div class="oa-cal-grid" id="calGrid"></div>
+        <div class="oa-cal-legend">
+          <div><span style="background:var(--ok-bg)"></span>Present</div>
+          <div><span style="background:var(--gold-500)"></span>Holiday</div>
+          <div><span style="background:var(--warn-bg)"></span>Leave</div>
+          <div><span style="background:transparent;box-shadow:inset 0 0 0 2px var(--ink-800)"></span>Today</div>
+        </div>
+      </div>
+
+      <div class="oa-rule"><span class="tick"></span><span class="lbl">Holidays this week</span></div>
+      <div id="weekHols"></div>
+      <div class="oa-rule"><span class="tick"></span><span class="lbl">Holidays this month</span></div>
+      <div id="monHols"></div>
+      <div class="oa-rule"><span class="tick"></span><span class="lbl">My approved leave</span></div>
+      <div id="myLeaves"></div>
+    </div>
+  </main>
+
+  <!-- ══ BOTTOM NAV (mobile) ══════════════════════════════════ -->
+  <nav class="oa-botnav">
+    <button class="oa-bnav on" data-tab="normal" onclick="goTab('normal')"><i class="fas fa-clock"></i><span>Today</span></button>
+    <button class="oa-bnav" id="bn-shift" data-tab="shift" onclick="goTab('shift')" style="display:none"><i class="fas fa-layer-group"></i><span>Shifts</span></button>
+    <button class="oa-bnav" data-tab="stats" onclick="goTab('stats')"><i class="fas fa-chart-simple"></i><span>Stats</span></button>
+    <button class="oa-bnav" data-tab="calendar" onclick="goTab('calendar')"><i class="fas fa-calendar-days"></i><span>Calendar</span></button>
+  </nav>
+</div>
+
+<!-- ══ FACE SHEET ═══════════════════════════════════════════════ -->
+<div class="oa-backdrop" id="faceBD">
+  <div class="oa-sheet">
+    <div class="oa-handle"></div>
+    <div class="oa-sheet-title" id="faceTit">Verify your identity</div>
+    <div class="oa-sheet-sub" id="faceSub">Line your face up inside the oval, then scan</div>
+
+    <div class="oa-sheet-body">
+      <div class="oa-cam">
+        <video id="fv" autoplay playsinline muted></video>
+        <canvas id="fc"></canvas>
+        <div class="oa-cam-ovl"><div class="oa-cam-oval"><div class="oa-cam-laser"></div></div></div>
+        <div class="oa-cam-txt" id="camTxt">Line your face up inside the oval</div>
+      </div>
+
+      <div id="photoProgressWrap" style="display:none">
+        <div class="oa-dots">
+          <div class="oa-dot active" id="pp1">1</div>
+          <div class="oa-dot" id="pp2">2</div>
+          <div class="oa-dot" id="pp3">3</div>
+          <div class="oa-dot" id="pp4">4</div>
+          <div class="oa-dot" id="pp5">5</div>
+        </div>
+        <div class="oa-dot-label" id="ppLabel">Photo 1 of 5 — look straight at the camera</div>
+      </div>
+
+      <div class="oa-result" id="fresult">
+        <div class="ic" id="fricon">✅</div>
+        <div class="msg" id="frmsg"></div>
+        <div class="sub" id="frsub"></div>
+      </div>
+    </div>
+
+    <div class="oa-banner-ok" id="faceReadyBanner">
+      <div class="ic">✅</div>
+      <div>
+        <div class="t">Identity confirmed</div>
+        <div class="s">A snapshot was saved to the security log.</div>
+      </div>
+    </div>
+
+    <div class="oa-sheet-body">
+      <div class="oa-note">
+        <i class="fas fa-shield-halved"></i>
+        <span>Snapshots are kept for administrator audit only and stored securely.</span>
+      </div>
+    </div>
+
+    <div class="oa-sheet-actions">
+      <button class="oa-btn oa-btn-primary" id="scanBtn" onclick="captureAndProcess()" disabled>
+        <i class="fas fa-camera"></i> <span id="scanTxt">Starting camera…</span>
+      </button>
+      <button class="oa-btn oa-btn-ghost" id="cancelFaceBtn" onclick="closeFace()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LEAVE SHEET ══════════════════════════════════════════════ -->
+<div class="oa-backdrop" id="leaveBD">
+  <div class="oa-sheet">
+    <div class="oa-handle"></div>
+    <div class="oa-sheet-title">Apply for leave</div>
+    <div class="oa-sheet-sub">Saturdays can be applied for. Sundays are already off.</div>
+    <div class="oa-sheet-body">
+      <div class="oa-field">
+        <label for="lvDate">Date</label>
+        <input type="date" id="lvDate">
+      </div>
+      <div class="oa-field">
+        <label for="lvType">Type</label>
+        <select id="lvType">
+          <option value="">Choose a type…</option>
+          <option value="Sick Leave">Sick leave</option>
+          <option value="Casual Leave">Casual leave</option>
+          <option value="Personal Leave">Personal leave</option>
+          <option value="Emergency">Emergency</option>
+        </select>
+      </div>
+      <div class="oa-field">
+        <label for="lvReason">Reason</label>
+        <textarea id="lvReason" rows="3" placeholder="A short reason helps your approver decide"></textarea>
+      </div>
+    </div>
+    <div class="oa-sheet-actions">
+      <button class="oa-btn oa-btn-primary" onclick="submitLeave()">Submit application</button>
+      <button class="oa-btn oa-btn-ghost" onclick="closeLeaveBD()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONFIRM SHEET ════════════════════════════════════════════ -->
+<div class="oa-backdrop" id="confBD">
+  <div class="oa-sheet">
+    <div class="oa-handle"></div>
+    <div class="oa-sheet-title">Please confirm</div>
+    <div class="oa-sheet-body">
+      <p style="font-size:.84rem;color:var(--t2);text-align:center;line-height:1.6" id="confMsg"></p>
+    </div>
+    <div class="oa-sheet-actions">
+      <button class="oa-btn oa-btn-bad" id="confYes">Yes, go ahead</button>
+      <button class="oa-btn oa-btn-ghost" onclick="closeConf()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/user-dashboard.js') }}"></script>
+<script>
+  // Mirror the drawer's "Register face" visibility onto the web rail item
+  (function(){
+    var src = document.getElementById('di-face-reg');
+    var web = document.getElementById('di-face-reg-web');
+    if(!src || !web) return;
+    new MutationObserver(function(){ web.style.display = src.style.display; })
+      .observe(src, {attributes:true, attributeFilter:['style']});
+  })();
+</script>
+</body>
+</html>

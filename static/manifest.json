@@ -1,0 +1,16 @@
+{
+  "name": "Office of Academics Attendance",
+  "short_name": "OoA Attendance",
+  "description": "Attendance Portal for the Office of Academics, JAIN (Deemed-to-be University), Head Office, Bengaluru.",
+  "start_url": "/user/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0A1324",
+  "theme_color": "#0A1324",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/static/images/applogo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/images/applogo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/images/applogo.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

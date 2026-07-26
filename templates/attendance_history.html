@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Attendance history{% endblock %}
+{% block bartitle %}OFFICE OF ACADEMICS{% endblock %}
+{% block barsub %}Attendance history{% endblock %}
+
+{% block content %}
+<div class="oa-rule"><span class="tick"></span><span class="lbl">My attendance history</span></div>
+
+<section class="oa-card">
+  <div class="oa-formgrid">
+    <div class="oa-field"><label for="hFrom">From</label><input type="date" id="hFrom"></div>
+    <div class="oa-field"><label for="hTo">To</label><input type="date" id="hTo"></div>
+  </div>
+  <button class="oa-btn oa-btn-primary" onclick="loadHistory()"><i class="fas fa-magnifying-glass"></i> Show entries</button>
+</section>
+
+<div class="oa-statgrid" id="hStats" style="display:none">
+  <div class="oa-stat"><div class="v" id="hDays">0</div><div class="k">Days</div></div>
+  <div class="oa-stat"><div class="v" id="hHours">0</div><div class="k">Total hours</div></div>
+  <div class="oa-stat"><div class="v" id="hAvg">0</div><div class="k">Avg per day</div></div>
+</div>
+
+<div id="hList" class="oa-ledger">
+  <div class="oa-empty"><i class="fas fa-book-open"></i><p>Pick a date range above</p></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+(function seedDates(){
+  const today = new Date();
+  const start = new Date(); start.setDate(today.getDate() - 29);
+  document.getElementById('hTo').value   = today.toISOString().split('T')[0];
+  document.getElementById('hFrom').value = start.toISOString().split('T')[0];
+})();
+
+async function loadHistory(){
+  const from = document.getElementById('hFrom').value;
+  const to   = document.getElementById('hTo').value;
+  const el   = document.getElementById('hList');
+  if(!from || !to){ el.innerHTML = '<div class="oa-empty"><i class="fas fa-calendar"></i><p>Choose both dates</p></div>'; return; }
+
+  el.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
+  try{
+    const res = await fetch('/api/statistics', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({start_date: from, end_date: to})
+    });
+    const d = await res.json();
+    if(!d.ok){ throw new Error(d.error || 'Request failed'); }
+
+    document.getElementById('hStats').style.display = 'grid';
+    document.getElementById('hDays').textContent  = d.total_days;
+    document.getElementById('hHours').textContent = d.total_hours.toFixed(1);
+    document.getElementById('hAvg').textContent   = d.avg_hours_per_day.toFixed(1);
+
+    const dash = await (await fetch('/api/dashboard-data')).json();
+    const rows = (dash.history || []).filter(h => h.date >= from && h.date <= to);
+
+    if(!rows.length){
+      el.innerHTML = '<div class="oa-empty"><i class="fas fa-book-open"></i><p>No entries in this range</p></div>';
+      return;
+    }
+
+    el.innerHTML = rows.map(h => {
+      const p  = (h.date || '').split('-');
+      const dd = p[2] || '--', mm = MON[(parseInt(p[1],10)||1)-1] || '';
+      const open = !h.logout_time || h.logout_time === 'N/A';
+      return `<div class="oa-entry">
+        <div class="day"><div class="d">${dd}</div><div class="m">${mm}</div></div>
+        <div class="bd">
+          <div class="kind">${h.shift_name || 'Normal duty'}
+            <span class="oa-tag ${h.at_office ? 'ok' : ''}" style="margin-left:6px">${h.at_office ? 'Head Office' : 'Off site'}</span>
+          </div>
+          <div class="times">${h.login_time} \u2192 ${open ? 'still on duty' : h.logout_time}</div>
+        </div>
+        <div class="hrs">${h.hours}h</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>Could not load history. Try again.</p></div>';
+  }
+}
+
+loadHistory();
+</script>
+{% endblock %}

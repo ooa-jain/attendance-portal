@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sign in · Office of Academics Attendance</title>
+<meta name="theme-color" content="#0A1324">
+<meta name="description" content="Attendance Portal for the Office of Academics, JAIN (Deemed-to-be University), Head Office, Bengaluru.">
+
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+
+<style>
+  body { background: var(--ink-800); }
+
+  .lg-wrap { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: 1fr; }
+
+  /* ── Left: institutional panel ── */
+  .lg-panel {
+    background: var(--ink-800);
+    color: var(--on-ink);
+    padding: 30px 24px 26px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .lg-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      to bottom, transparent 0 31px, rgba(238,189,27,.06) 31px 32px);
+    pointer-events: none;
+  }
+  .lg-panel::after {
+    content: "";
+    position: absolute;
+    left: 46px; top: 0; bottom: 0;
+    width: 1px;
+    background: rgba(183, 48, 42, .28);
+    pointer-events: none;
+  }
+  .lg-panel > * { position: relative; }
+
+  .lg-mark { display: flex; align-items: center; gap: 13px; margin-bottom: 34px; }
+  .lg-mark img { width: 46px; height: 46px; border-radius: 11px; }
+  .lg-mark .n1 { font-size: .78rem; font-weight: 800; letter-spacing: .1em; }
+  .lg-mark .n2 { font-size: .64rem; color: var(--on-ink-dim); letter-spacing: .04em; }
+
+  .lg-head {
+    font-family: var(--display);
+    font-size: clamp(1.9rem, 6vw, 3.1rem);
+    font-weight: 600;
+    line-height: 1.06;
+    letter-spacing: -.025em;
+    max-width: 15ch;
+  }
+  .lg-head em { font-style: italic; color: var(--gold-400); }
+  .lg-sub {
+    font-size: .86rem;
+    color: var(--on-ink-dim);
+    margin-top: 14px;
+    max-width: 40ch;
+    line-height: 1.6;
+  }
+
+  /* signature: the live register line */
+  .lg-register {
+    margin-top: auto;
+    padding-top: 26px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    border-top: 1px solid rgba(255,255,255,.12);
+    flex-wrap: wrap;
+  }
+  .lg-register .k {
+    font-size: .6rem; font-weight: 800; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--on-ink-dim);
+  }
+  .lg-register .clock {
+    font-family: var(--mono);
+    font-size: 1.55rem;
+    font-weight: 600;
+    letter-spacing: -.04em;
+    color: var(--gold-400);
+    line-height: 1.1;
+  }
+  .lg-register .datev { font-size: .74rem; color: var(--on-ink-dim); font-family: var(--mono); }
+  .lg-register .site { text-align: right; font-size: .72rem; line-height: 1.5; }
+  .lg-register .site strong { display: block; font-size: .78rem; }
+
+  /* ── Right: form ── */
+  .lg-form-side {
+    background: var(--paper);
+    padding: 34px 24px calc(34px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .lg-form { width: 100%; max-width: 380px; margin: 0 auto; }
+  .lg-form h2 {
+    font-family: var(--display);
+    font-size: 1.55rem;
+    font-weight: 600;
+    color: var(--ink-800);
+    letter-spacing: -.02em;
+  }
+  .lg-form .hint { font-size: .8rem; color: var(--t2); margin: 5px 0 24px; }
+
+  .lg-input { position: relative; }
+  .lg-input input { padding-left: 40px; padding-top: 13px; padding-bottom: 13px; }
+  .lg-input > i {
+    position: absolute;
+    left: 14px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--t3);
+    font-size: .84rem;
+    transition: color .16s;
+    pointer-events: none;
+  }
+  .lg-input input:focus ~ i { color: var(--ink-600); }
+  .lg-eye {
+    position: absolute; right: 6px; top: 50%;
+    transform: translateY(-50%);
+    padding: 8px 10px; color: var(--t3); font-size: .82rem;
+  }
+  .lg-eye:hover { color: var(--ink-600); }
+
+  .lg-marks { display: grid; gap: 9px; margin: 26px 0 20px; }
+  .lg-mark-item {
+    display: flex; gap: 10px; align-items: flex-start;
+    font-size: .74rem; color: var(--t2); line-height: 1.5;
+  }
+  .lg-mark-item i {
+    color: var(--gold-600); font-size: .74rem; margin-top: 3px; flex: none;
+    width: 14px; text-align: center;
+  }
+  .lg-foot {
+    margin-top: 26px; padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: .66rem; color: var(--t3); line-height: 1.6;
+  }
+
+  @media (min-width: 900px) {
+    .lg-wrap { grid-template-columns: 1.05fr .95fr; }
+    .lg-panel { padding: 52px 52px 44px; }
+    .lg-panel::after { left: 76px; }
+    .lg-form-side { padding: 52px; }
+  }
+  @media (max-width: 899px) {
+    .lg-panel { min-height: 46vh; }
+    .lg-register { padding-top: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="lg-wrap">
+
+  <!-- ══ Institutional panel ══ -->
+  <section class="lg-panel">
+    <div class="lg-mark">
+      <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="JAIN">
+      <div>
+        <div class="n1">OFFICE OF ACADEMICS</div>
+        <div class="n2">JAIN (Deemed-to-be University)</div>
+      </div>
+    </div>
+
+    <h1 class="lg-head">The Attendance Portal, <em>kept honestly.</em></h1>
+    <p class="lg-sub">
+      Mark your attendance from the Head Office, see the hours you have put in today,
+      and know who else is on duty — all from one page.
+    </p>
+
+    <div class="lg-register">
+      <div>
+        <div class="k">Indian Standard Time</div>
+        <div class="clock" id="lgClock">--:--:--</div>
+        <div class="datev" id="lgDate">—</div>
+      </div>
+      <div class="site">
+        <span class="k">Primary duty station</span>
+        <strong>Office of Academics</strong>
+        Head Office, Bengaluru
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ Sign-in ══ -->
+  <section class="lg-form-side">
+    <div class="lg-form">
+      <h2>Sign in</h2>
+      <p class="hint">Use the credentials issued by the Office of Academics.</p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="oa-flash {{ category }}">
+            <i class="fas fa-circle-info"></i><span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="POST" action="{{ url_for('login') }}" autocomplete="on">
+        <div class="oa-field">
+          <label for="username">Username</label>
+          <div class="lg-input">
+            <input type="text" id="username" name="username" required autocomplete="username"
+                   placeholder="your.username" autocapitalize="none" spellcheck="false">
+            <i class="fas fa-user"></i>
+          </div>
+        </div>
+
+        <div class="oa-field">
+          <label for="password">Password</label>
+          <div class="lg-input">
+            <input type="password" id="password" name="password" required
+                   autocomplete="current-password" placeholder="••••••••">
+            <i class="fas fa-lock"></i>
+            <button type="button" class="lg-eye" id="lgEye" aria-label="Show password">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="oa-btn oa-btn-primary oa-btn-block" id="lgSubmit">
+          <i class="fas fa-arrow-right-to-bracket"></i> Sign in
+        </button>
+      </form>
+
+      <div class="lg-marks">
+        <div class="lg-mark-item">
+          <i class="fas fa-location-crosshairs"></i>
+          <span>Your location is checked against the Head Office when you mark attendance.</span>
+        </div>
+        <div class="lg-mark-item">
+          <i class="fas fa-user-shield"></i>
+          <span>Face verification applies only if an administrator has switched it on for you.</span>
+        </div>
+        <div class="lg-mark-item">
+          <i class="fas fa-mobile-screen"></i>
+          <span>Add this page to your home screen to mark attendance in one tap.</span>
+        </div>
+      </div>
+
+      <div class="lg-foot">
+        Office of Academics · JAIN (Deemed-to-be University)<br>
+        Head Office, Bengaluru · Attendance Portal
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function clock(){
+  var now = new Date();
+  var t = now.toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true});
+  var d = now.toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata', weekday:'long', day:'2-digit', month:'short', year:'numeric'});
+  var ce = document.getElementById('lgClock'), de = document.getElementById('lgDate');
+  if (ce) ce.textContent = t;
+  if (de) de.textContent = d;
+  setTimeout(clock, 1000);
+})();
+
+document.getElementById('lgEye').addEventListener('click', function(){
+  var f = document.getElementById('password');
+  var on = f.type === 'password';
+  f.type = on ? 'text' : 'password';
+  this.querySelector('i').className = on ? 'fas fa-eye-slash' : 'fas fa-eye';
+  this.setAttribute('aria-label', on ? 'Hide password' : 'Show password');
+});
+
+document.querySelector('form').addEventListener('submit', function(){
+  var b = document.getElementById('lgSubmit');
+  b.disabled = true;
+  b.innerHTML = '<i class="fas fa-circle-notch spin"></i> Signing in…';
+});
+</script>
+</body>
+</html>

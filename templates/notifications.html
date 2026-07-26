@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block bartitle %}OFFICE OF ACADEMICS{% endblock %}
+{% block barsub %}Notifications{% endblock %}
+
+{% block content %}
+<div class="oa-rule"><span class="tick"></span><span class="lbl">Notifications</span></div>
+
+<div id="notifList" class="oa-ledger">
+  <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadNotifications(){
+  const el = document.getElementById('notifList');
+  try{
+    const res = await fetch('/api/notifications');
+    const data = await res.json();
+    const items = data.notifications || data || [];
+    if(!items.length){
+      el.innerHTML = '<div class="oa-empty"><i class="fas fa-bell-slash"></i><p>Nothing to read right now</p></div>';
+      return;
+    }
+    el.innerHTML = items.map(n => `
+      <div class="oa-card" style="border-left:3px solid ${n.read ? 'var(--line-2)' : 'var(--gold-500)'};margin-bottom:9px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
+          <strong style="font-size:.84rem">${n.title || 'Notice'}</strong>
+          ${n.read ? '' : '<span class="oa-tag gold">New</span>'}
+        </div>
+        <p style="font-size:.76rem;color:var(--t2);line-height:1.6">${n.message || ''}</p>
+        <div class="oa-num" style="font-size:.66rem;color:var(--t3);margin-top:7px">${n.created_at || ''}</div>
+      </div>`).join('');
+  }catch(e){
+    el.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>Could not load notifications. Try again.</p></div>';
+  }
+}
+loadNotifications();
+</script>
+{% endblock %}

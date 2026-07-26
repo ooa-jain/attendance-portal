@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Create an account{% endblock %}
+{% block bartitle %}OFFICE OF ACADEMICS{% endblock %}
+{% block barsub %}Create an account{% endblock %}
+
+{% block content %}
+<div style="max-width:440px;margin:0 auto">
+  <div class="oa-rule"><span class="tick"></span><span class="lbl">New account</span></div>
+
+  <section class="oa-card">
+    <p style="font-size:.78rem;color:var(--t2);margin-bottom:18px;line-height:1.6">
+      Accounts are normally created by an administrator. Use this form only if you were
+      asked to register yourself.
+    </p>
+
+    <form method="POST" action="{{ url_for('register') }}">
+      <div class="oa-field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="oa-field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="you@jainuniversity.ac.in">
+      </div>
+      <div class="oa-field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="new-password">
+      </div>
+      <div class="oa-field">
+        <label for="work_hours">Daily hours target</label>
+        <input type="number" id="work_hours" name="work_hours" step="0.5" value="8" min="1" max="16">
+      </div>
+
+      <button type="submit" class="oa-btn oa-btn-primary oa-btn-block">
+        <i class="fas fa-user-plus"></i> Create account
+      </button>
+    </form>
+
+    <p style="font-size:.74rem;color:var(--t2);text-align:center;margin-top:16px">
+      Already have one? <a href="{{ url_for('login') }}" style="font-weight:700;color:var(--ink-700)">Sign in</a>
+    </p>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,408 @@
+/* ══════════════════════════════════════════════════════════════
+   OFFICE OF ACADEMICS · ATTENDANCE
+   oa-core.css — design tokens, reset, shell, typography
+   Palette derived from the JAIN institutional mark:
+     navy #0A1324 · gold #EEBD1B
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Ink (navy family, from the logo mark) ── */
+  --ink-900: #060B16;
+  --ink-850: #08101E;
+  --ink-800: #0A1324;
+  --ink-700: #13203A;
+  --ink-600: #1E3054;
+  --ink-500: #2C446F;
+  --ink-400: #52678F;
+
+  /* ── Gold (institutional accent) ── */
+  --gold-600: #B8900E;
+  --gold-500: #EEBD1B;
+  --gold-400: #F5D257;
+  --gold-100: #FBF1CE;
+  --gold-050: #FEFAEC;
+
+  /* ── Paper & structure ── */
+  --paper:    #F6F4EF;
+  --paper-2:  #EFEBE3;
+  --card:     #FFFFFF;
+  --line:     #E3DED4;
+  --line-2:   #D3CCBE;
+
+  /* ── Text ── */
+  --t1: #101828;
+  --t2: #5B6472;
+  --t3: #8F98A6;
+  --on-ink:     #F4F1EA;
+  --on-ink-dim: #A9B4C7;
+
+  /* ── Functional ── */
+  --ok:    #157F52;
+  --ok-bg: #E7F3ED;
+  --warn:    #C2790B;
+  --warn-bg: #FBF0DC;
+  --bad:    #B7302A;
+  --bad-bg: #F8E9E8;
+  --info:    #2B5CA8;
+  --info-bg: #E8EFF9;
+
+  /* ── Type ── */
+  --display: 'Playfair Display', 'Iowan Old Style', Georgia, serif;
+  --body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ── Geometry ── */
+  --r-sm: 8px;
+  --r:    14px;
+  --r-lg: 20px;
+  --r-xl: 26px;
+
+  --rail:   264px;
+  --topbar: 60px;
+  --botnav: 66px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  --sh-1: 0 1px 2px rgba(10, 19, 36, .05);
+  --sh-2: 0 4px 16px rgba(10, 19, 36, .07);
+  --sh-3: 0 14px 40px rgba(10, 19, 36, .10);
+  --sh-ink: 0 18px 44px rgba(10, 19, 36, .28);
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: var(--body);
+  background: var(--paper);
+  color: var(--t1);
+  line-height: 1.55;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+img { max-width: 100%; display: block; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: none; }
+a { color: var(--ink-600); text-decoration: none; }
+
+:focus-visible {
+  outline: 2px solid var(--gold-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection { background: var(--gold-100); color: var(--ink-800); }
+
+/* ══ TYPOGRAPHY ══════════════════════════════════════════════ */
+
+.oa-display {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: -.015em;
+  line-height: 1.15;
+  color: var(--ink-800);
+}
+
+.oa-eyebrow {
+  font-size: .66rem;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+.oa-num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: -.02em;
+}
+
+/* Rule with a gold tick — used to open sections */
+.oa-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 26px 0 14px;
+}
+.oa-rule::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.oa-rule .lbl {
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-600);
+}
+.oa-rule .tick {
+  width: 14px;
+  height: 3px;
+  background: var(--gold-500);
+  border-radius: 2px;
+}
+
+/* ══ APP SHELL ═══════════════════════════════════════════════ */
+
+.oa-shell { min-height: 100vh; }
+
+/* ── Left rail (web ≥1024px) ── */
+.oa-rail {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: var(--rail);
+  background: var(--ink-800);
+  color: var(--on-ink);
+  display: none;
+  flex-direction: column;
+  z-index: 60;
+  border-right: 1px solid rgba(255, 255, 255, .06);
+}
+
+.oa-rail-head {
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.oa-rail-head img { width: 38px; height: 38px; border-radius: 9px; flex: none; }
+.oa-rail-head .org {
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1.3;
+}
+.oa-rail-head .sub {
+  font-size: .64rem;
+  color: var(--on-ink-dim);
+  letter-spacing: .05em;
+}
+
+.oa-rail-nav { padding: 14px 12px; display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
+
+.oa-navitem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: var(--r-sm);
+  color: var(--on-ink-dim);
+  font-size: .84rem;
+  font-weight: 600;
+  text-align: left;
+  transition: background .14s, color .14s;
+  position: relative;
+}
+.oa-navitem i { width: 17px; font-size: .88rem; text-align: center; }
+.oa-navitem:hover { background: rgba(255, 255, 255, .06); color: var(--on-ink); }
+.oa-navitem.on { background: rgba(238, 189, 27, .12); color: var(--gold-400); }
+.oa-navitem.on::before {
+  content: "";
+  position: absolute;
+  left: -12px; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 22px;
+  background: var(--gold-500);
+  border-radius: 0 3px 3px 0;
+}
+.oa-navitem.danger { color: #F2A9A4; }
+.oa-navitem.danger:hover { background: rgba(183, 48, 42, .18); color: #FFD3D0; }
+
+.oa-rail-foot {
+  padding: 14px 16px 18px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  font-size: .66rem;
+  color: var(--on-ink-dim);
+  line-height: 1.5;
+}
+
+/* ── Top bar (mobile-first, also shown on web as a slim context bar) ── */
+.oa-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--topbar);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--ink-800);
+  color: var(--on-ink);
+  box-shadow: var(--sh-2);
+}
+.oa-topbar .brandmark { height: 34px; width: 34px; border-radius: 8px; flex: none; }
+.oa-topbar .titles { flex: 1; min-width: 0; }
+.oa-topbar .org {
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oa-topbar .sub {
+  font-size: .6rem;
+  color: var(--on-ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oa-clock {
+  font-family: var(--mono);
+  font-size: .74rem;
+  font-weight: 500;
+  letter-spacing: -.02em;
+  color: var(--gold-400);
+  background: rgba(238, 189, 27, .1);
+  padding: 5px 9px;
+  border-radius: 7px;
+  flex: none;
+}
+
+.oa-burger {
+  width: 38px; height: 38px;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center; gap: 4px;
+  border-radius: 9px;
+  flex: none;
+}
+.oa-burger span {
+  display: block;
+  width: 17px; height: 2px;
+  background: var(--on-ink);
+  border-radius: 2px;
+  transition: transform .22s, opacity .18s;
+}
+.oa-burger.on span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.oa-burger.on span:nth-child(2) { opacity: 0; }
+.oa-burger.on span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+/* ── Drawer (mobile nav) ── */
+.oa-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 11, 22, .5);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .22s;
+  z-index: 70;
+}
+.oa-overlay.show { opacity: 1; pointer-events: auto; }
+
+.oa-drawer {
+  position: fixed;
+  top: 0; right: 0;
+  width: min(300px, 84vw);
+  height: 100%;
+  background: var(--ink-800);
+  color: var(--on-ink);
+  transform: translateX(100%);
+  transition: transform .26s cubic-bezier(.32, .72, 0, 1);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--safe-b);
+  overflow-y: auto;
+}
+.oa-drawer.show { transform: translateX(0); }
+
+.oa-duser {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 22px 18px 16px;
+}
+.oa-avatar {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--gold-500);
+  color: var(--ink-800);
+  font-weight: 800;
+  font-size: 1.05rem;
+  display: flex; align-items: center; justify-content: center;
+  flex: none;
+}
+.oa-duser .nm { font-size: .92rem; font-weight: 700; }
+.oa-duser .rl { font-size: .68rem; color: var(--on-ink-dim); }
+
+.oa-dsep { height: 1px; background: rgba(255, 255, 255, .08); margin: 8px 14px; }
+
+/* ── Bottom nav (mobile) ── */
+.oa-botnav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--botnav) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: saturate(180%) blur(16px);
+  border-top: 1px solid var(--line);
+  display: flex;
+  z-index: 55;
+}
+.oa-bnav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--t3);
+  font-size: .6rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  transition: color .14s;
+  position: relative;
+}
+.oa-bnav i { font-size: 1.02rem; }
+.oa-bnav.on { color: var(--ink-800); }
+.oa-bnav.on::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  width: 20px; height: 3px;
+  background: var(--gold-500);
+  border-radius: 2px;
+}
+
+/* ── Content area ── */
+.oa-main {
+  padding: 18px 16px calc(var(--botnav) + var(--safe-b) + 24px);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* ══ RESPONSIVE: web layout at ≥1024px ═══════════════════════ */
+@media (min-width: 1024px) {
+  .oa-rail { display: flex; }
+  .oa-shell { padding-left: var(--rail); }
+  .oa-botnav { display: none; }
+  .oa-burger { display: none; }
+  .oa-main { padding: 26px 32px 60px; }
+  .oa-topbar { height: 56px; }
+  .oa-topbar .brandmark { display: none; }
+  body { font-size: 15px; }
+}
+
+@media (min-width: 1024px) {
+  .oa-only-mobile { display: none !important; }
+}
+@media (max-width: 1023px) {
+  .oa-only-web { display: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
