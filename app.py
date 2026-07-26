@@ -40,7 +40,19 @@ if mongo_uri and "connectTimeoutMS" not in mongo_uri:
     sep = "&" if "?" in mongo_uri else "?"
     app.config["MONGO_URI"] = f"{mongo_uri}{sep}connectTimeoutMS=10000&serverSelectionTimeoutMS=10000"
 
-mongo = PyMongo(app)
+mongo = None
+for attempt in range(5):
+    try:
+        mongo = PyMongo(app)
+        mongo.db.command("ping")
+        break
+    except Exception as e:
+        print(f"[MONGO WARNING] Connection attempt {attempt+1} error: {e}. Retrying in 1s...")
+        import time
+        time.sleep(1.0)
+
+if not mongo:
+    mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -163,24 +175,31 @@ def _center_crop_fallback(img_bgr, size=(100, 100)):
     return cv2.resize(crop, size)
 
 
-def _lbp_histogram(gray_img: np.ndarray) -> np.ndarray:
-    rows, cols = gray_img.shape
+def _lbp_histogram(gray_img: np.ndarray, grid=(8, 8)) -> np.ndarray:
+    """Extract Spatial Grid LBP (Local Binary Pattern) feature signature.
+    Divides face into an 8x8 spatial grid (64 sub-regions) for exact spatial feature matching."""
+    h, w = gray_img.shape
+    gh, gw = h // grid[0], w // grid[1]
     center = gray_img[1:-1, 1:-1].astype(np.int16)
     neighbors = [
         gray_img[0:-2, 0:-2], gray_img[0:-2, 1:-1], gray_img[0:-2, 2:],
-        gray_img[1:-1, 2:],
-        gray_img[2:,   2:],   gray_img[2:,   1:-1], gray_img[2:,   0:-2],
-        gray_img[1:-1, 0:-2],
+        gray_img[1:-1, 2:],   gray_img[2:,   2:],   gray_img[2:,   1:-1],
+        gray_img[2:,   0:-2], gray_img[1:-1, 0:-2]
     ]
     lbp = np.zeros_like(center, dtype=np.uint8)
     for bit, nb in enumerate(neighbors):
         lbp |= ((nb.astype(np.int16) >= center).astype(np.uint8) << bit)
 
-    hist, _ = np.histogram(lbp.ravel(), bins=256, range=(0, 256), density=True)
-    return hist.astype(np.float32)
+    hists = []
+    for r in range(grid[0]):
+        for c in range(grid[1]):
+            sub = lbp[r*gh:(r+1)*gh, c*gw:(c+1)*gw]
+            hist, _ = np.histogram(sub.ravel(), bins=256, range=(0, 256), density=True)
+            hists.append(hist.astype(np.float32))
+    return np.concatenate(hists)
 
 
-def _extract_face_embedding(img_bgr, required_size=(100, 100), strict=False):
+def _extract_face_embedding(img_bgr, required_size=(128, 128), strict=True):
     try:
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         rect = _detect_best_face(gray)
@@ -188,7 +207,7 @@ def _extract_face_embedding(img_bgr, required_size=(100, 100), strict=False):
 
         if rect is not None:
             x, y, w, h = rect
-            pad = int(min(w, h) * 0.12)
+            pad = int(min(w, h) * 0.15)
             h_img, w_img = img_bgr.shape[:2]
             x1 = max(0, x - pad); y1 = max(0, y - pad)
             x2 = min(w_img, x + w + pad); y2 = min(h_img, y + h + pad)
@@ -196,40 +215,36 @@ def _extract_face_embedding(img_bgr, required_size=(100, 100), strict=False):
             face_gray_crop  = gray[y1:y2, x1:x2]
         else:
             if strict:
-                print("[FACE] Not detected (strict mode)")
+                print("[FACE] Strict face check failed - no face bounding box found")
                 return None, None, False
             print("[FACE] Not detected - using center-crop fallback")
             face_crop_color = _center_crop_fallback(img_bgr, size=(200, 200))
             face_gray_crop  = cv2.cvtColor(face_crop_color, cv2.COLOR_BGR2GRAY)
 
-        clahe     = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        clahe     = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
         face_norm = clahe.apply(face_gray_crop)
         face_rsz  = cv2.resize(face_norm, required_size)
         embedding = _lbp_histogram(face_rsz)
-        print(f"[FACE] OK face_detected={face_detected}")
+        print(f"[FACE] Extracted spatial embedding, face_detected={face_detected}")
         return embedding.tolist(), face_crop_color, face_detected
 
     except Exception as e:
         print(f"[FACE] _extract_face_embedding error: {e}")
-        if strict:
-            return None, None, False
-        try:
-            gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-            rsz  = cv2.resize(gray, required_size)
-            emb  = _lbp_histogram(rsz)
-            return emb.tolist(), img_bgr, False
-        except Exception as e2:
-            print(f"[FACE] Fallback also failed: {e2}")
-            return None, None, False
+        return None, None, False
 
 
 def _chi2_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """Calculates region-normalized Chi-Square distance between Spatial LBP signatures."""
+    if len(a) != len(b):
+        return 2.0
     num = (a - b) ** 2
     den = a + b + 1e-9
-    return float(np.sum(num / den))
+    raw_dist = float(np.sum(num / den))
+    grid_count = len(a) / 256.0
+    return raw_dist / (grid_count if grid_count > 0 else 64.0)
 
 
-def compare_face_features(stored_list: list, live: list, threshold: float = 0.74):
+def compare_face_features(stored_list: list, live: list, threshold: float = 0.58):
     live_arr = np.array(live, dtype=np.float32)
 
     if len(stored_list) > 0 and isinstance(stored_list[0], (int, float)):
@@ -237,16 +252,20 @@ def compare_face_features(stored_list: list, live: list, threshold: float = 0.74
     else:
         stored_arrays = [np.array(e, dtype=np.float32) for e in stored_list]
 
-    distances = [_chi2_distance(s, live_arr) for s in stored_arrays]
-    min_dist  = min(distances)
-    # If multiple templates stored, take average of top 2 lowest distances for extra robustness
-    if len(distances) >= 2:
-        sorted_dists = sorted(distances)
-        effective_dist = (sorted_dists[0] + sorted_dists[1]) / 2.0
-    else:
-        effective_dist = min_dist
-        
-    return effective_dist, effective_dist < threshold
+    distances = []
+    for s in stored_arrays:
+        if len(s) == len(live_arr):
+            distances.append(_chi2_distance(s, live_arr))
+        else:
+            # Handle legacy 256-dim embeddings gracefully by recalculating raw chi2
+            raw_d = float(np.sum(((s - live_arr[:256])**2) / (s + live_arr[:256] + 1e-9)))
+            distances.append(raw_d)
+
+    if not distances:
+        return 1.0, False
+
+    min_dist = min(distances)
+    return min_dist, min_dist < threshold
 
 
 def img_to_b64_jpeg(img_bgr, quality: int = 75) -> str:
@@ -690,9 +709,9 @@ def register_face():
             img = decode_image_b64(b64)
             if img is None:
                 return jsonify({"error": f"Could not decode image {i+1}"}), 400
-            emb, face_crop, face_detected = _extract_face_embedding(img, strict=False)
-            if emb is None:
-                return jsonify({"error": f"Could not process photo {i+1}", "photo_index": i}), 400
+            emb, face_crop, face_detected = _extract_face_embedding(img, strict=True)
+            if emb is None or not face_detected:
+                return jsonify({"error": f"No clear face detected in photo {i+1}. Please ensure good lighting and look at camera.", "photo_index": i}), 400
             print(f"[REG] Photo {i+1}: face_detected={face_detected}")
             embeddings.append(emb)
             if face_crop is not None:
@@ -979,41 +998,106 @@ def attendance_login():
             ]
             quote = random.choice(quotes)
             
-            msg = Message("Login Confirmation - JAIN Attendance", recipients=[user_email])
+            logo_path = os.path.join(app.static_folder, 'images', 'applogo.png')
+            logo_b64 = ""
+            try:
+                with open(logo_path, 'rb') as lf:
+                    logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
+            except Exception:
+                pass
+
+            logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" alt="JAIN Logo" style="height: 48px; width: auto; vertical-align: middle; margin-right: 12px;">' if logo_b64 else ''
+
+            msg = Message(f"Attendance Recorded · {shift_name}", recipients=[user_email])
             msg.html = f"""
-            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f5f5f7; padding: 40px 20px;">
-                <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
-                    <div style="background-color: #0071e3; padding: 30px 20px; text-align: center;">
-                        <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 700;">JAIN Attendance</h1>
-                    </div>
-                    <div style="padding: 40px 30px;">
-                        <h2 style="margin-top: 0; color: #1d1d1f; font-size: 20px;">Hello {current_user.username},</h2>
-                        <p style="color: #555; font-size: 16px; line-height: 1.6;">You have successfully logged in to the portal.</p>
-                        
-                        <div style="background-color: #f5f5f7; border-radius: 12px; padding: 20px; margin: 25px 0;">
-                            <table style="width: 100%; border-collapse: collapse;">
-                                <tr>
-                                    <td style="padding: 8px 0; color: #86868b; font-weight: 600; width: 40%;">Shift Type</td>
-                                    <td style="padding: 8px 0; color: #1d1d1f; font-weight: 700; text-align: right;">{shift_name}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0; color: #86868b; font-weight: 600; width: 40%;">Login Time</td>
-                                    <td style="padding: 8px 0; color: #1d1d1f; font-weight: 700; text-align: right;">{format_ist_time(now_utc)}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0; color: #86868b; font-weight: 600; width: 40%;">Location</td>
-                                    <td style="padding: 8px 0; color: #1d1d1f; font-weight: 700; text-align: right; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{address}">{address}</td>
-                                </tr>
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #f4f6f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1c1c1e;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f6f8; padding: 30px 15px;">
+                <tr>
+                  <td align="center">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.08);">
+                      
+                      <!-- Header -->
+                      <tr>
+                        <td style="background-color: #0A1324; padding: 24px 30px;">
+                          <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="vertical-align: middle; width: 60px;">
+                                {logo_img_tag}
+                              </td>
+                              <td style="vertical-align: middle;">
+                                <div style="color: #ffffff; font-size: 15px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">OFFICE OF ACADEMICS</div>
+                                <div style="color: rgba(255,255,255,0.7); font-size: 12px; margin-top: 2px;">JAIN (Deemed-to-be University) · Head Office</div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+
+                      <!-- Body -->
+                      <tr>
+                        <td style="padding: 32px 30px 24px 30px;">
+                          <div style="display: inline-block; background-color: #e8f5e9; color: #2e7d32; font-size: 12px; font-weight: 700; padding: 5px 14px; border-radius: 20px; text-transform: uppercase; margin-bottom: 16px;">
+                            ✓ Attendance Recorded
+                          </div>
+                          
+                          <h1 style="font-size: 20px; font-weight: 700; color: #0A1324; margin: 0 0 12px 0;">Hello {current_user.username},</h1>
+                          <p style="font-size: 14px; line-height: 1.5; color: #48484a; margin: 0 0 20px 0;">
+                            Your attendance sign-in has been successfully registered on the <strong>Attendance Portal</strong>.
+                          </p>
+
+                          <!-- Attendance Details Card -->
+                          <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                              <tr>
+                                <td style="padding: 6px 0; font-size: 13px; color: #6c757d; font-weight: 600;">Signed in User</td>
+                                <td style="padding: 6px 0; font-size: 13px; color: #0A1324; font-weight: 700; text-align: right;">{current_user.username}</td>
+                              </tr>
+                              <tr>
+                                <td style="padding: 6px 0; font-size: 13px; color: #6c757d; font-weight: 600; border-top: 1px dashed #e9ecef;">Session / Shift</td>
+                                <td style="padding: 6px 0; font-size: 13px; color: #0071e3; font-weight: 700; text-align: right; border-top: 1px dashed #e9ecef;">{shift_name}</td>
+                              </tr>
+                              <tr>
+                                <td style="padding: 6px 0; font-size: 13px; color: #6c757d; font-weight: 600; border-top: 1px dashed #e9ecef;">Sign-In Time (IST)</td>
+                                <td style="padding: 6px 0; font-size: 13px; color: #0A1324; font-weight: 700; text-align: right; border-top: 1px dashed #e9ecef;">{format_ist_time(now_utc)}</td>
+                              </tr>
+                              <tr>
+                                <td style="padding: 6px 0; font-size: 13px; color: #6c757d; font-weight: 600; border-top: 1px dashed #e9ecef;">Logged Location</td>
+                                <td style="padding: 6px 0; font-size: 12px; color: #212529; font-weight: 600; text-align: right; border-top: 1px dashed #e9ecef; max-width: 220px;">{address}</td>
+                              </tr>
                             </table>
-                        </div>
-                        
-                        <p style="color: #86868b; font-style: italic; text-align: center; margin-top: 30px; font-size: 15px;">"{quote}"</p>
-                    </div>
-                    <div style="background-color: #f5f5f7; padding: 20px; text-align: center; font-size: 13px; color: #a1a1a6;">
-                        This is an automated message from the JAIN Intern Attendance System.
-                    </div>
-                </div>
-            </div>
+                          </div>
+
+                          <!-- Daily Quote -->
+                          <div style="border-left: 3px solid #0071e3; background-color: #f0f7ff; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-bottom: 20px;">
+                            <p style="font-size: 13px; font-style: italic; color: #1d60a1; margin: 0;">"{quote}"</p>
+                          </div>
+
+                          <p style="font-size: 12px; color: #6c757d; margin: 0; line-height: 1.4;">
+                            If you did not initiate this sign-in, please inform your team administrator.
+                          </p>
+                        </td>
+                      </tr>
+
+                      <!-- Footer -->
+                      <tr>
+                        <td style="background-color: #f8f9fa; border-top: 1px solid #e9ecef; padding: 18px 30px; text-align: center;">
+                          <div style="font-size: 12px; font-weight: 600; color: #495057;">Office of Academics · JAIN (Deemed-to-be University)</div>
+                          <div style="font-size: 11px; color: #868e96; margin-top: 3px;">Head Office, Bengaluru · Attendance Portal</div>
+                        </td>
+                      </tr>
+
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
             """
             mail.send(msg)
     except Exception as e:
