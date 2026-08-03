@@ -230,12 +230,20 @@ leave*; no record → *Missed sign-in*; a session still open → *Still active*;
 closed sessions totalling ≥ their target → *On track*; otherwise → *Left
 early*.
 
+Under the category columns the tab also carries an **Individual attendance
+calendar**: a searchable list of every registered person. Click a name and a
+month calendar opens showing exactly which days they signed in — green for
+days that met their hours target, amber for a short day, plain for no sign-in
+— with the **count of days logged in** and total hours for the month, and
+‹ › month navigation. It's login days only; no location is shown here.
+
 ### Backend
 
-* New route `GET /api/admin/analysis-overview?date=YYYY-MM-DD` in `app.py`
+* New routes `GET /api/admin/analysis-overview?date=YYYY-MM-DD` and
+  `GET /api/admin/user-calendar/<user_id>?month=YYYY-MM` in `app.py`
   (read-only; no schema change).
-* Charts are pure CSS/SVG (conic-gradient donut, CSS bars) — no chart library
-  added.
+* Charts and the calendar are pure CSS/SVG (conic-gradient donut, CSS grid
+  calendar) — no chart library added.
 
 ---
 

@@ -657,6 +657,82 @@
           </div>`;
     }
 
+    // ── Individual attendance calendar ────────────────────────────────────
+    const CAL_MONTHS = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+    let calUserId = null, calUsername = '', calMonth = '';
+
+    function filterUserCalList() {
+        const q = (document.getElementById('anUserSearch').value || '').toLowerCase();
+        document.querySelectorAll('#anUserCalList .an-name').forEach(b => {
+            b.style.display = b.dataset.name.includes(q) ? '' : 'none';
+        });
+    }
+
+    function openUserCalendar(btn) {
+        calUserId = btn.dataset.uid;
+        calUsername = btn.dataset.fullname || '';
+        const username = calUsername;
+        calMonth = (document.getElementById('analysisDate').value || '').slice(0, 7)
+                   || new Date().toISOString().slice(0, 7);
+        document.getElementById('calTitle').textContent = username + ' · attendance';
+        document.getElementById('calendarModal').classList.add('active');
+        loadCalendar();
+    }
+
+    function closeCalendarModal() {
+        document.getElementById('calendarModal').classList.remove('active');
+    }
+
+    function calShiftMonth(delta) {
+        let [y, m] = calMonth.split('-').map(Number);
+        m += delta;
+        if (m < 1)  { m = 12; y--; }
+        if (m > 12) { m = 1;  y++; }
+        calMonth = `${y}-${String(m).padStart(2, '0')}`;
+        loadCalendar();
+    }
+
+    async function loadCalendar() {
+        const body = document.getElementById('calBody');
+        body.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
+        try {
+            const res = await fetch(`/api/admin/user-calendar/${calUserId}?month=${encodeURIComponent(calMonth)}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load');
+            renderCalendar(data);
+        } catch (err) {
+            body.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
+    }
+
+    function renderCalendar(data) {
+        const [y, m] = data.month.split('-').map(Number);
+        const startDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();   // 0=Sun
+        const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        const byDate = {};
+        (data.days || []).forEach(d => { byDate[d.date] = d; });
+
+        const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        let cells = dow.map(d => `<div class="cal-dow">${d}</div>`).join('');
+        for (let i = 0; i < startDow; i++) cells += '<div class="cal-cell empty"></div>';
+        for (let day = 1; day <= daysInMonth; day++) {
+            const ds = `${data.month}-${String(day).padStart(2, '0')}`;
+            const e = byDate[ds];
+            let cls = 'none', tip = 'No sign-in';
+            if (e) { cls = e.met_target ? 'met' : 'part'; tip = `${e.hours}h · ${e.sessions} session(s)`; }
+            cells += `<div class="cal-cell ${cls}" title="${tip}">
+                        <span class="cal-num">${day}</span>
+                        ${e ? `<span class="cal-hrs">${e.hours}h</span>` : ''}
+                      </div>`;
+        }
+        document.getElementById('calBody').innerHTML = `<div class="cal-grid">${cells}</div>`;
+        document.getElementById('calMonthLabel').textContent = `${CAL_MONTHS[m - 1]} ${y}`;
+        const n = data.days_logged;
+        document.getElementById('calDaysCount').textContent =
+            `${n} day${n !== 1 ? 's' : ''} · ${data.total_hours}h`;
+    }
+
     // ── Sign-in analysis: date range + users + title → download / share ───
     let anTitleTouched = false;   // has the admin typed their own title?
 
@@ -795,10 +871,13 @@
     }
 
     // Close modals on outside click
-    ['userModal','fullFaceModal'].forEach(id => {
-        document.getElementById(id).addEventListener('click', e => {
+    ['userModal','fullFaceModal','calendarModal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('click', e => {
             if (e.target === e.currentTarget) {
                 if (id === 'userModal') closeUserModal();
+                else if (id === 'calendarModal') closeCalendarModal();
                 else closeFaceImageModal();
             }
         });
