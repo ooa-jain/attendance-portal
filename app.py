@@ -1980,11 +1980,120 @@ def admin_analysis_overview():
         return jsonify({"error": str(e)}), 500
 
 
+def months_in_range(start, end):
+    """List of 'YYYY-MM' strings spanning start..end (inclusive)."""
+    out, y, m = [], start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        out.append(f"{y:04d}-{m:02d}")
+        m += 1
+        if m > 12:
+            m = 1; y += 1
+    return out
+
+
+def compute_user_analysis(user_doc, start, end):
+    """Full per-person attendance analysis over start..end (inclusive date objects):
+    day-by-day status (present / absent / leave), month calendars, and a summary.
+    Working week is Mon–Sat; future days are not judged.
+    """
+    uid    = user_doc["_id"]
+    target = float(user_doc.get("work_hours", DEFAULT_WORK_HOURS) or DEFAULT_WORK_HOURS)
+    start_s, end_s = start.isoformat(), end.isoformat()
+
+    recs = list(mongo.db.attendance.find({
+        "user_id": uid, "date": {"$gte": start_s, "$lte": end_s},
+    }))
+    days = {}
+    for r in recs:
+        d = r.get("date")
+        if not d:
+            continue
+        e = days.setdefault(d, {"date": d, "sessions": 0, "hours": 0.0})
+        e["sessions"] += 1
+        e["hours"]    += r.get("hours", 0) or 0
+    for e in days.values():
+        e["hours"]      = round(e["hours"], 2)
+        e["met_target"] = e["hours"] + 1e-6 >= target
+
+    leave_recs = list(mongo.db.leave_applications.find({
+        "user_id": uid, "status": "approved", "date": {"$gte": start_s, "$lte": end_s},
+    }))
+    leave_dates = {l.get("date") for l in leave_recs if l.get("date")}
+
+    today = date.today()
+    present_set = set(days.keys())
+    timeline = []
+    working = present = absent = leave = 0
+    cur = start
+    guard = 0
+    while cur <= end and guard < 800:
+        guard += 1
+        if cur > today:
+            break
+        if cur.weekday() != 6:              # Sunday off
+            iso = cur.isoformat()
+            working += 1
+            if iso in present_set:
+                present += 1
+                status, hrs, met = "present", days[iso]["hours"], days[iso]["met_target"]
+            elif iso in leave_dates:
+                leave += 1
+                status, hrs, met = "leave", 0, False
+            else:
+                absent += 1
+                status, hrs, met = "absent", 0, False
+            timeline.append({"date": iso, "weekday": cur.strftime("%a"),
+                             "status": status, "hours": hrs, "met": met})
+        cur += timedelta(days=1)
+
+    total_hours = round(sum(e["hours"] for e in days.values()), 2)
+    denom = max(working - leave, 0)
+    rate  = round(present / denom * 100) if denom else 0
+
+    return {
+        "target_hours": round(target, 2),
+        "days":         [days[d] for d in sorted(days)],
+        "days_logged":  len(days),
+        "total_hours":  total_hours,
+        "timeline":     timeline,
+        "months":       months_in_range(start, min(end, today)),
+        "summary": {
+            "working_days":    working,
+            "present":         present,
+            "absent":          absent,
+            "leave":           leave,
+            "total_hours":     total_hours,
+            "avg_hours":       round(total_hours / present, 1) if present else 0,
+            "attendance_rate": rate,
+        },
+    }
+
+
+def _resolve_user_range():
+    """Read from/to (or a month, or default to the current month up to today)."""
+    frm = request.args.get("from")
+    to  = request.args.get("to")
+    if frm and to:
+        rng = expand_range(frm, to)
+        if rng:
+            return date.fromisoformat(rng[0]), date.fromisoformat(rng[-1])
+    month = request.args.get("month")
+    if month:
+        try:
+            d0 = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+            nxt = date(d0.year + 1, 1, 1) if d0.month == 12 else date(d0.year, d0.month + 1, 1)
+            return d0, nxt - timedelta(days=1)
+        except ValueError:
+            pass
+    today = date.today()
+    return today.replace(day=1), today
+
+
 @app.route("/api/admin/user-calendar/<user_id>")
 @login_required
 def admin_user_calendar(user_id):
-    """Which days a single user signed in during a given month (login days only,
-    no location). Powers the per-person attendance calendar.
+    """Full per-person attendance analysis over a date range (or month). Login
+    days only — no location. Powers the per-person calendar + summary.
     """
     if current_user.role != "admin":
         return jsonify({"error": "Admin access required"}), 403
@@ -1992,96 +2101,17 @@ def admin_user_calendar(user_id):
         user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
         if not user_doc:
             return jsonify({"error": "User not found"}), 404
-
-        month = request.args.get("month") or date.today().strftime("%Y-%m")
-        try:
-            datetime.strptime(month, "%Y-%m")
-        except ValueError:
-            month = date.today().strftime("%Y-%m")
-
-        target = float(user_doc.get("work_hours", DEFAULT_WORK_HOURS) or DEFAULT_WORK_HOURS)
-
-        recs = list(mongo.db.attendance.find({
-            "user_id": ObjectId(user_id),
-            "date":    {"$regex": f"^{month}"},
-        }))
-
-        # Collapse multiple sessions per day into one calendar entry.
-        days = {}
-        for r in recs:
-            d = r.get("date")
-            if not d:
-                continue
-            entry = days.setdefault(d, {"date": d, "sessions": 0, "hours": 0.0})
-            entry["sessions"] += 1
-            entry["hours"]    += r.get("hours", 0) or 0
-
-        day_list = []
-        for d in sorted(days):
-            e = days[d]
-            e["hours"]      = round(e["hours"], 2)
-            e["met_target"] = e["hours"] + 1e-6 >= target
-            day_list.append(e)
-
-        # Approved leave days for this user in the month (used for absent maths).
-        leave_recs = list(mongo.db.leave_applications.find({
-            "user_id": ObjectId(user_id),
-            "status":  "approved",
-            "date":    {"$regex": f"^{month}"},
-        }))
-        leave_dates = {l.get("date") for l in leave_recs if l.get("date")}
-
-        # Walk every working day (Mon–Sat) of the month up to today, and classify it.
-        y, mo = (int(x) for x in month.split("-"))
-        if mo == 12:
-            nxt = date(y + 1, 1, 1)
-        else:
-            nxt = date(y, mo + 1, 1)
-        last_day = (nxt - timedelta(days=1)).day
-        today = date.today()
-        present_set = set(days.keys())
-
-        working_days = present = absent = leave = 0
-        for dd in range(1, last_day + 1):
-            cur = date(y, mo, dd)
-            if cur > today:          # don't judge days that haven't happened yet
-                break
-            if cur.weekday() == 6:   # Sunday off (Mon–Sat is a working week here)
-                continue
-            iso = cur.isoformat()
-            working_days += 1
-            if iso in present_set:
-                present += 1
-            elif iso in leave_dates:
-                leave += 1
-            else:
-                absent += 1
-
-        total_hours = round(sum(e["hours"] for e in day_list), 2)
-        # Attendance rate counts a leave day as "not held against them".
-        rate_denom  = max(working_days - leave, 0)
-        attendance_rate = round(present / rate_denom * 100) if rate_denom else 0
-
-        return jsonify({
-            "user_id":       user_id,
-            "username":      user_doc.get("username", ""),
-            "role":          user_doc.get("role", "intern"),
-            "email":         user_doc.get("email", ""),
-            "month":         month,
-            "target_hours":  round(target, 2),
-            "days":          day_list,
-            "days_logged":   len(day_list),
-            "total_hours":   total_hours,
-            "summary": {
-                "working_days":    working_days,
-                "present":         present,
-                "absent":          absent,
-                "leave":           leave,
-                "total_hours":     total_hours,
-                "avg_hours":       round(total_hours / present, 1) if present else 0,
-                "attendance_rate": attendance_rate,
-            },
+        start, end = _resolve_user_range()
+        data = compute_user_analysis(user_doc, start, end)
+        data.update({
+            "user_id":  user_id,
+            "username": user_doc.get("username", ""),
+            "role":     user_doc.get("role", "intern"),
+            "email":    user_doc.get("email", ""),
+            "start":    start.isoformat(),
+            "end":      end.isoformat(),
         })
+        return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2465,6 +2495,33 @@ def shared_analysis_view(token):
     for r in rows:
         by_day.setdefault(r["date"], []).append(r)
     days = [{"date": d, "rows": by_day[d]} for d in sorted(by_day.keys())]
+
+    # Per-person breakdown, scoped to exactly what this share already contains
+    # (its selected days and users) — click a name to see that person's days,
+    # present vs absent across the report's days, and hours.
+    report_days = sorted(set(dates))
+    total_days  = len(report_days)
+    by_user = {}
+    for r in rows:
+        p = by_user.setdefault(r["username"], {"username": r["username"], "present": set(),
+                                               "hours": 0.0, "rows": []})
+        p["present"].add(r["date"])
+        p["hours"] += r.get("hours", 0) or 0
+        p["rows"].append(r)
+    people_breakdown = []
+    for uname in sorted(by_user, key=lambda x: x.lower()):
+        p = by_user[uname]
+        present = len(p["present"])
+        people_breakdown.append({
+            "username":   uname,
+            "present":    present,
+            "absent":     max(total_days - present, 0),
+            "total_days": total_days,
+            "hours":      round(p["hours"], 2),
+            "avg":        round(p["hours"] / present, 1) if present else 0,
+            "rows":       sorted(p["rows"], key=lambda x: (x["date"], x.get("login_time") or "")),
+        })
+
     return render_template(
         "shared_analysis.html",
         not_found=False,
@@ -2473,8 +2530,10 @@ def shared_analysis_view(token):
         dates=dates,
         users=users,
         days=days,
+        people_breakdown=people_breakdown,
+        report_day_count=total_days,
         total_records=len(rows),
-        people=len({r["username"] for r in rows}),
+        people=len(by_user),
         created_by=share.get("created_by", ""),
         office_lat=OFFICE_LAT,
         office_lng=OFFICE_LNG,

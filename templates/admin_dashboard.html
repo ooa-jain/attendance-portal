@@ -603,9 +603,9 @@
     </div>
     <div class="ad-modal-body">
       <div class="cal-toolbar">
-        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="calShiftMonth(-1)"><i class="fas fa-chevron-left"></i></button>
-        <div class="cal-month" id="calMonthLabel">—</div>
-        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="calShiftMonth(1)"><i class="fas fa-chevron-right"></i></button>
+        <label class="cal-fld">From <input type="date" id="calFrom" class="oa-input"></label>
+        <label class="cal-fld">To <input type="date" id="calTo" class="oa-input"></label>
+        <button class="oa-btn oa-btn-primary oa-btn-sm" onclick="loadCalendar()"><i class="fas fa-magnifying-glass-chart"></i> Analyse</button>
         <span class="spacer"></span>
         <span class="oa-tag" id="calDaysCount">0 days</span>
       </div>
@@ -616,7 +616,8 @@
       <div class="cal-legend">
         <span><span class="cal-key met"></span> Met target</span>
         <span><span class="cal-key part"></span> Signed in (short)</span>
-        <span><span class="cal-key none"></span> No sign-in</span>
+        <span><span class="cal-key absent"></span> Absent</span>
+        <span><span class="cal-key leave"></span> On leave</span>
       </div>
     </div>
   </div>

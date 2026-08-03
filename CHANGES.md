@@ -240,11 +240,19 @@ month calendar opens showing exactly which days they signed in — green for
 days that met their hours target, amber for a short day, plain for no sign-in
 — with ‹ › month navigation. It's login days only; no location is shown here.
 
-Above the calendar a **full month summary** now shows **Days worked · Absent ·
-On leave · Total hours · Avg/day · Attendance %**, measured against the
-month's working days (Mon–Sat, only up to today). Absent = working days minus
-the days present minus approved leave; the attendance rate does not count
-leave days against the person.
+The per-person view takes a **From → To range** (any span, not just one
+month). Above the calendars a **full summary** shows **Days worked · Absent ·
+On leave · Total hours · Avg/day · Attendance %**, measured against the range's
+working days (Mon–Sat, only up to today). Absent = working days minus days
+present minus approved leave; the attendance rate does not count leave days
+against the person. The range renders one calendar per month it spans, with
+each day coloured green (met target) / amber (short) / red (absent) / grey
+(leave).
+
+The **public shared link** now carries the same **By day / By person** toggle:
+click a person to expand their days, with present-vs-absent across the report's
+days and their hours — scoped to exactly the days and people that share
+already contained (no login, nothing extra exposed).
 
 ### Backend
 

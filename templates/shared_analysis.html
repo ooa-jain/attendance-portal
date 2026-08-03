@@ -57,6 +57,33 @@
   .sa-badge.remote { background: #FDE7E7; color: #b42318; }
   .sa-addr { color: var(--t2); font-size: .74rem; }
   .sa-addr a { color: var(--ink-600); font-weight: 600; white-space: nowrap; }
+  .sa-tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .sa-tab {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 10px 15px; font-size: .8rem; font-weight: 700; color: var(--t2);
+    border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; background: none;
+  }
+  .sa-tab.on { color: var(--ink-800); border-bottom-color: var(--gold-500); }
+  .sa-person {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg);
+    margin-bottom: 10px; overflow: hidden;
+  }
+  .sa-person > summary {
+    list-style: none; cursor: pointer; padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .sa-person > summary::-webkit-details-marker { display: none; }
+  .sa-person > summary::before { content: '▸'; color: var(--t3); font-size: .8rem; }
+  .sa-person[open] > summary::before { content: '▾'; }
+  .sa-person-name { font-weight: 700; font-size: .95rem; color: var(--ink-800); }
+  .sa-person-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .sa-pill {
+    font-size: .68rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+    background: var(--paper-2); color: var(--t2);
+  }
+  .sa-pill.ok  { background: #E8F5EC; color: #1E7D46; }
+  .sa-pill.bad { background: #FCEBEA; color: #B7302A; }
+  .sa-person .sa-tablewrap { border: none; border-top: 1px solid var(--line); border-radius: 0; }
   .sa-foot { margin-top: 30px; font-size: .72rem; color: var(--t3); text-align: center; }
   .sa-empty { text-align: center; padding: 70px 20px; color: var(--t3); }
   .sa-empty i { font-size: 3rem; margin-bottom: 14px; display: block; color: var(--line-2); }
@@ -93,6 +120,57 @@
     <div class="sa-stat"><div class="n">{{ total_records }}</div><div class="l">Sign-ins</div></div>
   </div>
 
+  <div class="sa-tabs">
+    <button type="button" class="sa-tab on" data-view="day" onclick="saView('day', this)"><i class="fas fa-calendar-day"></i> By day</button>
+    <button type="button" class="sa-tab" data-view="person" onclick="saView('person', this)"><i class="fas fa-users"></i> By person</button>
+  </div>
+
+  <!-- ══ BY PERSON ══ -->
+  <div id="sa-view-person" hidden>
+    {% if people_breakdown %}
+      {% for p in people_breakdown %}
+      <details class="sa-person">
+        <summary>
+          <span class="sa-person-name">{{ p.username }}</span>
+          <span class="sa-person-stats">
+            <span class="sa-pill ok">{{ p.present }} present</span>
+            <span class="sa-pill bad">{{ p.absent }} absent</span>
+            <span class="sa-pill">of {{ p.total_days }} day{{ 's' if p.total_days != 1 else '' }}</span>
+            <span class="sa-pill">{{ p.hours }}h · avg {{ p.avg }}h</span>
+          </span>
+        </summary>
+        <div class="sa-tablewrap">
+          <table class="sa-tbl">
+            <thead>
+              <tr><th>Date</th><th>Login (IST)</th><th>Logout (IST)</th><th>Hours</th><th>Where they signed in</th></tr>
+            </thead>
+            <tbody>
+              {% for r in p.rows %}
+              <tr>
+                <td class="sa-mono">{{ r.date }}</td>
+                <td class="sa-mono">{{ r.login_time or '—' }}</td>
+                <td class="sa-mono">{{ r.logout_time or '—' }}</td>
+                <td class="sa-mono">{{ r.hours }}</td>
+                <td>
+                  <span class="sa-badge {{ 'office' if r.at_office == 'Yes' else 'remote' }}">
+                    {{ 'On campus' if r.at_office == 'Yes' else 'Remote' }}
+                  </span>
+                  <div class="sa-addr">{{ r.login_address or 'Location not recorded' }}</div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% endfor %}
+    {% else %}
+      <div class="sa-empty"><i class="fas fa-user-slash"></i><p>No people in this report.</p></div>
+    {% endif %}
+  </div>
+
+  <!-- ══ BY DAY ══ -->
+  <div id="sa-view-day">
   {% if days %}
     {% for day in days %}
     <section class="sa-day">
@@ -140,6 +218,7 @@
       <p>No sign-in records for the selected day{{ 's' if dates|length != 1 else '' }}.</p>
     </div>
   {% endif %}
+  </div><!-- /sa-view-day -->
 
   <div class="sa-foot">
     Shared from the JAIN Attendance Portal{% if created_by %} by {{ created_by }}{% endif %}.
@@ -147,5 +226,13 @@
   </div>
 {% endif %}
 </div>
+<script>
+  function saView(which, btn) {
+    document.getElementById('sa-view-day').hidden    = (which !== 'day');
+    document.getElementById('sa-view-person').hidden = (which !== 'person');
+    document.querySelectorAll('.sa-tab').forEach(t => t.classList.remove('on'));
+    if (btn) btn.classList.add('on');
+  }
+</script>
 </body>
 </html>

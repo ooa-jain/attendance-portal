@@ -569,3 +569,17 @@
 .cal-stat .n { font-family: var(--mono); font-size: 1.25rem; font-weight: 700; line-height: 1; }
 .cal-stat .l { font-size: .56rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--t3); margin-top: 5px; }
 .cal-note { grid-column: 1 / -1; font-size: .68rem; color: var(--t3); text-align: center; margin-top: -2px; }
+
+/* ── Per-user range calendar: From/To, multi-month, status colours ──── */
+.cal-fld { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; color: var(--t2); }
+.cal-fld .oa-input { width: auto; }
+.cal-monthblock { margin-bottom: 18px; }
+.cal-monthblock .cal-month { text-align: left; margin-bottom: 8px; min-width: 0; }
+.cal-cell.off  { background: transparent; border-color: transparent; }
+.cal-cell.off  .cal-num { color: var(--t3); opacity: .5; }
+.cal-cell.absent { background: #FCEBEA; border-color: #E7B4AF; }
+.cal-cell.absent .cal-num { color: #B7302A; }
+.cal-cell.leave  { background: #EEF0F3; border-color: #D3D8DF; }
+.cal-cell.leave  .cal-num { color: #6B7480; }
+.cal-key.absent { background: #FCEBEA; border-color: #E7B4AF; }
+.cal-key.leave  { background: #EEF0F3; border-color: #D3D8DF; }
