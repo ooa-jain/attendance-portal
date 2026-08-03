@@ -1919,9 +1919,13 @@ def compute_day_overview(day, usernames=None):
             logout_time = None
             total_hours = 0.0
             has_active  = False
+            login_loc   = {}
+            at_office   = False
             if recs:
                 recs_sorted = sorted(recs, key=lambda r: r.get("login_time") or datetime.min)
                 login_time  = recs_sorted[0].get("login_time")
+                login_loc   = recs_sorted[0].get("login_location", {}) or {}
+                at_office   = bool(recs_sorted[0].get("at_office"))
                 for r in recs:
                     total_hours += r.get("hours", 0) or 0
                     if r.get("logout_time"):
@@ -1962,6 +1966,10 @@ def compute_day_overview(day, usernames=None):
                 "shortfall":     round(max(target - total_hours, 0), 2),
                 "login_time":    format_ist_time(login_time) if login_time else None,
                 "logout_time":   format_ist_time(logout_time) if logout_time else None,
+                "login_address": login_loc.get("address", ""),
+                "login_lat":     login_loc.get("lat"),
+                "login_lng":     login_loc.get("lng"),
+                "at_office":     at_office,
                 "present_days":  present_days,
                 "on_track_days": on_track_days,
                 "avg_hours":     avg_hours,
