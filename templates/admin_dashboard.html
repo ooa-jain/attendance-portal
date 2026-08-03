@@ -210,10 +210,18 @@
             <button type="button" class="oa-btn oa-btn-primary" onclick="downloadAnalysis()">
               <i class="fas fa-file-excel"></i> Download Excel
             </button>
-            <button type="button" id="analysisShareBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink()">
-              <i class="fas fa-link"></i> Create shareable link
+            <button type="button" id="analysisShareBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink('range')">
+              <i class="fas fa-calendar-days"></i> Monthly link (this range)
+            </button>
+            <button type="button" id="analysisOverallBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink('overall')"
+                    title="A live link that always shows who's in / out for the day the viewer picks">
+              <i class="fas fa-chart-pie"></i> Overall link (live)
             </button>
           </div>
+          <small class="ad-hint" style="margin-top:8px">
+            <strong>Monthly</strong> = a fixed snapshot of the From→To range above (with Excel).
+            <strong>Overall</strong> = a live page showing who signed in / didn't for any day (today, yesterday…), with per-person calendars — the same as this Analysis page.
+          </small>
 
           <div id="analysisShareResult" class="ad-share-result" style="display:none">
             <label>Anyone with this link can view the analysis and download the Excel — <strong>no login needed</strong>.</label>

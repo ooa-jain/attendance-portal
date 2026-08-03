@@ -812,10 +812,15 @@
         window.location.href = '/admin/analysis/excel?' + params.toString();
     }
 
-    async function createShareLink() {
-        const r = anGetRange();
-        if (!r) return;
-        const btn = document.getElementById('analysisShareBtn');
+    async function createShareLink(kind) {
+        kind = (kind === 'overall') ? 'overall' : 'range';
+        const payload = { kind, users: anSelectedUsers(), title: anTitle() };
+        if (kind === 'range') {
+            const r = anGetRange();
+            if (!r) return;
+            payload.from = r.from; payload.to = r.to;
+        }
+        const btn = document.getElementById(kind === 'overall' ? 'analysisOverallBtn' : 'analysisShareBtn');
         const original = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-circle-notch spin"></i> Creating…';
@@ -823,18 +828,15 @@
             const res = await fetch('/api/admin/analysis/share', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    from: r.from, to: r.to,
-                    users: anSelectedUsers(),
-                    title: anTitle()
-                })
+                body: JSON.stringify(payload)
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to create link');
             document.getElementById('analysisShareUrl').value = data.url;
             document.getElementById('analysisShareOpen').href  = data.url;
             document.getElementById('analysisShareResult').style.display = 'block';
-            showAlert('Share link ready — works without login', 'success');
+            showAlert((kind === 'overall' ? 'Overall (live) link ready' : 'Monthly link ready')
+                      + ' — works without login', 'success');
             loadShares();   // keep the saved-links history current
         } catch (err) {
             showAlert(err.message, 'danger');
@@ -888,14 +890,18 @@
             return;
         }
         box.innerHTML = anShares.map((s, i) => {
+            const overall = (s.kind === 'overall');
             const dates = s.dates || [];
-            const span = dates.length
-                ? (dates.length === 1 ? dates[0] : `${dates[0]} → ${dates[dates.length - 1]} (${dates.length}d)`)
-                : '—';
+            const span = overall
+                ? 'Live · any day'
+                : (dates.length ? (dates.length === 1 ? dates[0] : `${dates[0]} → ${dates[dates.length - 1]} (${dates.length}d)`) : '—');
             const who = (s.users && s.users.length) ? `${s.users.length} user(s)` : 'All users';
+            const badge = overall
+                ? '<span class="ad-kind kind-overall">Overall</span>'
+                : '<span class="ad-kind kind-range">Monthly</span>';
             return `<div class="ad-saved-item">
                 <div class="ad-saved-info">
-                  <div class="ad-saved-title">${escapeHtml(s.title || 'Sign-in analysis')}</div>
+                  <div class="ad-saved-title">${badge} ${escapeHtml(s.title || 'Sign-in analysis')}</div>
                   <div class="ad-saved-meta">${span} · ${who}${s.created_at ? ' · ' + s.created_at : ''}</div>
                 </div>
                 <div class="ad-saved-acts">

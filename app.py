@@ -1862,25 +1862,24 @@ def admin_early_logouts():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/admin/analysis-overview")
-@login_required
-def admin_analysis_overview():
-    """Power-BI-style snapshot for one day across EVERY registered (non-admin) user:
-    who signed in properly, who left early, who never signed in, who's on leave,
-    plus each person's 30-day compliance progress.
+def compute_day_overview(day, usernames=None):
+    """Power-BI-style snapshot for one day across every registered (non-admin)
+    user (optionally restricted to `usernames`): who signed in properly, who left
+    early, who never signed in, who's on leave / off, plus 30-day progress.
+    Returns a plain dict (no Flask response) so admin and public views can share it.
     """
-    if current_user.role != "admin":
-        return jsonify({"error": "Admin access required"}), 403
     try:
-        day = request.args.get("date") or date.today().isoformat()
-        try:
-            day_date = datetime.strptime(day, "%Y-%m-%d").date()
-        except ValueError:
-            day_date = date.today()
-            day = day_date.isoformat()
+        day_date = datetime.strptime(day, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        day_date = date.today()
+        day = day_date.isoformat()
 
-        users = list(mongo.db.users.find({"role": {"$ne": "admin"}}))
+    user_query = {"role": {"$ne": "admin"}}
+    if usernames:
+        user_query["username"] = {"$in": list(usernames)}
+    users = list(mongo.db.users.find(user_query))
 
+    if True:
         # This day's sessions, grouped by user.
         day_recs = list(mongo.db.attendance.find({"date": day}))
         by_uid = {}
@@ -1980,7 +1979,7 @@ def admin_analysis_overview():
         expected  = totals["registered"] - totals["on_leave"] - totals["off"]
         rate      = round(signed_in / expected * 100) if expected else 0
 
-        return jsonify({
+        return {
             "date":       day,
             "weekend":    weekend,
             "day_label":  "Sunday · holiday" if day_wd == 6 else ("Saturday · optional" if day_wd == 5 else ""),
@@ -1989,7 +1988,17 @@ def admin_analysis_overview():
             "expected":   expected,
             "rate":       rate,
             "buckets":    buckets,
-        })
+        }
+
+
+@app.route("/api/admin/analysis-overview")
+@login_required
+def admin_analysis_overview():
+    """Admin day snapshot (see compute_day_overview)."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        return jsonify(compute_day_overview(request.args.get("date") or date.today().isoformat()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2453,24 +2462,35 @@ def admin_analysis_create_share():
     if current_user.role != "admin":
         return jsonify({"error": "Admin access required"}), 403
     body  = request.get_json(silent=True) or {}
-    dates = resolve_dates(body)
-    if not dates:
-        return jsonify({"error": "Pick a From and To date."}), 400
+    kind  = "overall" if body.get("kind") == "overall" else "range"
     users = parse_users_arg(body.get("users"))
     title = (body.get("title") or "").strip()[:120] or "Sign-in analysis"
+
+    doc = {
+        "token":      None,
+        "kind":       kind,
+        "users":      users,
+        "title":      title,
+        "created_by": current_user.username,
+        "created_at": datetime.utcnow(),
+        "revoked":    False,
+    }
+    if kind == "range":
+        dates = resolve_dates(body)
+        if not dates:
+            return jsonify({"error": "Pick a From and To date."}), 400
+        doc["dates"] = dates
+    else:
+        # "overall" is a live view — no fixed dates; it always shows the day the
+        # viewer picks (default today).
+        doc["dates"] = []
+
     token = secrets.token_urlsafe(24)
-    mongo.db.analysis_shares.insert_one({
-        "token":       token,
-        "dates":       dates,
-        "users":       users,
-        "title":       title,
-        "created_by":  current_user.username,
-        "created_at":  datetime.utcnow(),
-        "revoked":     False,
-    })
+    doc["token"] = token
+    mongo.db.analysis_shares.insert_one(doc)
     share_url = url_for("shared_analysis_view", token=token, _external=True)
-    return jsonify({"ok": True, "token": token, "url": share_url,
-                    "dates": dates, "users": users, "title": title})
+    return jsonify({"ok": True, "token": token, "url": share_url, "kind": kind,
+                    "dates": doc["dates"], "users": users, "title": title})
 
 
 @app.route("/api/admin/analysis/shares")
@@ -2485,6 +2505,7 @@ def admin_analysis_list_shares():
     out = [{
         "token":      s["token"],
         "url":        url_for("shared_analysis_view", token=s["token"], _external=True),
+        "kind":       s.get("kind", "range"),
         "title":      s.get("title", "Sign-in analysis"),
         "dates":      s.get("dates", []),
         "users":      s.get("users", []),
@@ -2513,10 +2534,28 @@ def _get_live_share(token):
 
 @app.route("/share/analysis/<token>")
 def shared_analysis_view(token):
-    """Public, no-login read-only view of a shared sign-in analysis."""
+    """Public, no-login read-only view of a shared analysis."""
     share = _get_live_share(token)
     if not share:
         return render_template("shared_analysis.html", not_found=True, token=token), 404
+
+    # "overall" shares are a live dashboard (who's in / out for the chosen day),
+    # not a fixed date range.
+    if share.get("kind") == "overall":
+        users = share.get("users", [])
+        today = date.today().isoformat()
+        yday  = (date.today() - timedelta(days=1)).isoformat()
+        return render_template(
+            "shared_overview.html",
+            token=token,
+            title=share.get("title", "Attendance analysis"),
+            users=users,
+            created_by=share.get("created_by", ""),
+            today=today,
+            yesterday=yday,
+            initial=compute_day_overview(today, users or None),
+        )
+
     dates = share.get("dates", [])
     users = share.get("users", [])
     rows  = build_analysis_rows(dates, users)
@@ -2618,12 +2657,53 @@ def shared_analysis_excel(token):
     share = _get_live_share(token)
     if not share:
         return ("This share link is no longer available.", 404)
-    dates = share.get("dates", [])
     users = share.get("users", [])
     title = share.get("title", "Sign-in analysis")
+    if share.get("kind") == "overall":
+        # Live share: Excel of whatever single day the viewer asks for (default today).
+        day   = request.args.get("date") or date.today().isoformat()
+        dates = parse_dates_arg(day) or [date.today().isoformat()]
+    else:
+        dates = share.get("dates", [])
     mem = build_analysis_workbook(dates, title=title, usernames=users)
     return send_file(mem, as_attachment=True,
                      download_name=analysis_download_name(dates, title), mimetype=XLSX_MIME)
+
+
+@app.route("/share/analysis/<token>/overview")
+def shared_overview_data(token):
+    """Public, no-login day snapshot for an 'overall' share (scoped to its users)."""
+    share = _get_live_share(token)
+    if not share or share.get("kind") != "overall":
+        return jsonify({"error": "Not found"}), 404
+    day = request.args.get("date") or date.today().isoformat()
+    return jsonify(compute_day_overview(day, share.get("users") or None))
+
+
+@app.route("/share/analysis/<token>/user-calendar/<user_id>")
+def shared_user_calendar(token, user_id):
+    """Public, no-login per-person calendar for an 'overall' share.
+
+    The user must belong to the share's scope (its user filter, or any
+    non-admin when the share is for everyone).
+    """
+    share = _get_live_share(token)
+    if not share or share.get("kind") != "overall":
+        return jsonify({"error": "Not found"}), 404
+    try:
+        user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id), "role": {"$ne": "admin"}})
+    except Exception:
+        user_doc = None
+    if not user_doc:
+        return jsonify({"error": "User not found"}), 404
+    scoped = share.get("users")
+    if scoped and user_doc.get("username") not in scoped:
+        return jsonify({"error": "Not in this share"}), 403
+    start, end = _resolve_user_range()
+    data = compute_user_analysis(user_doc, start, end)
+    data.update({"user_id": user_id, "username": user_doc.get("username", ""),
+                 "start": start.isoformat(), "end": end.isoformat()})
+    return jsonify(data)
 
 
 @app.route("/admin/create_user", methods=["POST"])

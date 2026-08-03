@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{{ title }} · Office of Academics</title>
+<meta name="theme-color" content="#0A1324">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+<style>
+  body { background: var(--paper); }
+  .ov-wrap { max-width: 1080px; margin: 0 auto; padding: 22px 18px 60px; }
+  .ov-mast { background: var(--ink-800); color: #fff; border-radius: var(--r-xl); padding: 24px 26px; margin-bottom: 20px;
+             display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .ov-mast img { width: 44px; height: 44px; border-radius: 12px; }
+  .ov-mast .org { font-size: .62rem; font-weight: 800; letter-spacing: .16em; color: var(--gold-400); text-transform: uppercase; }
+  .ov-mast h1 { font-family: "Playfair Display", serif; font-size: 1.4rem; margin: 2px 0 0; color: #fff; }
+  .ov-mast .spacer { flex: 1; }
+  .ov-live { font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+             background: rgba(238,189,27,.16); color: var(--gold-400); padding: 5px 11px; border-radius: 999px; }
+  .ov-ctrl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .ov-ctrl input[type=date] { font-family: var(--mono); }
+  .ov-btn { background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 13px;
+            font-size: .78rem; font-weight: 700; color: var(--t1); cursor: pointer; }
+  .ov-btn:hover { border-color: var(--gold-500); }
+  .ov-dl { background: var(--gold-500); color: var(--ink-800); font-weight: 800; border: none; border-radius: var(--r-sm);
+           padding: 9px 14px; font-size: .78rem; display: inline-flex; align-items: center; gap: 7px; text-decoration: none; }
+  .ov-dl:hover { background: var(--gold-400); }
+  .ov-daylabel { font-family: var(--mono); font-size: .8rem; color: var(--t2); margin-left: auto; }
+  .ov-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px,1fr)); gap: 10px; margin-bottom: 18px; }
+  .ov-kpi { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--line-2); border-radius: 12px; padding: 12px 14px; }
+  .ov-kpi .n { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; color: var(--t1); line-height: 1; }
+  .ov-kpi .l { font-size: .58rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); margin-top: 5px; }
+  .ov-kpi.k-rate  { border-left-color: #B0740A; }
+  .ov-kpi.k-in    { border-left-color: #2E7D46; }
+  .ov-kpi.k-out   { border-left-color: #C0362C; }
+  .ov-kpi.k-leave { border-left-color: #8F98A6; }
+  .ov-kpi.k-off   { border-left-color: #B8BEC7; }
+  .ov-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+  @media (max-width: 720px) { .ov-cols { grid-template-columns: 1fr; } }
+  .ov-col { background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+  .ov-col-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; font-size: .82rem; font-weight: 700;
+                 color: var(--t1); border-bottom: 2px solid var(--line); }
+  .ov-col-head .c { margin-left: auto; font-family: var(--mono); background: var(--paper); padding: 1px 9px; border-radius: 999px; font-size: .78rem; }
+  .ov-col-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+  .ov-in-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); }
+  .ov-in-row .nm { font-weight: 700; font-size: .8rem; color: var(--t1); }
+  .ov-in-row .tm { font-family: var(--mono); font-size: .68rem; color: var(--t2); margin-left: auto; }
+  .ov-chip { font-size: .74rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; display: inline-block; }
+  .ov-chip.out   { background: #FCEBEA; color: #8A3833; border: 1px solid #E7B4AF; }
+  .ov-chip.leave { background: #EEF0F3; color: #5D6470; border: 1px solid #D3D8DF; }
+  .ov-chip.off   { background: var(--paper-2); color: var(--t2); }
+  .ov-chips { padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .ov-empty-row { text-align: center; color: var(--t3); font-size: .78rem; padding: 14px 0; }
+  .ov-namelist { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ov-name { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 6px; border: 1px solid var(--line);
+             border-radius: 999px; background: #fff; cursor: pointer; font-size: .78rem; font-weight: 600; color: var(--t1); }
+  .ov-name:hover { border-color: var(--gold-500); }
+  .ov-name .av { width: 24px; height: 24px; border-radius: 50%; background: var(--ink-800); color: var(--gold-400);
+                 display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 800; }
+  .ov-weeknote { background: var(--gold-050); border: 1px solid var(--gold-400); border-radius: var(--r-sm); padding: 10px 14px;
+                 font-size: .76rem; color: var(--gold-600); font-weight: 700; margin-bottom: 16px; }
+  .ov-foot { margin-top: 30px; font-size: .72rem; color: var(--t3); text-align: center; }
+
+  /* calendar modal (reused look) */
+  .ov-modal { position: fixed; inset: 0; background: rgba(6,11,22,.6); display: none; align-items: center; justify-content: center; padding: 18px; z-index: 200; }
+  .ov-modal.on { display: flex; }
+  .ov-modal-box { background: #fff; border-radius: var(--r-xl); width: 100%; max-width: 680px; max-height: 88vh; overflow-y: auto; }
+  .ov-modal-head { position: sticky; top: 0; background: #fff; display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .ov-modal-head h3 { font-family: "Playfair Display", serif; font-size: 1.1rem; flex: 1; color: var(--ink-800); }
+  .ov-modal-body { padding: 18px 20px 22px; }
+  .cal-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px,1fr)); gap: 8px; margin-bottom: 14px; }
+  .cal-stat { padding: 9px; text-align: center; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .cal-stat .n { font-family: var(--mono); font-size: 1.15rem; font-weight: 700; line-height: 1; }
+  .cal-stat .l { font-size: .54rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); margin-top: 4px; }
+  .cal-monthblock { margin-bottom: 16px; }
+  .cal-mn { font-family: var(--mono); font-weight: 700; margin-bottom: 8px; color: var(--ink-800); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 5px; }
+  .cal-dow { text-align: center; font-size: .56rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--t3); }
+  .cal-cell { min-height: 44px; border-radius: 7px; border: 1px solid var(--line); padding: 4px 5px; display: flex; flex-direction: column; justify-content: space-between; }
+  .cal-cell.empty { border: none; }
+  .cal-num { font-size: .72rem; font-weight: 700; color: var(--t2); }
+  .cal-hrs { font-family: var(--mono); font-size: .58rem; font-weight: 700; align-self: flex-end; }
+  .cal-cell.met  { background: #E8F5EC; border-color: #A7D8B8; } .cal-cell.met .cal-num, .cal-cell.met .cal-hrs { color: #1E7D46; }
+  .cal-cell.part { background: #FCF3E2; border-color: #EAD3A0; } .cal-cell.part .cal-num, .cal-cell.part .cal-hrs { color: #B0740A; }
+  .cal-cell.absent { background: #FCEBEA; border-color: #E7B4AF; } .cal-cell.absent .cal-num { color: #B7302A; }
+  .cal-cell.leave  { background: #EEF0F3; border-color: #D3D8DF; } .cal-cell.leave .cal-num { color: #6B7480; }
+  .cal-cell.holiday { background: repeating-linear-gradient(45deg,#F2F1EE,#F2F1EE 4px,#E9E7E2 4px,#E9E7E2 8px); border-color: #DAD7D0; } .cal-cell.holiday .cal-num { color: #9AA0A8; }
+  .cal-cell.optional { background: #FCF7EA; border-color: #E9DCB8; } .cal-cell.optional .cal-num { color: #A98A2E; }
+  .cal-cell.off { border-color: transparent; } .cal-cell.off .cal-num { color: var(--t3); opacity: .5; }
+</style>
+</head>
+<body>
+<div class="ov-wrap">
+  <div class="ov-mast">
+    <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+    <div>
+      <div class="org">Office of Academics · Live analysis</div>
+      <h1>{{ title }}</h1>
+    </div>
+    <span class="spacer"></span>
+    <span class="ov-live"><i class="fas fa-circle" style="font-size:.5rem;vertical-align:middle"></i> Live</span>
+  </div>
+
+  <div class="ov-ctrl">
+    <input type="date" id="ovDate" class="oa-input" style="width:auto" value="{{ today }}" onchange="ovLoad()">
+    <button class="ov-btn" onclick="ovSet('{{ today }}')">Today</button>
+    <button class="ov-btn" onclick="ovSet('{{ yesterday }}')">Yesterday</button>
+    <a class="ov-dl" id="ovDownload" href="{{ url_for('shared_analysis_excel', token=token) }}?date={{ today }}">
+      <i class="fas fa-file-excel"></i> Download Excel (this day)
+    </a>
+    <span class="ov-daylabel" id="ovDayLabel"></span>
+  </div>
+
+  <div id="ovWeekNote" class="ov-weeknote" style="display:none"></div>
+
+  <div class="ov-kpis" id="ovKpis"></div>
+
+  <div class="ov-cols">
+    <div class="ov-col">
+      <div class="ov-col-head"><i class="fas fa-circle-check" style="color:#2E7D46"></i> Signed in <span class="c" id="ovInCount">0</span></div>
+      <div class="ov-col-body" id="ovInList"></div>
+    </div>
+    <div class="ov-col">
+      <div class="ov-col-head"><i class="fas fa-user-xmark" style="color:#C0362C"></i> Not signed in <span class="c" id="ovOutCount">0</span></div>
+      <div class="ov-chips" id="ovOutList"></div>
+    </div>
+  </div>
+
+  <div class="ov-cols">
+    <div class="ov-col">
+      <div class="ov-col-head"><i class="fas fa-plane-departure" style="color:#8F98A6"></i> On leave <span class="c" id="ovLeaveCount">0</span></div>
+      <div class="ov-chips" id="ovLeaveList"></div>
+    </div>
+    <div class="ov-col">
+      <div class="ov-col-head"><i class="fas fa-mug-hot" style="color:#8F98A6"></i> Off / weekend <span class="c" id="ovOffCount">0</span></div>
+      <div class="ov-chips" id="ovOffList"></div>
+    </div>
+  </div>
+
+  <div class="ov-col">
+    <div class="ov-col-head"><i class="fas fa-calendar-days" style="color:var(--gold-600)"></i> Per-person calendar — click a name</div>
+    <div class="ov-col-body"><div class="ov-namelist" id="ovNames"></div></div>
+  </div>
+
+  <div class="ov-foot">
+    Shared from the JAIN Attendance Portal{% if created_by %} by {{ created_by }}{% endif %}. Live, read-only — no login required.
+  </div>
+</div>
+
+<!-- calendar modal -->
+<div class="ov-modal" id="ovModal">
+  <div class="ov-modal-box">
+    <div class="ov-modal-head">
+      <h3 id="ovCalTitle">Attendance</h3>
+      <button class="ov-btn" onclick="ovCloseCal()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="ov-modal-body">
+      <div class="ov-ctrl">
+        <label style="font-size:.72rem;color:var(--t2)">From <input type="date" id="ovCalFrom" class="oa-input" style="width:auto"></label>
+        <label style="font-size:.72rem;color:var(--t2)">To <input type="date" id="ovCalTo" class="oa-input" style="width:auto"></label>
+        <button class="ov-btn" onclick="ovCalLoad()">Analyse</button>
+      </div>
+      <div class="cal-summary" id="ovCalSummary"></div>
+      <div id="ovCalBody"></div>
+    </div>
+  </div>
+</div>
+
+<script id="ov-initial" type="application/json">{{ initial|tojson }}</script>
+<script>
+  const OV_TOKEN = "{{ token }}";
+  const OV_TODAY = "{{ today }}";
+  const CAL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  function ovSet(d) { document.getElementById('ovDate').value = d; ovLoad(); }
+
+  async function ovLoad() {
+    const d = document.getElementById('ovDate').value || OV_TODAY;
+    document.getElementById('ovDownload').href = `/share/analysis/${OV_TOKEN}/excel?date=${d}`;
+    try {
+      const res = await fetch(`/share/analysis/${OV_TOKEN}/overview?date=${d}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      ovRender(data);
+    } catch (e) {
+      document.getElementById('ovKpis').innerHTML = '<div class="ov-empty-row">' + e.message + '</div>';
+    }
+  }
+
+  function ovRender(data) {
+    const t = data.totals || {};
+    const inCount = (t.complete||0) + (t.active||0) + (t.early||0);
+    document.getElementById('ovDayLabel').textContent = data.date;
+    const wn = document.getElementById('ovWeekNote');
+    if (data.weekend) { wn.style.display = 'block'; wn.textContent = data.day_label + ' — attendance is not compulsory.'; }
+    else wn.style.display = 'none';
+
+    document.getElementById('ovKpis').innerHTML = [
+      { n: data.rate + '%', l: 'Signed in', c: 'k-rate' },
+      { n: inCount, l: 'Present', c: 'k-in' },
+      { n: t.absent||0, l: 'Not signed in', c: 'k-out' },
+      { n: t.on_leave||0, l: 'On leave', c: 'k-leave' },
+      { n: t.off||0, l: 'Off / weekend', c: 'k-off' },
+      { n: t.registered||0, l: 'Registered', c: '' },
+    ].map(k => `<div class="ov-kpi ${k.c}"><div class="n">${k.n}</div><div class="l">${k.l}</div></div>`).join('');
+
+    const b = data.buckets || {};
+    // Signed in = complete + active + early, ordered by login time
+    const inPeople = [].concat(b.complete||[], b.active||[], b.early||[])
+      .sort((a,c)=> (a.login_time||'').localeCompare(c.login_time||''));
+    document.getElementById('ovInCount').textContent = inPeople.length;
+    document.getElementById('ovInList').innerHTML = inPeople.length ? inPeople.map(p =>
+      `<div class="ov-in-row"><span class="nm">${esc(p.username)}</span>
+         <span class="tm">${p.login_time||'—'}${p.logout_time ? ' → '+p.logout_time : ' · active'} · ${p.hours}h</span></div>`
+    ).join('') : '<div class="ov-empty-row">Nobody yet</div>';
+
+    ovChips('ovOutList','ovOutCount', b.absent, 'out');
+    ovChips('ovLeaveList','ovLeaveCount', b.on_leave, 'leave');
+    ovChips('ovOffList','ovOffCount', b.off, 'off');
+
+    // Name list for calendars = union of everyone in every bucket
+    const all = [].concat(b.complete||[],b.active||[],b.early||[],b.absent||[],b.on_leave||[],b.off||[]);
+    const seen = {}; const names = [];
+    all.forEach(p => { if (!seen[p.user_id]) { seen[p.user_id]=1; names.push(p); } });
+    names.sort((a,c)=>a.username.toLowerCase().localeCompare(c.username.toLowerCase()));
+    document.getElementById('ovNames').innerHTML = names.map(p =>
+      `<button class="ov-name" onclick="ovOpenCal('${p.user_id}','${esc(p.username).replace(/'/g,'&#39;')}')">
+         <span class="av">${esc((p.username||'?')[0]).toUpperCase()}</span>${esc(p.username)}</button>`
+    ).join('') || '<div class="ov-empty-row">No people</div>';
+  }
+
+  function ovChips(listId, countId, arr, cls) {
+    arr = arr || [];
+    document.getElementById(countId).textContent = arr.length;
+    document.getElementById(listId).innerHTML = arr.length
+      ? arr.map(p => `<span class="ov-chip ${cls}">${esc(p.username)}</span>`).join('')
+      : '<div class="ov-empty-row">Nobody</div>';
+  }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // ── per-person calendar ──
+  let ovCalUid = null;
+  function ovOpenCal(uid, name) {
+    ovCalUid = uid;
+    document.getElementById('ovCalTitle').textContent = name + ' · attendance';
+    const d = document.getElementById('ovDate').value || OV_TODAY;
+    document.getElementById('ovCalFrom').value = d.slice(0,8) + '01';
+    document.getElementById('ovCalTo').value = OV_TODAY;
+    document.getElementById('ovModal').classList.add('on');
+    ovCalLoad();
+  }
+  function ovCloseCal(){ document.getElementById('ovModal').classList.remove('on'); }
+
+  async function ovCalLoad() {
+    let from = document.getElementById('ovCalFrom').value, to = document.getElementById('ovCalTo').value;
+    if (!from || !to) return;
+    if (from > to) { [from,to]=[to,from]; }
+    document.getElementById('ovCalBody').innerHTML = '<div class="ov-empty-row">Loading…</div>';
+    try {
+      const res = await fetch(`/share/analysis/${OV_TOKEN}/user-calendar/${ovCalUid}?from=${from}&to=${to}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      ovCalRender(data);
+    } catch (e) { document.getElementById('ovCalBody').innerHTML = '<div class="ov-empty-row">'+e.message+'</div>'; }
+  }
+
+  function ovCalRender(data) {
+    const s = data.summary || {};
+    document.getElementById('ovCalSummary').innerHTML = [
+      { n: s.present??0, l:'Worked', c:'#1E7D46' }, { n: s.absent??0, l:'Absent', c:'#C0362C' },
+      { n: s.leave??0, l:'Leave', c:'#8F98A6' }, { n:(s.total_hours??0)+'h', l:'Hours', c:'var(--ink-800)' },
+      { n:(s.attendance_rate??0)+'%', l:'Rate', c:'#B0740A' },
+    ].map(x=>`<div class="cal-stat"><div class="n" style="color:${x.c}">${x.n}</div><div class="l">${x.l}</div></div>`).join('');
+    const map = {}; (data.timeline||[]).forEach(t=>map[t.date]=t);
+    document.getElementById('ovCalBody').innerHTML = (data.months||[]).map(mo=>ovMonth(mo,map)).join('')
+      || '<div class="ov-empty-row">No working days in range.</div>';
+  }
+
+  function ovMonth(monthStr, map) {
+    const [y,m] = monthStr.split('-').map(Number);
+    const startDow = new Date(Date.UTC(y,m-1,1)).getUTCDay();
+    const dim = new Date(Date.UTC(y,m,0)).getUTCDate();
+    let cells = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-dow">${d}</div>`).join('');
+    for (let i=0;i<startDow;i++) cells += '<div class="cal-cell empty"></div>';
+    for (let d=1; d<=dim; d++) {
+      const ds = `${monthStr}-${String(d).padStart(2,'0')}`, t = map[ds];
+      let cls='off', hrs='';
+      if (t) {
+        if (t.status==='present') { cls = t.met?'met':'part'; hrs = `<span class="cal-hrs">${t.hours}h</span>`; }
+        else if (t.status==='absent') cls='absent';
+        else if (t.status==='leave') cls='leave';
+        else if (t.status==='holiday') cls='holiday';
+        else if (t.status==='optional') cls='optional';
+      }
+      cells += `<div class="cal-cell ${cls}"><span class="cal-num">${d}</span>${hrs}</div>`;
+    }
+    return `<div class="cal-monthblock"><div class="cal-mn">${CAL_MONTHS[m-1]} ${y}</div><div class="cal-grid">${cells}</div></div>`;
+  }
+
+  document.getElementById('ovModal').addEventListener('click', e => { if (e.target === e.currentTarget) ovCloseCal(); });
+
+  // First paint from server-provided data
+  ovRender(JSON.parse(document.getElementById('ov-initial').textContent));
+</script>
+</body>
+</html>
