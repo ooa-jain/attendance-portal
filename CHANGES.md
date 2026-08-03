@@ -196,6 +196,10 @@ people signed in" view into a report. Pick a **From → To date range**, choose
 * **Create shareable link** — mints an unguessable link that opens the same
   analysis (same range, users and title) and the Excel download **without a
   login**, for forwarding to HR. Links can be revoked; revoked links 404.
+* **Saved links** — every link you create is kept in a history list under the
+  panel (newest first) with its title, date span and users. Each row has
+  **Copy**, **Open**, **Reuse** (loads that range/users/title back into the
+  form) and **Revoke**, so a group you built once is easy to find and reuse.
 
 ### Backend
 

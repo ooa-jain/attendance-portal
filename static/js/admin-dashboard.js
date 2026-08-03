@@ -21,7 +21,7 @@
         const panel = document.getElementById(tab + '-tab');
         if (panel) panel.classList.add('on');
         if (tab === 'early') loadEarlyLogouts();
-        if (tab === 'locations') loadLocations();
+        if (tab === 'locations') { loadLocations(); loadShares(); }
         if (tab === 'face') loadFaceLogs(1);
         if (tab === 'analysis') loadAnalysisOverview();
     }
@@ -804,6 +804,7 @@
             document.getElementById('analysisShareOpen').href  = data.url;
             document.getElementById('analysisShareResult').style.display = 'block';
             showAlert('Share link ready — works without login', 'success');
+            loadShares();   // keep the saved-links history current
         } catch (err) {
             showAlert(err.message, 'danger');
         } finally {
@@ -813,15 +814,103 @@
     }
 
     function copyShareLink() {
-        const inp = document.getElementById('analysisShareUrl');
-        inp.select();
-        inp.setSelectionRange(0, 99999);
+        copyText(document.getElementById('analysisShareUrl').value);
+    }
+
+    function copyText(text) {
         const done = () => showAlert('Link copied', 'success');
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(inp.value).then(done).catch(() => { document.execCommand('copy'); done(); });
+            navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
         } else {
-            document.execCommand('copy'); done();
+            fallbackCopy(text, done);
         }
+    }
+    function fallbackCopy(text, done) {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        ta.remove();
+    }
+
+    // ── Saved share links (history) ───────────────────────────────────────
+    let anShares = [];   // last-loaded list, so Reuse can read a row without re-fetching
+
+    async function loadShares() {
+        const box = document.getElementById('analysisSharesList');
+        if (!box) return;
+        try {
+            const res = await fetch('/api/admin/analysis/shares');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load');
+            anShares = data.shares || [];
+            renderShares();
+        } catch (err) {
+            box.innerHTML = '<div class="ad-hint">Could not load saved links: ' + err.message + '</div>';
+        }
+    }
+
+    function renderShares() {
+        const box = document.getElementById('analysisSharesList');
+        if (!anShares.length) {
+            box.innerHTML = '<div class="ad-hint">No saved links yet. Create one above and it stays here.</div>';
+            return;
+        }
+        box.innerHTML = anShares.map((s, i) => {
+            const dates = s.dates || [];
+            const span = dates.length
+                ? (dates.length === 1 ? dates[0] : `${dates[0]} → ${dates[dates.length - 1]} (${dates.length}d)`)
+                : '—';
+            const who = (s.users && s.users.length) ? `${s.users.length} user(s)` : 'All users';
+            return `<div class="ad-saved-item">
+                <div class="ad-saved-info">
+                  <div class="ad-saved-title">${escapeHtml(s.title || 'Sign-in analysis')}</div>
+                  <div class="ad-saved-meta">${span} · ${who}${s.created_at ? ' · ' + s.created_at : ''}</div>
+                </div>
+                <div class="ad-saved-acts">
+                  <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="copyText('${s.url}')" title="Copy link"><i class="fas fa-copy"></i></button>
+                  <a class="oa-btn oa-btn-quiet oa-btn-sm" href="${s.url}" target="_blank" title="Open"><i class="fas fa-arrow-up-right-from-square"></i></a>
+                  <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="reuseShare(${i})" title="Load back into the form"><i class="fas fa-rotate-left"></i></button>
+                  <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="revokeShare('${s.token}')" title="Revoke"><i class="fas fa-trash"></i></button>
+                </div>
+              </div>`;
+        }).join('');
+    }
+
+    function reuseShare(i) {
+        const s = anShares[i];
+        if (!s) return;
+        const dates = s.dates || [];
+        if (dates.length) {
+            const from = document.getElementById('anFrom'), to = document.getElementById('anTo');
+            from.value = dates[0]; from.dataset.touched = '1';
+            to.value = dates[dates.length - 1]; to.dataset.touched = '1';
+        }
+        const wanted = new Set(s.users || []);
+        document.querySelectorAll('.an-user').forEach(c => { c.checked = wanted.has(c.value); });
+        anTitleTouched = true;
+        document.getElementById('anTitle').value = s.title || '';
+        anUsersChanged();
+        showAlert('Loaded "' + (s.title || 'analysis') + '" back into the form', 'success');
+        document.querySelector('.ad-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    async function revokeShare(token) {
+        if (!confirm('Revoke this link? Anyone holding it will no longer be able to open it.')) return;
+        try {
+            const res = await fetch('/api/admin/analysis/share/' + token + '/revoke', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed');
+            showAlert('Link revoked', 'success');
+            loadShares();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
     // ── Early Logouts ─────────────────────────────────────────────────────
