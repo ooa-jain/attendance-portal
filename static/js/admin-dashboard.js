@@ -23,6 +23,7 @@
         if (tab === 'early') loadEarlyLogouts();
         if (tab === 'locations') loadLocations();
         if (tab === 'face') loadFaceLogs(1);
+        if (tab === 'analysis') loadAnalysisOverview();
     }
 
     // ── Dashboard Stats ──────────────────────────────────────────────────
@@ -556,6 +557,104 @@
         } catch (err) {
             showAlert('Failed to load locations: ' + err.message, 'danger');
         }
+    }
+
+    // ── Analysis dashboard (Power-BI style) ───────────────────────────────
+    const AN_CATS = {
+        complete: { label: 'On track',       icon: 'fa-circle-check',        color: 'var(--ok)'   },
+        active:   { label: 'Still active',    icon: 'fa-circle-play',         color: 'var(--info)' },
+        early:    { label: 'Left early',      icon: 'fa-triangle-exclamation',color: 'var(--warn)' },
+        absent:   { label: 'Missed sign-in',  icon: 'fa-user-xmark',          color: 'var(--bad)'  },
+        on_leave: { label: 'On leave',        icon: 'fa-plane-departure',     color: 'var(--t3)'   },
+    };
+    // Concrete colours for the donut/legend (conic-gradient can't read CSS vars reliably).
+    const AN_HEX = { complete:'#2E7D46', active:'#0071e3', early:'#C77700', absent:'#C0362C', on_leave:'#8F98A6' };
+
+    async function loadAnalysisOverview() {
+        const dateEl = document.getElementById('analysisDate');
+        const day = dateEl ? dateEl.value : '';
+        const cols = document.getElementById('anColumns');
+        cols.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading analysis…</p></div>';
+        try {
+            const res = await fetch('/api/admin/analysis-overview?date=' + encodeURIComponent(day));
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load analysis');
+            renderAnalysis(data);
+        } catch (err) {
+            cols.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
+    }
+
+    function renderAnalysis(data) {
+        const t = data.totals;
+        // KPI tiles
+        document.getElementById('kpiRegistered').textContent = t.registered;
+        document.getElementById('kpiComplete').textContent   = t.complete;
+        document.getElementById('kpiActive').textContent     = t.active;
+        document.getElementById('kpiEarly').textContent      = t.early;
+        document.getElementById('kpiAbsent').textContent     = t.absent;
+        document.getElementById('kpiLeave').textContent      = t.on_leave;
+
+        // Donut (conic-gradient of the five categories)
+        const order = ['complete', 'active', 'early', 'absent', 'on_leave'];
+        const denom = order.reduce((s, k) => s + (t[k] || 0), 0) || 1;
+        let acc = 0;
+        const stops = order.filter(k => t[k] > 0).map(k => {
+            const start = acc / denom * 360;
+            acc += t[k];
+            const end = acc / denom * 360;
+            return `${AN_HEX[k]} ${start}deg ${end}deg`;
+        });
+        const donut = document.getElementById('anDonut');
+        donut.style.background = stops.length
+            ? `conic-gradient(${stops.join(',')})`
+            : 'var(--line)';
+        document.getElementById('anDonutPct').textContent = data.rate + '%';
+
+        // Legend
+        document.getElementById('anLegend').innerHTML = order.map(k =>
+            `<div class="an-leg-item"><span class="an-dot" style="background:${AN_HEX[k]}"></span>
+               ${AN_CATS[k].label}<strong>${t[k] || 0}</strong></div>`
+        ).join('');
+
+        // Attendance rate bar
+        document.getElementById('anRateFill').style.width = data.rate + '%';
+        document.getElementById('anRateNote').textContent =
+            `${data.signed_in} of ${data.expected} expected signed in`
+            + (t.on_leave ? ` · ${t.on_leave} on leave` : '');
+
+        // Category columns with per-user progress
+        const cols = document.getElementById('anColumns');
+        cols.innerHTML = order.map(k => {
+            const people = (data.buckets[k] || []);
+            const cat = AN_CATS[k];
+            const rows = people.length ? people.map(p => anUserRow(p, k)).join('')
+                : '<div class="an-empty-row">Nobody</div>';
+            return `<section class="an-col">
+                <div class="an-col-head" style="border-color:${AN_HEX[k]}">
+                  <i class="fas ${cat.icon}" style="color:${AN_HEX[k]}"></i>
+                  <span>${cat.label}</span>
+                  <span class="an-col-count">${people.length}</span>
+                </div>
+                <div class="an-col-body">${rows}</div>
+              </section>`;
+        }).join('');
+    }
+
+    function anUserRow(p, cat) {
+        const timeline = (cat === 'complete' || cat === 'early' || cat === 'active')
+            ? `<div class="an-u-time">${p.login_time || '—'} → ${p.logout_time || (cat === 'active' ? 'active' : '—')} · ${p.hours}h${cat === 'early' ? ` (−${p.shortfall}h)` : ''}</div>`
+            : '';
+        const barColor = p.progress_pct >= 80 ? '#2E7D46' : p.progress_pct >= 50 ? '#C77700' : '#C0362C';
+        return `<div class="an-u">
+            <div class="an-u-top">
+              <span class="an-u-name">${p.username}</span>
+              <span class="an-u-prog">${p.progress_pct}%</span>
+            </div>
+            ${timeline}
+            <div class="an-u-bar"><div class="an-u-bar-fill" style="width:${p.progress_pct}%;background:${barColor}"></div></div>
+            <div class="an-u-sub">30-day: ${p.on_track_days}/${p.present_days} days on target · avg ${p.avg_hours}h</div>
+          </div>`;
     }
 
     // ── Sign-in analysis: date range + users + title → download / share ───

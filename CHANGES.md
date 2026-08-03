@@ -210,6 +210,35 @@ people signed in" view into a report. Pick a **From → To date range**, choose
 
 ---
 
+## 6c. Analysis tab — Power-BI-style attendance dashboard (admin)
+
+A new **Analysis** tab in the admin console gives a one-day snapshot across
+**every registered (non-admin) user**, with a date picker:
+
+* **KPI tiles** — Registered · On track · Still active · Left early · Missed
+  sign-in · On leave.
+* **Donut + attendance-rate bar** — the split of the day and the % of expected
+  people who signed in (people on approved leave are excluded from "expected").
+* **Category columns** — each person filed under On track / Still active / Left
+  early / Missed sign-in / On leave. Everyone registered appears somewhere, so
+  absentees are visible, not just those who showed up.
+* **30-day progress** — every row carries a progress bar = share of their last
+  30 present days on which they met their hours target, plus average hours.
+
+How a person is classified for the day: no record + approved leave → *On
+leave*; no record → *Missed sign-in*; a session still open → *Still active*;
+closed sessions totalling ≥ their target → *On track*; otherwise → *Left
+early*.
+
+### Backend
+
+* New route `GET /api/admin/analysis-overview?date=YYYY-MM-DD` in `app.py`
+  (read-only; no schema change).
+* Charts are pure CSS/SVG (conic-gradient donut, CSS bars) — no chart library
+  added.
+
+---
+
 ## 7. Deploying
 
     # from your repo root, after copying these files in
