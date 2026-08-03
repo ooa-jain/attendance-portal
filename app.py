@@ -1862,6 +1862,124 @@ def admin_early_logouts():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/analysis-overview")
+@login_required
+def admin_analysis_overview():
+    """Power-BI-style snapshot for one day across EVERY registered (non-admin) user:
+    who signed in properly, who left early, who never signed in, who's on leave,
+    plus each person's 30-day compliance progress.
+    """
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        day = request.args.get("date") or date.today().isoformat()
+        try:
+            day_date = datetime.strptime(day, "%Y-%m-%d").date()
+        except ValueError:
+            day_date = date.today()
+            day = day_date.isoformat()
+
+        users = list(mongo.db.users.find({"role": {"$ne": "admin"}}))
+
+        # This day's sessions, grouped by user.
+        day_recs = list(mongo.db.attendance.find({"date": day}))
+        by_uid = {}
+        for r in day_recs:
+            by_uid.setdefault(str(r.get("user_id")), []).append(r)
+
+        # Approved leaves for the day (match on id or name, whichever the doc carries).
+        leaves = list(mongo.db.leave_applications.find({"date": day, "status": "approved"}))
+        leave_uids  = {str(l.get("user_id")) for l in leaves if l.get("user_id")}
+        leave_names = {l.get("username") for l in leaves if l.get("username")}
+
+        # 30-day window → per-user, per-date total hours, for the progress bars.
+        start30 = (day_date - timedelta(days=29)).isoformat()
+        recs30  = list(mongo.db.attendance.find({"date": {"$gte": start30, "$lte": day}}))
+        prog = {}  # uid -> { date -> total_hours }
+        for r in recs30:
+            uid = str(r.get("user_id"))
+            prog.setdefault(uid, {})
+            prog[uid][r.get("date")] = prog[uid].get(r.get("date"), 0.0) + (r.get("hours", 0) or 0)
+
+        buckets = {k: [] for k in ("complete", "active", "early", "absent", "on_leave")}
+        totals  = {"registered": 0, "complete": 0, "active": 0, "early": 0, "absent": 0, "on_leave": 0}
+
+        for u in users:
+            uid    = str(u["_id"])
+            uname  = u.get("username", "")
+            target = float(u.get("work_hours", DEFAULT_WORK_HOURS) or DEFAULT_WORK_HOURS)
+            recs   = by_uid.get(uid, [])
+
+            login_time = None
+            logout_time = None
+            total_hours = 0.0
+            has_active  = False
+            if recs:
+                recs_sorted = sorted(recs, key=lambda r: r.get("login_time") or datetime.min)
+                login_time  = recs_sorted[0].get("login_time")
+                for r in recs:
+                    total_hours += r.get("hours", 0) or 0
+                    if r.get("logout_time"):
+                        logout_time = r.get("logout_time")
+                    else:
+                        has_active = True
+
+            if not recs:
+                status = "on_leave" if (uid in leave_uids or uname in leave_names) else "absent"
+            elif has_active:
+                status = "active"
+            elif total_hours + 1e-6 >= target:
+                status = "complete"
+            else:
+                status = "early"
+
+            # 30-day compliance: share of present days on which the target was met.
+            udays = prog.get(uid, {})
+            present_days  = len(udays)
+            on_track_days = sum(1 for h in udays.values() if h + 1e-6 >= target)
+            avg_hours     = round(sum(udays.values()) / present_days, 1) if present_days else 0
+            progress_pct  = round(on_track_days / present_days * 100) if present_days else 0
+
+            totals["registered"] += 1
+            totals[status]       += 1
+            buckets[status].append({
+                "user_id":       uid,
+                "username":      uname,
+                "role":          u.get("role", "intern"),
+                "status":        status,
+                "target_hours":  round(target, 2),
+                "hours":         round(total_hours, 2),
+                "shortfall":     round(max(target - total_hours, 0), 2),
+                "login_time":    format_ist_time(login_time) if login_time else None,
+                "logout_time":   format_ist_time(logout_time) if logout_time else None,
+                "present_days":  present_days,
+                "on_track_days": on_track_days,
+                "avg_hours":     avg_hours,
+                "progress_pct":  progress_pct,
+            })
+
+        # Sort each bucket most-relevant-first.
+        buckets["early"].sort(key=lambda x: x["shortfall"], reverse=True)
+        buckets["complete"].sort(key=lambda x: x["progress_pct"], reverse=True)
+        for k in ("absent", "on_leave", "active"):
+            buckets[k].sort(key=lambda x: x["username"].lower())
+
+        signed_in = totals["complete"] + totals["active"] + totals["early"]
+        expected  = totals["registered"] - totals["on_leave"]   # people who were due in
+        rate      = round(signed_in / expected * 100) if expected else 0
+
+        return jsonify({
+            "date":       day,
+            "totals":     totals,
+            "signed_in":  signed_in,
+            "expected":   expected,
+            "rate":       rate,
+            "buckets":    buckets,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─────────────────────────────────────────────────────────────
 #  PAGE ROUTES
 # ─────────────────────────────────────────────────────────────

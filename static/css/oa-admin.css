@@ -407,3 +407,75 @@
 .ad-share-linkrow .oa-input {
   flex: 1; min-width: 220px; font-family: var(--mono); font-size: .74rem;
 }
+
+/* ── Analysis dashboard (Power-BI style) ────────────────────────────── */
+.an-kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 12px; margin: 16px 0;
+}
+.an-kpi {
+  padding: 14px 16px; border-radius: var(--r-md, 14px);
+  background: #fff; border: 1px solid var(--line);
+  border-left: 4px solid var(--line-2);
+}
+.an-kpi .n { font-family: var(--mono); font-size: 1.7rem; font-weight: 700; color: var(--t1); line-height: 1; }
+.an-kpi .l { font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); margin-top: 6px; }
+.an-kpi.is-total    { border-left-color: var(--ink-800); }
+.an-kpi.is-complete { border-left-color: #2E7D46; }
+.an-kpi.is-active   { border-left-color: #0071e3; }
+.an-kpi.is-early    { border-left-color: #C77700; }
+.an-kpi.is-absent   { border-left-color: #C0362C; }
+.an-kpi.is-leave    { border-left-color: #8F98A6; }
+
+.an-charts {
+  display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, 1fr);
+  gap: 20px; align-items: center; margin-top: 8px;
+}
+@media (max-width: 720px) { .an-charts { grid-template-columns: 1fr; } }
+
+.an-donut-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.an-donut {
+  width: 150px; height: 150px; border-radius: 50%;
+  background: var(--line); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.an-donut-hole {
+  width: 96px; height: 96px; border-radius: 50%; background: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.an-donut-hole span { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; color: var(--t1); }
+.an-donut-hole small { font-size: .58rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.an-legend { display: flex; flex-direction: column; gap: 6px; }
+.an-leg-item { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--t2); }
+.an-leg-item strong { margin-left: auto; color: var(--t1); font-family: var(--mono); }
+.an-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+
+.an-progress-wrap { padding: 4px; }
+.an-sub { font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); margin-bottom: 8px; }
+.an-bigbar { height: 14px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+.an-bigbar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--gold-500), var(--gold-600)); transition: width .5s ease; }
+.an-rate-note { margin-top: 8px; font-size: .74rem; color: var(--t2); }
+
+.an-cols {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px; margin-top: 16px;
+}
+.an-col { background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.an-col-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px; font-size: .82rem; font-weight: 700; color: var(--t1);
+  border-bottom: 2px solid var(--line);
+}
+.an-col-count { margin-left: auto; font-family: var(--mono); font-size: .8rem; color: var(--t2); background: var(--paper); padding: 1px 9px; border-radius: 999px; }
+.an-col-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+.an-empty-row { text-align: center; color: var(--t3); font-size: .78rem; padding: 16px 0; }
+
+.an-u { padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); }
+.an-u-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.an-u-name { font-weight: 700; font-size: .82rem; color: var(--t1); }
+.an-u-prog { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--t2); }
+.an-u-time { font-family: var(--mono); font-size: .68rem; color: var(--t2); margin: 3px 0 5px; }
+.an-u-bar { height: 6px; border-radius: 999px; background: var(--paper-2); overflow: hidden; margin: 6px 0 5px; }
+.an-u-bar-fill { height: 100%; border-radius: 999px; transition: width .4s ease; }
+.an-u-sub { font-size: .66rem; color: var(--t3); }

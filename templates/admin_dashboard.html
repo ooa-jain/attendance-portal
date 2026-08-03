@@ -36,6 +36,7 @@
     </div>
     <nav class="oa-rail-nav">
       <button class="oa-navitem on ad-tab" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave requests</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-id-card"></i> Face log</button>
@@ -75,6 +76,7 @@
     <!-- Mobile tab strip (rail handles this on web) -->
     <div class="ad-tabs oa-only-mobile">
       <button class="ad-tab on" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
+      <button class="ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
       <button class="ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave</button>
       <button class="ad-tab" onclick="switchTab('face', event)"><i class="fas fa-id-card"></i> Face log</button>
@@ -115,6 +117,50 @@
           </table>
         </div>
       </section>
+    </div>
+
+    <!-- ════════ ANALYSIS (Power-BI style) ════════ -->
+    <div id="analysis-tab" class="ad-panel">
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Attendance analysis</h2>
+          <span class="spacer"></span>
+          <input type="date" id="analysisDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadAnalysisOverview()">
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadAnalysisOverview()"><i class="fas fa-rotate"></i> Refresh</button>
+        </div>
+        <p class="ad-hint" style="margin-top:-4px">
+          Every registered person for the selected day — who signed in properly, who left early,
+          who never signed in, and each person's 30-day progress.
+        </p>
+
+        <!-- KPI tiles -->
+        <div class="an-kpis" id="anKpis">
+          <div class="an-kpi is-total"><div class="n" id="kpiRegistered">–</div><div class="l">Registered</div></div>
+          <div class="an-kpi is-complete"><div class="n" id="kpiComplete">–</div><div class="l">On track</div></div>
+          <div class="an-kpi is-active"><div class="n" id="kpiActive">–</div><div class="l">Still active</div></div>
+          <div class="an-kpi is-early"><div class="n" id="kpiEarly">–</div><div class="l">Left early</div></div>
+          <div class="an-kpi is-absent"><div class="n" id="kpiAbsent">–</div><div class="l">Missed sign-in</div></div>
+          <div class="an-kpi is-leave"><div class="n" id="kpiLeave">–</div><div class="l">On leave</div></div>
+        </div>
+
+        <!-- Donut + attendance rate -->
+        <div class="an-charts">
+          <div class="an-donut-wrap">
+            <div class="an-donut" id="anDonut"><div class="an-donut-hole"><span id="anDonutPct">0%</span><small>signed in</small></div></div>
+            <div class="an-legend" id="anLegend"></div>
+          </div>
+          <div class="an-progress-wrap">
+            <div class="an-sub">Attendance rate today</div>
+            <div class="an-bigbar"><div class="an-bigbar-fill" id="anRateFill" style="width:0%"></div></div>
+            <div class="an-rate-note" id="anRateNote">—</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Category breakdown lists -->
+      <div class="an-cols" id="anColumns">
+        <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading analysis…</p></div>
+      </div>
     </div>
 
     <!-- ════════ PEOPLE ════════ -->
