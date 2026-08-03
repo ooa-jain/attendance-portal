@@ -566,9 +566,10 @@
         early:    { label: 'Left early',      icon: 'fa-triangle-exclamation',color: 'var(--warn)' },
         absent:   { label: 'Missed sign-in',  icon: 'fa-user-xmark',          color: 'var(--bad)'  },
         on_leave: { label: 'On leave',        icon: 'fa-plane-departure',     color: 'var(--t3)'   },
+        off:      { label: 'Off / weekend',   icon: 'fa-mug-hot',             color: 'var(--t3)'   },
     };
     // Concrete colours for the donut/legend (conic-gradient can't read CSS vars reliably).
-    const AN_HEX = { complete:'#2E7D46', active:'#0071e3', early:'#C77700', absent:'#C0362C', on_leave:'#8F98A6' };
+    const AN_HEX = { complete:'#2E7D46', active:'#0071e3', early:'#C77700', absent:'#C0362C', on_leave:'#8F98A6', off:'#B8BEC7' };
 
     async function loadAnalysisOverview() {
         const dateEl = document.getElementById('analysisDate');
@@ -594,9 +595,10 @@
         document.getElementById('kpiEarly').textContent      = t.early;
         document.getElementById('kpiAbsent').textContent     = t.absent;
         document.getElementById('kpiLeave').textContent      = t.on_leave;
+        document.getElementById('kpiOff').textContent        = t.off || 0;
 
-        // Donut (conic-gradient of the five categories)
-        const order = ['complete', 'active', 'early', 'absent', 'on_leave'];
+        // Donut (conic-gradient of the categories)
+        const order = ['complete', 'active', 'early', 'absent', 'on_leave', 'off'];
         const denom = order.reduce((s, k) => s + (t[k] || 0), 0) || 1;
         let acc = 0;
         const stops = order.filter(k => t[k] > 0).map(k => {
@@ -620,8 +622,10 @@
         // Attendance rate bar
         document.getElementById('anRateFill').style.width = data.rate + '%';
         document.getElementById('anRateNote').textContent =
-            `${data.signed_in} of ${data.expected} expected signed in`
-            + (t.on_leave ? ` · ${t.on_leave} on leave` : '');
+            (data.weekend ? `${data.day_label} — ` : '')
+            + `${data.signed_in} of ${data.expected} expected signed in`
+            + (t.on_leave ? ` · ${t.on_leave} on leave` : '')
+            + (t.off ? ` · ${t.off} off` : '');
 
         // Category columns with per-user progress
         const cols = document.getElementById('anColumns');
@@ -723,9 +727,11 @@
             const t = statusMap[ds];
             let cls = 'off', tip = '';
             if (t) {
-                if (t.status === 'present')    { cls = t.met ? 'met' : 'part'; tip = `${t.hours}h`; }
-                else if (t.status === 'absent') { cls = 'absent'; tip = 'Absent'; }
-                else if (t.status === 'leave')  { cls = 'leave';  tip = 'On leave'; }
+                if (t.status === 'present')      { cls = t.met ? 'met' : 'part'; tip = `${t.hours}h`; }
+                else if (t.status === 'absent')  { cls = 'absent';  tip = 'Absent'; }
+                else if (t.status === 'leave')   { cls = 'leave';   tip = 'On leave'; }
+                else if (t.status === 'holiday') { cls = 'holiday'; tip = 'Sunday · holiday'; }
+                else if (t.status === 'optional'){ cls = 'optional';tip = 'Saturday · optional'; }
             }
             cells += `<div class="cal-cell ${cls}" title="${tip}">
                         <span class="cal-num">${day}</span>
@@ -750,7 +756,7 @@
         ];
         document.getElementById('calSummary').innerHTML = tiles.map(t =>
             `<div class="cal-stat"><div class="n" style="color:${t.c}">${t.n}</div><div class="l">${t.l}</div></div>`
-        ).join('') + `<div class="cal-note">${s.working_days ?? 0} working days (Mon–Sat, up to today) in this range</div>`;
+        ).join('') + `<div class="cal-note">${s.working_days ?? 0} compulsory working days (Mon–Fri) in this range · Sat optional, Sun holiday${s.saturdays_worked ? ` · ${s.saturdays_worked} Saturday(s) worked` : ''}</div>`;
 
         const statusMap = calStatusMap(data);
         const months = data.months || [];

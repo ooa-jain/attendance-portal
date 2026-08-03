@@ -84,6 +84,9 @@
   .sa-pill.ok  { background: #E8F5EC; color: #1E7D46; }
   .sa-pill.bad { background: #FCEBEA; color: #B7302A; }
   .sa-person .sa-tablewrap { border: none; border-top: 1px solid var(--line); border-radius: 0; }
+  .sa-absent { padding: 12px 14px; border-top: 1px dashed var(--line-2); display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  .sa-absent-lbl { font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #B7302A; margin-right: 4px; }
+  .sa-absent-chip { font-size: .72rem; font-weight: 600; color: #8A3833; background: #FCEBEA; border: 1px solid #E7B4AF; padding: 3px 9px; border-radius: 999px; }
   .sa-foot { margin-top: 30px; font-size: .72rem; color: var(--t3); text-align: center; }
   .sa-empty { text-align: center; padding: 70px 20px; color: var(--t3); }
   .sa-empty i { font-size: 3rem; margin-bottom: 14px; display: block; color: var(--line-2); }
@@ -176,7 +179,9 @@
     <section class="sa-day">
       <div class="sa-day-head">
         <h2>{{ day.date }}</h2>
-        <span class="c">{{ day.rows|length }} sign-in{{ 's' if day.rows|length != 1 else '' }}</span>
+        <span class="c">
+          {{ day.present_count }} signed in{% if day.weekend_label %} · {{ day.weekend_label }}{% elif day.absent_names %} · {{ day.absent_names|length }} not signed in{% endif %}
+        </span>
       </div>
       <div class="sa-tablewrap">
         <table class="sa-tbl">
@@ -210,6 +215,12 @@
           </tbody>
         </table>
       </div>
+      {% if day.absent_names %}
+      <div class="sa-absent">
+        <span class="sa-absent-lbl"><i class="fas fa-user-xmark"></i> Not signed in ({{ day.absent_names|length }})</span>
+        {% for name in day.absent_names %}<span class="sa-absent-chip">{{ name }}</span>{% endfor %}
+      </div>
+      {% endif %}
     </section>
     {% endfor %}
   {% else %}

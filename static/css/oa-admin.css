@@ -583,3 +583,12 @@
 .cal-cell.leave  .cal-num { color: #6B7480; }
 .cal-key.absent { background: #FCEBEA; border-color: #E7B4AF; }
 .cal-key.leave  { background: #EEF0F3; border-color: #D3D8DF; }
+
+/* Analysis KPI: off/weekend + calendar holiday/optional cells */
+.an-kpi.is-off { border-left-color: #B8BEC7; }
+.cal-cell.holiday  { background: repeating-linear-gradient(45deg,#F2F1EE,#F2F1EE 4px,#E9E7E2 4px,#E9E7E2 8px); border-color: #DAD7D0; }
+.cal-cell.holiday  .cal-num { color: #9AA0A8; }
+.cal-cell.optional { background: #FCF7EA; border-color: #E9DCB8; }
+.cal-cell.optional .cal-num { color: #A98A2E; }
+.cal-key.optional { background: #FCF7EA; border-color: #E9DCB8; }
+.cal-key.holiday  { background: repeating-linear-gradient(45deg,#F2F1EE,#F2F1EE 3px,#E9E7E2 3px,#E9E7E2 6px); border-color: #DAD7D0; }

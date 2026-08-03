@@ -254,6 +254,25 @@ click a person to expand their days, with present-vs-absent across the report's
 days and their hours — scoped to exactly the days and people that share
 already contained (no login, nothing extra exposed).
 
+### Working week: Sunday holiday, Saturday optional
+
+Attendance maths now treats **Sunday as a holiday** and **Saturday as
+optional** — a missed Saturday or Sunday is never counted as "absent", but a
+Saturday sign-in still counts as a worked day. This applies everywhere:
+
+* Per-user calendar/summary — compulsory days are **Mon–Fri**; the calendar
+  shades Saturdays (optional) and Sundays (holiday) distinctly, and the
+  attendance rate is measured against Mon–Fri only.
+* The Analysis-tab day snapshot gains an **Off / weekend** category, and
+  weekend no-shows land there instead of "Missed sign-in"; the day header
+  says "Saturday · optional" / "Sunday · holiday".
+* On the **shared link**, each day now shows **who signed in and who did not**
+  (with a "not signed in" list), and weekend days are labelled instead of
+  listing absentees.
+
+(People could always sign in on a weekend if they needed to — this only
+changes how absence is judged, not who may log in.)
+
 ### Backend
 
 * New routes `GET /api/admin/analysis-overview?date=YYYY-MM-DD` and
