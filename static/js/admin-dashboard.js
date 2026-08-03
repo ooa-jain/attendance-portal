@@ -21,9 +21,9 @@
         const panel = document.getElementById(tab + '-tab');
         if (panel) panel.classList.add('on');
         if (tab === 'early') loadEarlyLogouts();
-        if (tab === 'locations') { loadLocations(); loadShares(); }
+        if (tab === 'locations') loadLocations();
         if (tab === 'face') loadFaceLogs(1);
-        if (tab === 'analysis') loadAnalysisOverview();
+        if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
     }
 
     // ── Dashboard Stats ──────────────────────────────────────────────────
@@ -441,11 +441,6 @@
     async function loadLocations() {
         const date = document.getElementById('locationDate').value;
         if (!date) return;
-        // Point the analysis range at the day being viewed (until the admin widens it).
-        const anFrom = document.getElementById('anFrom');
-        const anTo   = document.getElementById('anTo');
-        if (anFrom && !anFrom.dataset.touched) anFrom.value = date;
-        if (anTo && !anTo.dataset.touched)     anTo.value = date;
         try {
             const res = await fetch(`/api/admin/user-locations/${date}`);
             const data = await res.json();

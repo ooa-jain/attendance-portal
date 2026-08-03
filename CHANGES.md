@@ -214,6 +214,17 @@ people signed in" view into a report. Pick a **From → To date range**, choose
 
 ---
 
+## 6d. Download / share group moved into the Analysis tab
+
+The **Download or share a group** panel (From→To range, user picker, title,
+Download Excel, Create shareable link, and the Saved-links history) now lives
+in the **Analysis** tab, directly under the dashboard — so building a group,
+pulling the working-hours Excel and minting a no-login link all sit alongside
+the day snapshot and per-person calendars. It was previously on Locations &
+Map; that tab is now just the map. Nothing else about the feature changed.
+
+---
+
 ## 6c. Analysis tab — Power-BI-style attendance dashboard (admin)
 
 A new **Analysis** tab in the admin console gives a one-day snapshot across
