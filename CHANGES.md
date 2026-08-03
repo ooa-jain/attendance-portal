@@ -214,6 +214,33 @@ people signed in" view into a report. Pick a **From → To date range**, choose
 
 ---
 
+## 6e. Two kinds of shareable link: Monthly and Overall (live)
+
+The share panel now mints **two kinds** of no-login link:
+
+* **Monthly link (this range)** — the existing fixed From→To snapshot: the
+  sign-in rows for the chosen range + Excel, by day / by person.
+* **Overall link (live)** — a live dashboard, the same shape as the Analysis
+  page. Whoever opens it picks a **day (Today / Yesterday / any date)** and
+  sees **who signed in and who did not**, on-leave and off/weekend, the
+  attendance rate, a **per-person calendar** (click a name → From→To calendar
+  with worked/absent/leave/holiday days), and a **Download Excel (this day)**
+  button. It always reflects current data — no fixed dates.
+
+Saved links show a **Monthly / Overall** badge. Overall links honour the same
+user scope and the weekend rules (Sun holiday, Sat optional).
+
+### Backend
+
+* `compute_day_overview(day, usernames)` extracted so admin and the public
+  live page share one implementation.
+* Shares carry a `kind` (`range` / `overall`). New public, no-login routes:
+  `/share/analysis/<token>/overview` and `/share/analysis/<token>/user-calendar/<user_id>`,
+  both scoped to the share's users; the live Excel download honours `?date=`.
+* New standalone `templates/shared_overview.html` (`noindex`). No schema change.
+
+---
+
 ## 6d. Download / share group moved into the Analysis tab
 
 The **Download or share a group** panel (From→To range, user picker, title,

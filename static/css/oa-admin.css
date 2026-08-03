@@ -592,3 +592,11 @@
 .cal-cell.optional .cal-num { color: #A98A2E; }
 .cal-key.optional { background: #FCF7EA; border-color: #E9DCB8; }
 .cal-key.holiday  { background: repeating-linear-gradient(45deg,#F2F1EE,#F2F1EE 3px,#E9E7E2 3px,#E9E7E2 6px); border-color: #DAD7D0; }
+
+/* Saved-link kind badges */
+.ad-kind { font-size: .56rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+           padding: 2px 7px; border-radius: 999px; vertical-align: middle; }
+.kind-range   { background: var(--gold-100); color: var(--gold-600); }
+.kind-overall { background: #E3EDFA; color: #2B5CA8; }
+#analysisOverallBtn { background: var(--ink-800); color: var(--on-ink); border-color: var(--ink-800); }
+#analysisOverallBtn:hover:not(:disabled) { background: var(--ink-700); }
