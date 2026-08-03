@@ -1980,6 +1980,62 @@ def admin_analysis_overview():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/user-calendar/<user_id>")
+@login_required
+def admin_user_calendar(user_id):
+    """Which days a single user signed in during a given month (login days only,
+    no location). Powers the per-person attendance calendar.
+    """
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+        if not user_doc:
+            return jsonify({"error": "User not found"}), 404
+
+        month = request.args.get("month") or date.today().strftime("%Y-%m")
+        try:
+            datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            month = date.today().strftime("%Y-%m")
+
+        target = float(user_doc.get("work_hours", DEFAULT_WORK_HOURS) or DEFAULT_WORK_HOURS)
+
+        recs = list(mongo.db.attendance.find({
+            "user_id": ObjectId(user_id),
+            "date":    {"$regex": f"^{month}"},
+        }))
+
+        # Collapse multiple sessions per day into one calendar entry.
+        days = {}
+        for r in recs:
+            d = r.get("date")
+            if not d:
+                continue
+            entry = days.setdefault(d, {"date": d, "sessions": 0, "hours": 0.0})
+            entry["sessions"] += 1
+            entry["hours"]    += r.get("hours", 0) or 0
+
+        day_list = []
+        for d in sorted(days):
+            e = days[d]
+            e["hours"]      = round(e["hours"], 2)
+            e["met_target"] = e["hours"] + 1e-6 >= target
+            day_list.append(e)
+
+        return jsonify({
+            "user_id":       user_id,
+            "username":      user_doc.get("username", ""),
+            "month":         month,
+            "target_hours":  round(target, 2),
+            "days":          day_list,
+            "days_logged":   len(day_list),
+            "total_hours":   round(sum(e["hours"] for e in day_list), 2),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─────────────────────────────────────────────────────────────
 #  PAGE ROUTES
 # ─────────────────────────────────────────────────────────────

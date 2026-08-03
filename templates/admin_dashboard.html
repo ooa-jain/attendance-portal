@@ -161,6 +161,30 @@
       <div class="an-cols" id="anColumns">
         <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading analysis…</p></div>
       </div>
+
+      <!-- Individual attendance: pick a person → month calendar of login days -->
+      <section class="oa-card" style="margin-top:16px">
+        <div class="oa-card-head">
+          <h2>Individual attendance calendar</h2>
+        </div>
+        <p class="ad-hint" style="margin-top:-4px">
+          Click a name to see, on a month calendar, exactly which days that person signed in
+          and how many days in the month.
+        </p>
+        <input type="text" class="oa-input" id="anUserSearch" placeholder="Search a name…"
+               oninput="filterUserCalList()" style="margin-bottom:12px">
+        <div id="anUserCalList" class="an-namelist">
+          {% for u in users %}
+            {% if u.role != 'admin' %}
+            <button type="button" class="an-name" data-name="{{ u.username|lower }}"
+                    data-uid="{{ u._id }}" data-fullname="{{ u.username }}"
+                    onclick="openUserCalendar(this)">
+              <span class="an-name-av">{{ u.username[0]|upper }}</span>{{ u.username }}
+            </button>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </section>
     </div>
 
     <!-- ════════ PEOPLE ════════ -->
@@ -553,6 +577,33 @@
       <button class="oa-btn oa-btn-quiet" onclick="closeFaceImageModal()"><i class="fas fa-xmark"></i></button>
     </div>
     <div class="ad-modal-body" id="fullFaceContent"></div>
+  </div>
+</div>
+
+<!-- ══ USER ATTENDANCE CALENDAR MODAL ═══════════════════════════ -->
+<div class="ad-modal" id="calendarModal">
+  <div class="ad-modal-box">
+    <div class="ad-modal-head">
+      <h3 id="calTitle">Attendance calendar</h3>
+      <button class="oa-btn oa-btn-quiet" onclick="closeCalendarModal()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="ad-modal-body">
+      <div class="cal-toolbar">
+        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="calShiftMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+        <div class="cal-month" id="calMonthLabel">—</div>
+        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="calShiftMonth(1)"><i class="fas fa-chevron-right"></i></button>
+        <span class="spacer"></span>
+        <span class="oa-tag" id="calDaysCount">0 days</span>
+      </div>
+      <div id="calBody">
+        <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+      </div>
+      <div class="cal-legend">
+        <span><span class="cal-key met"></span> Met target</span>
+        <span><span class="cal-key part"></span> Signed in (short)</span>
+        <span><span class="cal-key none"></span> No sign-in</span>
+      </div>
+    </div>
   </div>
 </div>
 
