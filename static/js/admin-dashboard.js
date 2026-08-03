@@ -731,6 +731,20 @@
         const n = data.days_logged;
         document.getElementById('calDaysCount').textContent =
             `${n} day${n !== 1 ? 's' : ''} · ${data.total_hours}h`;
+
+        // Full summary for the month (worked / absent / leave / hours / rate)
+        const s = data.summary || {};
+        const tiles = [
+            { n: s.present ?? 0,  l: 'Days worked', c: '#1E7D46' },
+            { n: s.absent ?? 0,   l: 'Absent',      c: '#C0362C' },
+            { n: s.leave ?? 0,    l: 'On leave',    c: '#8F98A6' },
+            { n: (s.total_hours ?? 0) + 'h', l: 'Total hours', c: 'var(--ink-800)' },
+            { n: (s.avg_hours ?? 0) + 'h',   l: 'Avg / day',   c: 'var(--ink-800)' },
+            { n: (s.attendance_rate ?? 0) + '%', l: 'Attendance', c: '#B0740A' },
+        ];
+        document.getElementById('calSummary').innerHTML = tiles.map(t =>
+            `<div class="cal-stat"><div class="n" style="color:${t.c}">${t.n}</div><div class="l">${t.l}</div></div>`
+        ).join('') + `<div class="cal-note">of ${s.working_days ?? 0} working days (Mon–Sat, up to today)</div>`;
     }
 
     // ── Sign-in analysis: date range + users + title → download / share ───

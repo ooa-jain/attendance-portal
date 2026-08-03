@@ -2023,14 +2023,64 @@ def admin_user_calendar(user_id):
             e["met_target"] = e["hours"] + 1e-6 >= target
             day_list.append(e)
 
+        # Approved leave days for this user in the month (used for absent maths).
+        leave_recs = list(mongo.db.leave_applications.find({
+            "user_id": ObjectId(user_id),
+            "status":  "approved",
+            "date":    {"$regex": f"^{month}"},
+        }))
+        leave_dates = {l.get("date") for l in leave_recs if l.get("date")}
+
+        # Walk every working day (Mon–Sat) of the month up to today, and classify it.
+        y, mo = (int(x) for x in month.split("-"))
+        if mo == 12:
+            nxt = date(y + 1, 1, 1)
+        else:
+            nxt = date(y, mo + 1, 1)
+        last_day = (nxt - timedelta(days=1)).day
+        today = date.today()
+        present_set = set(days.keys())
+
+        working_days = present = absent = leave = 0
+        for dd in range(1, last_day + 1):
+            cur = date(y, mo, dd)
+            if cur > today:          # don't judge days that haven't happened yet
+                break
+            if cur.weekday() == 6:   # Sunday off (Mon–Sat is a working week here)
+                continue
+            iso = cur.isoformat()
+            working_days += 1
+            if iso in present_set:
+                present += 1
+            elif iso in leave_dates:
+                leave += 1
+            else:
+                absent += 1
+
+        total_hours = round(sum(e["hours"] for e in day_list), 2)
+        # Attendance rate counts a leave day as "not held against them".
+        rate_denom  = max(working_days - leave, 0)
+        attendance_rate = round(present / rate_denom * 100) if rate_denom else 0
+
         return jsonify({
             "user_id":       user_id,
             "username":      user_doc.get("username", ""),
+            "role":          user_doc.get("role", "intern"),
+            "email":         user_doc.get("email", ""),
             "month":         month,
             "target_hours":  round(target, 2),
             "days":          day_list,
             "days_logged":   len(day_list),
-            "total_hours":   round(sum(e["hours"] for e in day_list), 2),
+            "total_hours":   total_hours,
+            "summary": {
+                "working_days":    working_days,
+                "present":         present,
+                "absent":          absent,
+                "leave":           leave,
+                "total_hours":     total_hours,
+                "avg_hours":       round(total_hours / present, 1) if present else 0,
+                "attendance_rate": attendance_rate,
+            },
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
