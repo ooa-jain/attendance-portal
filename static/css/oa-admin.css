@@ -336,3 +336,52 @@
 @media (max-width: 640px) {
   .ad-usergrid, .face-logs-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Sign-in analysis toolbar (Locations tab) ───────────────────────── */
+.ad-analysis {
+  margin: 4px 0 18px; padding: 16px;
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.ad-analysis-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.oa-btn-secondary {
+  background: var(--gold-500); color: var(--ink-800);
+  border: 1px solid var(--gold-600); font-weight: 700;
+}
+.oa-btn-secondary:hover:not(:disabled) { background: var(--gold-400); }
+
+.ad-analysis-box {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px dashed var(--line-2);
+}
+.ad-analysis-boxhead {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  font-size: .82rem; color: var(--t1);
+}
+.ad-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.ad-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--ink-800); color: var(--on-ink, #fff);
+  font-family: var(--mono); font-size: .74rem; font-weight: 600;
+  padding: 5px 6px 5px 11px; border-radius: 999px;
+}
+.ad-chip button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: none; cursor: pointer;
+  border-radius: 50%; background: rgba(255,255,255,.16);
+  color: #fff; font-size: .62rem;
+}
+.ad-chip button:hover { background: var(--bad, #d92d20); }
+
+.ad-share-result {
+  margin-top: 12px; padding: 12px 14px;
+  background: var(--gold-050); border: 1px solid var(--gold-400);
+  border-radius: var(--r-sm);
+}
+.ad-share-result label {
+  display: block; font-size: .74rem; color: var(--t2); margin-bottom: 8px;
+}
+.ad-share-linkrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ad-share-linkrow .oa-input {
+  flex: 1; min-width: 220px; font-family: var(--mono); font-size: .74rem;
+}

@@ -388,6 +388,53 @@
           <span class="spacer"></span>
           <input type="date" id="locationDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadLocations()">
         </div>
+
+        <!-- ── Sign-in analysis: download this day, build a multi-day report, share ── -->
+        <div class="ad-analysis">
+          <div class="ad-analysis-row">
+            <a id="analysisDayDownload" class="oa-btn oa-btn-primary" href="#"
+               title="Download this day's sign-in analysis as Excel">
+              <i class="fas fa-file-excel"></i> Download this day (Excel)
+            </a>
+            <button type="button" class="oa-btn oa-btn-quiet" onclick="addDayToReport()"
+                    title="Add the day shown above to the report you're building">
+              <i class="fas fa-plus"></i> Add day to report
+            </button>
+          </div>
+
+          <div id="analysisReportBox" class="ad-analysis-box" style="display:none">
+            <div class="ad-analysis-boxhead">
+              <strong><i class="fas fa-layer-group"></i> Report days</strong>
+              <span id="analysisDayCount" class="oa-tag">0</span>
+              <span class="spacer"></span>
+              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="clearReport()">
+                <i class="fas fa-xmark"></i> Clear
+              </button>
+            </div>
+            <div id="analysisChips" class="ad-chips"></div>
+            <div class="ad-analysis-row">
+              <a id="analysisReportDownload" class="oa-btn oa-btn-primary" href="#">
+                <i class="fas fa-file-excel"></i> Download report (Excel)
+              </a>
+              <button type="button" id="analysisShareBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink()">
+                <i class="fas fa-link"></i> Create shareable link
+              </button>
+            </div>
+            <div id="analysisShareResult" class="ad-share-result" style="display:none">
+              <label>Anyone with this link can view the analysis and download the Excel — <strong>no login needed</strong>.</label>
+              <div class="ad-share-linkrow">
+                <input type="text" id="analysisShareUrl" class="oa-input" readonly>
+                <button type="button" class="oa-btn oa-btn-primary oa-btn-sm" onclick="copyShareLink()">
+                  <i class="fas fa-copy"></i> Copy
+                </button>
+                <a id="analysisShareOpen" class="oa-btn oa-btn-quiet oa-btn-sm" href="#" target="_blank">
+                  <i class="fas fa-arrow-up-right-from-square"></i> Open
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div id="adminLocationsMap"></div>
       </section>
       <div id="locationsList"></div>

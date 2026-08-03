@@ -440,6 +440,9 @@
     async function loadLocations() {
         const date = document.getElementById('locationDate').value;
         if (!date) return;
+        // Keep the "download this day" link pointed at whatever date is shown.
+        const dayDl = document.getElementById('analysisDayDownload');
+        if (dayDl) dayDl.href = '/admin/analysis/excel?dates=' + encodeURIComponent(date);
         try {
             const res = await fetch(`/api/admin/user-locations/${date}`);
             const data = await res.json();
@@ -550,6 +553,89 @@
             document.getElementById('locationsList').innerHTML = html;
         } catch (err) {
             showAlert('Failed to load locations: ' + err.message, 'danger');
+        }
+    }
+
+    // ── Sign-in analysis: multi-day report + shareable link ───────────────
+    let analysisReportDays = [];   // ISO date strings the admin has gathered
+
+    function addDayToReport() {
+        const date = document.getElementById('locationDate').value;
+        if (!date) { showAlert('Pick a date first', 'danger'); return; }
+        if (analysisReportDays.includes(date)) {
+            showAlert(date + ' is already in the report', 'warn');
+            return;
+        }
+        analysisReportDays.push(date);
+        analysisReportDays.sort();
+        renderReport();
+        showAlert('Added ' + date + ' to the report', 'success');
+    }
+
+    function removeDayFromReport(date) {
+        analysisReportDays = analysisReportDays.filter(d => d !== date);
+        renderReport();
+    }
+
+    function clearReport() {
+        analysisReportDays = [];
+        renderReport();
+        document.getElementById('analysisShareResult').style.display = 'none';
+    }
+
+    function renderReport() {
+        const box   = document.getElementById('analysisReportBox');
+        const chips = document.getElementById('analysisChips');
+        const count = document.getElementById('analysisDayCount');
+        const dl    = document.getElementById('analysisReportDownload');
+        if (!analysisReportDays.length) {
+            box.style.display = 'none';
+            return;
+        }
+        box.style.display = 'block';
+        count.textContent = analysisReportDays.length;
+        chips.innerHTML = analysisReportDays.map(d =>
+            `<span class="ad-chip">${d}<button type="button" title="Remove"
+                onclick="removeDayFromReport('${d}')"><i class="fas fa-xmark"></i></button></span>`
+        ).join('');
+        dl.href = '/admin/analysis/excel?dates=' + encodeURIComponent(analysisReportDays.join(','));
+    }
+
+    async function createShareLink() {
+        if (!analysisReportDays.length) { showAlert('Add at least one day first', 'danger'); return; }
+        const btn = document.getElementById('analysisShareBtn');
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-circle-notch spin"></i> Creating…';
+        try {
+            const res = await fetch('/api/admin/analysis/share', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dates: analysisReportDays })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to create link');
+            document.getElementById('analysisShareUrl').value = data.url;
+            document.getElementById('analysisShareOpen').href  = data.url;
+            document.getElementById('analysisShareResult').style.display = 'block';
+            showAlert('Share link ready — works without login', 'success');
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    }
+
+    function copyShareLink() {
+        const inp = document.getElementById('analysisShareUrl');
+        inp.select();
+        inp.setSelectionRange(0, 99999);
+        const done = () => showAlert('Link copied', 'success');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(inp.value).then(done).catch(() => { document.execCommand('copy'); done(); });
+        } else {
+            document.execCommand('copy'); done();
         }
     }
 
