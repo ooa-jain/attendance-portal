@@ -163,6 +163,87 @@
         <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading analysis…</p></div>
       </div>
 
+      <!-- ── Build a group → download Excel or create a no-login shareable link ── -->
+      <section class="oa-card" style="margin-top:16px">
+        <div class="ad-analysis" style="margin:0;background:transparent;border:none;padding:0">
+          <div class="ad-analysis-boxhead">
+            <strong><i class="fas fa-file-excel"></i> Download or share a group</strong>
+          </div>
+          <p class="ad-hint" style="margin-top:-6px;margin-bottom:12px">
+            Pick a From→To date range and the people to include, then download the working-hours
+            Excel or create a link anyone can open — <strong>no login</strong> — to see who signed in,
+            who didn't, and download the same Excel.
+          </p>
+
+          <!-- Step 1: date range -->
+          <div class="ad-analysis-grid">
+            <label class="ad-fld"><span>From</span>
+              <input type="date" id="anFrom" class="oa-input" value="{{ today_date }}"></label>
+            <label class="ad-fld"><span>To</span>
+              <input type="date" id="anTo" class="oa-input" value="{{ today_date }}"></label>
+          </div>
+
+          <!-- Step 2: which users (empty = everyone) -->
+          <div class="ad-fld">
+            <div class="ad-users-head">
+              <span>Users</span>
+              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(true)">Select all</button>
+              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(false)">Clear</button>
+              <span class="spacer"></span>
+              <span id="anUsersCount" class="oa-tag">All users</span>
+            </div>
+            <div id="anUsers" class="ad-users-box">
+              {% for u in users %}
+                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" onchange="anUsersChanged()"> {{ u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
+              {% endfor %}
+            </div>
+            <small class="ad-hint">Leave every box unchecked to include everyone.</small>
+          </div>
+
+          <!-- Step 3: title -->
+          <label class="ad-fld"><span>Title</span>
+            <input type="text" id="anTitle" class="oa-input" maxlength="120"
+                   placeholder="e.g. users-July  ·  auto-fills from your selection">
+          </label>
+
+          <div class="ad-analysis-row">
+            <button type="button" class="oa-btn oa-btn-primary" onclick="downloadAnalysis()">
+              <i class="fas fa-file-excel"></i> Download Excel
+            </button>
+            <button type="button" id="analysisShareBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink()">
+              <i class="fas fa-link"></i> Create shareable link
+            </button>
+          </div>
+
+          <div id="analysisShareResult" class="ad-share-result" style="display:none">
+            <label>Anyone with this link can view the analysis and download the Excel — <strong>no login needed</strong>.</label>
+            <div class="ad-share-linkrow">
+              <input type="text" id="analysisShareUrl" class="oa-input" readonly>
+              <button type="button" class="oa-btn oa-btn-primary oa-btn-sm" onclick="copyShareLink()">
+                <i class="fas fa-copy"></i> Copy
+              </button>
+              <a id="analysisShareOpen" class="oa-btn oa-btn-quiet oa-btn-sm" href="#" target="_blank">
+                <i class="fas fa-arrow-up-right-from-square"></i> Open
+              </a>
+            </div>
+          </div>
+
+          <!-- History: every link created earlier stays here, newest first -->
+          <div class="ad-saved">
+            <div class="ad-saved-head">
+              <strong><i class="fas fa-clock-rotate-left"></i> Saved links</strong>
+              <span class="spacer"></span>
+              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadShares()">
+                <i class="fas fa-rotate"></i> Refresh
+              </button>
+            </div>
+            <div id="analysisSharesList">
+              <div class="ad-hint">Links you create are kept here so you can reuse or revoke them later.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Individual attendance: pick a person → month calendar of login days -->
       <section class="oa-card" style="margin-top:16px">
         <div class="oa-card-head">
@@ -458,80 +539,6 @@
           <h2>Where people signed in</h2>
           <span class="spacer"></span>
           <input type="date" id="locationDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadLocations()">
-        </div>
-
-        <!-- ── Sign-in analysis: pick dates + users + title, then download / share ── -->
-        <div class="ad-analysis">
-          <div class="ad-analysis-boxhead">
-            <strong><i class="fas fa-file-excel"></i> Sign-in analysis — download or share</strong>
-          </div>
-
-          <!-- Step 1: date range -->
-          <div class="ad-analysis-grid">
-            <label class="ad-fld"><span>From</span>
-              <input type="date" id="anFrom" class="oa-input" value="{{ today_date }}"></label>
-            <label class="ad-fld"><span>To</span>
-              <input type="date" id="anTo" class="oa-input" value="{{ today_date }}"></label>
-          </div>
-
-          <!-- Step 2: which users (empty = everyone) -->
-          <div class="ad-fld">
-            <div class="ad-users-head">
-              <span>Users</span>
-              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(true)">Select all</button>
-              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(false)">Clear</button>
-              <span class="spacer"></span>
-              <span id="anUsersCount" class="oa-tag">All users</span>
-            </div>
-            <div id="anUsers" class="ad-users-box">
-              {% for u in users %}
-                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" onchange="anUsersChanged()"> {{ u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
-              {% endfor %}
-            </div>
-            <small class="ad-hint">Leave every box unchecked to include everyone.</small>
-          </div>
-
-          <!-- Step 3: title -->
-          <label class="ad-fld"><span>Title</span>
-            <input type="text" id="anTitle" class="oa-input" maxlength="120"
-                   placeholder="e.g. users-July  ·  auto-fills from your selection">
-          </label>
-
-          <div class="ad-analysis-row">
-            <button type="button" class="oa-btn oa-btn-primary" onclick="downloadAnalysis()">
-              <i class="fas fa-file-excel"></i> Download Excel
-            </button>
-            <button type="button" id="analysisShareBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink()">
-              <i class="fas fa-link"></i> Create shareable link
-            </button>
-          </div>
-
-          <div id="analysisShareResult" class="ad-share-result" style="display:none">
-            <label>Anyone with this link can view the analysis and download the Excel — <strong>no login needed</strong>.</label>
-            <div class="ad-share-linkrow">
-              <input type="text" id="analysisShareUrl" class="oa-input" readonly>
-              <button type="button" class="oa-btn oa-btn-primary oa-btn-sm" onclick="copyShareLink()">
-                <i class="fas fa-copy"></i> Copy
-              </button>
-              <a id="analysisShareOpen" class="oa-btn oa-btn-quiet oa-btn-sm" href="#" target="_blank">
-                <i class="fas fa-arrow-up-right-from-square"></i> Open
-              </a>
-            </div>
-          </div>
-
-          <!-- History: every link created earlier stays here, newest first -->
-          <div class="ad-saved">
-            <div class="ad-saved-head">
-              <strong><i class="fas fa-clock-rotate-left"></i> Saved links</strong>
-              <span class="spacer"></span>
-              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadShares()">
-                <i class="fas fa-rotate"></i> Refresh
-              </button>
-            </div>
-            <div id="analysisSharesList">
-              <div class="ad-hint">Links you create are kept here so you can reuse or revoke them later.</div>
-            </div>
-          </div>
         </div>
 
         <div id="adminLocationsMap"></div>
