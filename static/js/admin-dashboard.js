@@ -572,6 +572,32 @@
         showAlert('Added ' + date + ' to the report', 'success');
     }
 
+    function addRangeToReport() {
+        const from = document.getElementById('analysisRangeFrom').value;
+        const to   = document.getElementById('analysisRangeTo').value;
+        if (!from || !to) { showAlert('Pick both a From and a To date', 'danger'); return; }
+        let start = from, end = to;
+        if (start > end) { [start, end] = [end, start]; }   // tolerate reversed range
+        // Walk day by day from start to end (inclusive), in UTC to avoid DST drift.
+        const days = [];
+        let d = new Date(start + 'T00:00:00Z');
+        const last = new Date(end + 'T00:00:00Z');
+        let guard = 0;
+        while (d <= last && guard < 1000) {
+            days.push(d.toISOString().slice(0, 10));
+            d.setUTCDate(d.getUTCDate() + 1);
+            guard++;
+        }
+        let added = 0;
+        days.forEach(day => {
+            if (!analysisReportDays.includes(day)) { analysisReportDays.push(day); added++; }
+        });
+        analysisReportDays.sort();
+        renderReport();
+        if (added) showAlert(`Added ${added} day${added !== 1 ? 's' : ''} (${start} → ${end})`, 'success');
+        else showAlert('Those days are already in the report', 'warn');
+    }
+
     function removeDayFromReport(date) {
         analysisReportDays = analysisReportDays.filter(d => d !== date);
         renderReport();

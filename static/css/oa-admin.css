@@ -385,3 +385,17 @@
 .ad-share-linkrow .oa-input {
   flex: 1; min-width: 220px; font-family: var(--mono); font-size: .74rem;
 }
+
+.ad-analysis-range {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-2);
+}
+.ad-analysis-range .ad-range-lbl {
+  font-size: .72rem; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--t2);
+}
+.ad-analysis-range label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .74rem; color: var(--t2);
+}
+.ad-analysis-range .oa-input { width: auto; }
