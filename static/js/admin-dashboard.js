@@ -440,9 +440,11 @@
     async function loadLocations() {
         const date = document.getElementById('locationDate').value;
         if (!date) return;
-        // Keep the "download this day" link pointed at whatever date is shown.
-        const dayDl = document.getElementById('analysisDayDownload');
-        if (dayDl) dayDl.href = '/admin/analysis/excel?dates=' + encodeURIComponent(date);
+        // Point the analysis range at the day being viewed (until the admin widens it).
+        const anFrom = document.getElementById('anFrom');
+        const anTo   = document.getElementById('anTo');
+        if (anFrom && !anFrom.dataset.touched) anFrom.value = date;
+        if (anTo && !anTo.dataset.touched)     anTo.value = date;
         try {
             const res = await fetch(`/api/admin/user-locations/${date}`);
             const data = await res.json();
@@ -556,53 +558,57 @@
         }
     }
 
-    // ── Sign-in analysis: multi-day report + shareable link ───────────────
-    let analysisReportDays = [];   // ISO date strings the admin has gathered
+    // ── Sign-in analysis: date range + users + title → download / share ───
+    let anTitleTouched = false;   // has the admin typed their own title?
 
-    function addDayToReport() {
-        const date = document.getElementById('locationDate').value;
-        if (!date) { showAlert('Pick a date first', 'danger'); return; }
-        if (analysisReportDays.includes(date)) {
-            showAlert(date + ' is already in the report', 'warn');
-            return;
+    function anSelectedUsers() {
+        return Array.from(document.querySelectorAll('.an-user:checked')).map(c => c.value);
+    }
+
+    function anUsersAll(checked) {
+        document.querySelectorAll('.an-user').forEach(c => { c.checked = checked; });
+        anUsersChanged();
+    }
+
+    function anUsersChanged() {
+        const sel = anSelectedUsers();
+        const label = document.getElementById('anUsersCount');
+        if (label) label.textContent = sel.length ? `${sel.length} selected` : 'All users';
+        // Auto-fill the title from the selection until the admin edits it themselves.
+        if (!anTitleTouched) {
+            const t = document.getElementById('anTitle');
+            if (t) {
+                if (!sel.length)        t.value = 'users-all';
+                else if (sel.length <= 3) t.value = 'users-' + sel.join('-');
+                else                    t.value = `users-${sel.length}`;
+            }
         }
-        analysisReportDays.push(date);
-        analysisReportDays.sort();
-        renderReport();
-        showAlert('Added ' + date + ' to the report', 'success');
     }
 
-    function removeDayFromReport(date) {
-        analysisReportDays = analysisReportDays.filter(d => d !== date);
-        renderReport();
+    function anGetRange() {
+        const from = document.getElementById('anFrom').value;
+        const to   = document.getElementById('anTo').value;
+        if (!from || !to) { showAlert('Pick both a From and a To date', 'danger'); return null; }
+        return (from <= to) ? { from, to } : { from: to, to: from };  // tolerate reversed
     }
 
-    function clearReport() {
-        analysisReportDays = [];
-        renderReport();
-        document.getElementById('analysisShareResult').style.display = 'none';
+    function anTitle() {
+        const t = document.getElementById('anTitle');
+        return (t && t.value.trim()) || 'Sign-in analysis';
     }
 
-    function renderReport() {
-        const box   = document.getElementById('analysisReportBox');
-        const chips = document.getElementById('analysisChips');
-        const count = document.getElementById('analysisDayCount');
-        const dl    = document.getElementById('analysisReportDownload');
-        if (!analysisReportDays.length) {
-            box.style.display = 'none';
-            return;
-        }
-        box.style.display = 'block';
-        count.textContent = analysisReportDays.length;
-        chips.innerHTML = analysisReportDays.map(d =>
-            `<span class="ad-chip">${d}<button type="button" title="Remove"
-                onclick="removeDayFromReport('${d}')"><i class="fas fa-xmark"></i></button></span>`
-        ).join('');
-        dl.href = '/admin/analysis/excel?dates=' + encodeURIComponent(analysisReportDays.join(','));
+    function downloadAnalysis() {
+        const r = anGetRange();
+        if (!r) return;
+        const params = new URLSearchParams({ from: r.from, to: r.to, title: anTitle() });
+        const users = anSelectedUsers();
+        if (users.length) params.set('users', users.join(','));
+        window.location.href = '/admin/analysis/excel?' + params.toString();
     }
 
     async function createShareLink() {
-        if (!analysisReportDays.length) { showAlert('Add at least one day first', 'danger'); return; }
+        const r = anGetRange();
+        if (!r) return;
         const btn = document.getElementById('analysisShareBtn');
         const original = btn.innerHTML;
         btn.disabled = true;
@@ -611,7 +617,11 @@
             const res = await fetch('/api/admin/analysis/share', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dates: analysisReportDays })
+                body: JSON.stringify({
+                    from: r.from, to: r.to,
+                    users: anSelectedUsers(),
+                    title: anTitle()
+                })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to create link');
@@ -694,6 +704,16 @@
             }
         });
     });
+
+    // Analysis: mark date fields as user-touched so loadLocations stops syncing them,
+    // and flag the title as user-owned once the admin edits it (stops auto-fill).
+    ['anFrom', 'anTo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', () => { el.dataset.touched = '1'; });
+    });
+    const anTitleEl = document.getElementById('anTitle');
+    if (anTitleEl) anTitleEl.addEventListener('input', () => { anTitleTouched = true; });
+    if (typeof anUsersChanged === 'function') anUsersChanged();
 
     // Init
     loadDashboardStats();
