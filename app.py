@@ -10,7 +10,9 @@ import io
 import pandas as pd
 import math
 import os
+import re
 import random
+import secrets
 import json
 import requests
 import base64
@@ -1909,6 +1911,305 @@ def admin_export():
     mem.write(buf.getvalue().encode("utf-8"))
     mem.seek(0)
     return send_file(mem, as_attachment=True, download_name=f"attendance_{start}_to_{end}.csv", mimetype="text/csv")
+
+
+# ─────────────────────────────────────────────────────────────
+#  SIGN-IN ANALYSIS  —  Excel download + shareable public link
+#
+#  The "Locations & Map" tab already shows, per day, who signed in,
+#  at what time and from where. Admins asked to be able to:
+#    • download a single day's sign-in analysis as an Excel workbook,
+#    • pick several days, pull them into one report and download that, and
+#    • mint a link that opens the very same analysis + Excel download
+#      for someone who is NOT logged in (e.g. to forward to HR).
+#
+#  Shares live in mongo.db.analysis_shares, keyed by an unguessable
+#  token. An admin can revoke a share at any time.
+# ─────────────────────────────────────────────────────────────
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+# (row-dict key, column header) — the shape of one analysis row.
+ANALYSIS_COLUMNS = [
+    ("date",           "Date"),
+    ("username",       "Name"),
+    ("shift_name",     "Shift"),
+    ("login_time",     "Login time (IST)"),
+    ("logout_time",    "Logout time (IST)"),
+    ("hours",          "Hours"),
+    ("at_office",      "At office"),
+    ("login_address",  "Login location"),
+    ("login_lat",      "Login lat"),
+    ("login_lng",      "Login lng"),
+    ("logout_address", "Logout location"),
+    ("logout_lat",     "Logout lat"),
+    ("logout_lng",     "Logout lng"),
+    ("device_name",    "Device"),
+    ("browser",        "Browser"),
+    ("ip_address",     "IP address"),
+]
+
+
+def parse_dates_arg(raw):
+    """A comma/space separated list of ISO dates → sorted, de-duped, validated."""
+    if not raw:
+        return []
+    out = []
+    for tok in re.split(r"[,\s]+", str(raw).strip()):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            datetime.strptime(tok, "%Y-%m-%d")
+        except ValueError:
+            continue
+        if tok not in out:
+            out.append(tok)
+    return sorted(out)
+
+
+def build_analysis_rows(dates):
+    """One row per attendance session across the given dates (earliest first)."""
+    if not dates:
+        return []
+    recs = list(mongo.db.attendance.find(
+        {"date": {"$in": dates}}
+    ).sort([("date", 1), ("login_time", 1)]))
+    rows = []
+    for r in recs:
+        lt  = r.get("login_time")
+        lot = r.get("logout_time")
+        li  = r.get("login_location", {})  or {}
+        lo  = r.get("logout_location", {}) or {}
+        di  = r.get("device_info", {})     or {}
+        rows.append({
+            "date":           r.get("date", ""),
+            "username":       r.get("username", ""),
+            "shift_name":     r.get("shift_name", "Normal"),
+            "login_time":     format_ist_time(lt, "%Y-%m-%d %I:%M %p") if lt else "",
+            "logout_time":    format_ist_time(lot, "%Y-%m-%d %I:%M %p") if lot else "",
+            "hours":          round(r.get("hours", 0) or 0, 2),
+            "at_office":      "Yes" if r.get("at_office") else "No",
+            "login_address":  li.get("address", ""),
+            "login_lat":      li.get("lat"),
+            "login_lng":      li.get("lng"),
+            "logout_address": lo.get("address", ""),
+            "logout_lat":     lo.get("lat"),
+            "logout_lng":     lo.get("lng"),
+            "device_name":    di.get("device_name", ""),
+            "browser":        di.get("browser", ""),
+            "ip_address":     di.get("ip_address", ""),
+        })
+    return rows
+
+
+def build_analysis_workbook(dates, title="Sign-in analysis"):
+    """Return a BytesIO of a formatted .xlsx of the sign-in analysis for `dates`."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    rows  = build_analysis_rows(dates)
+    ncols = len(ANALYSIS_COLUMNS)
+    navy, gold, paper = "0A1324", "EEBD1B", "F6F4EF"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Analysis"
+
+    thin = Side(style="thin", color="D8D5CE")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Title band
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+    tcell = ws.cell(row=1, column=1, value=title)
+    tcell.font = Font(bold=True, size=15, color="FFFFFF")
+    tcell.fill = PatternFill("solid", fgColor=navy)
+    tcell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[1].height = 30
+
+    # Sub-band: which days, and when this was generated
+    if dates:
+        span = dates[0] if len(dates) == 1 else f"{dates[0]} → {dates[-1]} ({len(dates)} day{'s' if len(dates) != 1 else ''})"
+    else:
+        span = "No dates selected"
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=ncols)
+    scell = ws.cell(row=2, column=1,
+                    value=f"{span}   ·   {len(rows)} sign-in record{'s' if len(rows) != 1 else ''}"
+                          f"   ·   generated {format_ist_time(datetime.utcnow(), '%Y-%m-%d %I:%M %p')} IST")
+    scell.font = Font(size=10, color="5A5A5A")
+    scell.fill = PatternFill("solid", fgColor=paper)
+    scell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[2].height = 20
+
+    # Header row
+    hrow = 4
+    for ci, (_, header) in enumerate(ANALYSIS_COLUMNS, start=1):
+        cell = ws.cell(row=hrow, column=ci, value=header)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=navy)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[hrow].height = 22
+
+    # Data rows
+    widths = [len(h) for _, h in ANALYSIS_COLUMNS]
+    for ri, row in enumerate(rows, start=hrow + 1):
+        for ci, (key, _) in enumerate(ANALYSIS_COLUMNS, start=1):
+            val = row.get(key)
+            if val is None:
+                val = ""
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.border = border
+            cell.alignment = Alignment(vertical="center",
+                                       horizontal="left" if isinstance(val, str) else "right")
+            if (ri - hrow) % 2 == 0:
+                cell.fill = PatternFill("solid", fgColor="FBFAF7")
+            widths[ci - 1] = max(widths[ci - 1], len(str(val)))
+
+    # Column widths (capped) + a golden rule under the header
+    from openpyxl.utils import get_column_letter
+    for ci, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = min(max(w + 2, 10), 46)
+    ws.freeze_panes = f"A{hrow + 1}"
+
+    if not rows:
+        ws.merge_cells(start_row=hrow + 1, start_column=1, end_row=hrow + 1, end_column=ncols)
+        ecell = ws.cell(row=hrow + 1, column=1, value="No sign-in records for the selected day(s).")
+        ecell.alignment = Alignment(horizontal="center")
+        ecell.font = Font(italic=True, color="888888")
+
+    mem = io.BytesIO()
+    wb.save(mem)
+    mem.seek(0)
+    return mem
+
+
+def analysis_download_name(dates):
+    if not dates:
+        return "signin_analysis.xlsx"
+    if len(dates) == 1:
+        return f"signin_analysis_{dates[0]}.xlsx"
+    return f"signin_analysis_{dates[0]}_to_{dates[-1]}.xlsx"
+
+
+@app.route("/admin/analysis/excel")
+@login_required
+def admin_analysis_excel():
+    """Download the sign-in analysis for one or more days as .xlsx (admin only)."""
+    if current_user.role != "admin":
+        return redirect(url_for("admin_dashboard"))
+    dates = parse_dates_arg(request.args.get("dates"))
+    if not dates:
+        flash("Pick at least one valid date to download.", "danger")
+        return redirect(url_for("admin_dashboard"))
+    mem = build_analysis_workbook(dates, title="Sign-in analysis")
+    return send_file(mem, as_attachment=True,
+                     download_name=analysis_download_name(dates), mimetype=XLSX_MIME)
+
+
+@app.route("/api/admin/analysis/share", methods=["POST"])
+@login_required
+def admin_analysis_create_share():
+    """Mint a no-login shareable link for the selected days' analysis (admin only)."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    body  = request.get_json(silent=True) or {}
+    raw   = body.get("dates")
+    if isinstance(raw, list):
+        raw = ",".join(str(x) for x in raw)
+    dates = parse_dates_arg(raw)
+    if not dates:
+        return jsonify({"error": "Select at least one valid date."}), 400
+    title = (body.get("title") or "").strip()[:120] or "Sign-in analysis"
+    token = secrets.token_urlsafe(24)
+    mongo.db.analysis_shares.insert_one({
+        "token":       token,
+        "dates":       dates,
+        "title":       title,
+        "created_by":  current_user.username,
+        "created_at":  datetime.utcnow(),
+        "revoked":     False,
+    })
+    share_url = url_for("shared_analysis_view", token=token, _external=True)
+    return jsonify({"ok": True, "token": token, "url": share_url,
+                    "dates": dates, "title": title})
+
+
+@app.route("/api/admin/analysis/shares")
+@login_required
+def admin_analysis_list_shares():
+    """List the live share links (admin only)."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    shares = list(mongo.db.analysis_shares.find(
+        {"revoked": {"$ne": True}}
+    ).sort("created_at", -1).limit(50))
+    out = [{
+        "token":      s["token"],
+        "url":        url_for("shared_analysis_view", token=s["token"], _external=True),
+        "title":      s.get("title", "Sign-in analysis"),
+        "dates":      s.get("dates", []),
+        "created_by": s.get("created_by", ""),
+        "created_at": format_ist_time(s.get("created_at"), "%Y-%m-%d %I:%M %p") if s.get("created_at") else "",
+    } for s in shares]
+    return jsonify({"shares": out})
+
+
+@app.route("/api/admin/analysis/share/<token>/revoke", methods=["POST"])
+@login_required
+def admin_analysis_revoke_share(token):
+    """Turn off a share link so it 404s from then on (admin only)."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    res = mongo.db.analysis_shares.update_one(
+        {"token": token}, {"$set": {"revoked": True, "revoked_at": datetime.utcnow()}})
+    if res.matched_count == 0:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify({"ok": True})
+
+
+def _get_live_share(token):
+    return mongo.db.analysis_shares.find_one({"token": token, "revoked": {"$ne": True}})
+
+
+@app.route("/share/analysis/<token>")
+def shared_analysis_view(token):
+    """Public, no-login read-only view of a shared sign-in analysis."""
+    share = _get_live_share(token)
+    if not share:
+        return render_template("shared_analysis.html", not_found=True, token=token), 404
+    dates = share.get("dates", [])
+    rows  = build_analysis_rows(dates)
+    # Group rows by day so the page reads like a diary of arrivals.
+    by_day = {}
+    for r in rows:
+        by_day.setdefault(r["date"], []).append(r)
+    days = [{"date": d, "rows": by_day[d]} for d in sorted(by_day.keys())]
+    return render_template(
+        "shared_analysis.html",
+        not_found=False,
+        token=token,
+        title=share.get("title", "Sign-in analysis"),
+        dates=dates,
+        days=days,
+        total_records=len(rows),
+        people=len({r["username"] for r in rows}),
+        created_by=share.get("created_by", ""),
+        office_lat=OFFICE_LAT,
+        office_lng=OFFICE_LNG,
+    )
+
+
+@app.route("/share/analysis/<token>/excel")
+def shared_analysis_excel(token):
+    """Public, no-login Excel download for a shared analysis."""
+    share = _get_live_share(token)
+    if not share:
+        return ("This share link is no longer available.", 404)
+    dates = share.get("dates", [])
+    mem = build_analysis_workbook(dates, title=share.get("title", "Sign-in analysis"))
+    return send_file(mem, as_attachment=True,
+                     download_name=analysis_download_name(dates), mimetype=XLSX_MIME)
 
 
 @app.route("/admin/create_user", methods=["POST"])

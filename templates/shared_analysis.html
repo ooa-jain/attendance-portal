@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{% if not_found %}Link unavailable{% else %}{{ title }}{% endif %} · Office of Academics</title>
+<meta name="theme-color" content="#0A1324">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+<style>
+  body { background: var(--paper); }
+  .sa-wrap { max-width: 1080px; margin: 0 auto; padding: 22px 18px 60px; }
+  .sa-masthead {
+    background: var(--ink-800); color: #fff; border-radius: var(--r-xl);
+    padding: 26px 28px; margin-bottom: 22px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .sa-masthead img { width: 46px; height: 46px; border-radius: 12px; }
+  .sa-masthead .org { font-size: .62rem; font-weight: 800; letter-spacing: .16em; color: var(--gold-400); text-transform: uppercase; }
+  .sa-masthead h1 { font-family: "Playfair Display", serif; font-size: 1.5rem; margin: 2px 0 0; color: #fff; }
+  .sa-masthead .spacer { flex: 1; }
+  .sa-dl {
+    background: var(--gold-500); color: var(--ink-800); font-weight: 800;
+    border: none; border-radius: var(--r-sm); padding: 12px 18px;
+    font-size: .82rem; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .sa-dl:hover { background: var(--gold-400); }
+  .sa-meta { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 20px; }
+  .sa-stat .n { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; color: var(--ink-800); }
+  .sa-stat .l { font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); }
+  .sa-day { margin-bottom: 26px; }
+  .sa-day-head {
+    display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px;
+    padding-bottom: 8px; border-bottom: 2px solid var(--gold-500);
+  }
+  .sa-day-head h2 { font-family: var(--mono); font-size: 1.05rem; color: var(--ink-800); margin: 0; }
+  .sa-day-head .c { font-size: .72rem; color: var(--t2); }
+  .sa-tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-lg); background: #fff; }
+  table.sa-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; min-width: 640px; }
+  table.sa-tbl th {
+    background: var(--paper-2); text-align: left; padding: 10px 12px;
+    font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--t2);
+    white-space: nowrap;
+  }
+  table.sa-tbl td { padding: 10px 12px; border-top: 1px solid var(--line); color: var(--t1); vertical-align: top; }
+  table.sa-tbl tr:nth-child(even) td { background: #FBFAF7; }
+  .sa-name { font-weight: 700; }
+  .sa-mono { font-family: var(--mono); font-size: .76rem; }
+  .sa-badge { display: inline-block; font-size: .62rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; }
+  .sa-badge.office { background: var(--gold-100); color: var(--gold-600); }
+  .sa-badge.remote { background: #FDE7E7; color: #b42318; }
+  .sa-addr { color: var(--t2); font-size: .74rem; }
+  .sa-addr a { color: var(--ink-600); font-weight: 600; white-space: nowrap; }
+  .sa-foot { margin-top: 30px; font-size: .72rem; color: var(--t3); text-align: center; }
+  .sa-empty { text-align: center; padding: 70px 20px; color: var(--t3); }
+  .sa-empty i { font-size: 3rem; margin-bottom: 14px; display: block; color: var(--line-2); }
+</style>
+</head>
+<body>
+<div class="sa-wrap">
+{% if not_found %}
+  <div class="sa-masthead">
+    <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+    <div><div class="org">Office of Academics</div><h1>Attendance Portal</h1></div>
+  </div>
+  <div class="sa-empty">
+    <i class="fas fa-link-slash"></i>
+    <h2 style="color:var(--t1);margin:0 0 6px">This link is no longer available</h2>
+    <p>The share link may have been revoked or never existed.</p>
+  </div>
+{% else %}
+  <div class="sa-masthead">
+    <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+    <div>
+      <div class="org">Office of Academics · Sign-in analysis</div>
+      <h1>{{ title }}</h1>
+    </div>
+    <span class="spacer"></span>
+    <a class="sa-dl" href="{{ url_for('shared_analysis_excel', token=token) }}">
+      <i class="fas fa-file-excel"></i> Download Excel
+    </a>
+  </div>
+
+  <div class="sa-meta">
+    <div class="sa-stat"><div class="n">{{ dates|length }}</div><div class="l">Day{{ 's' if dates|length != 1 else '' }}</div></div>
+    <div class="sa-stat"><div class="n">{{ people }}</div><div class="l">People</div></div>
+    <div class="sa-stat"><div class="n">{{ total_records }}</div><div class="l">Sign-ins</div></div>
+  </div>
+
+  {% if days %}
+    {% for day in days %}
+    <section class="sa-day">
+      <div class="sa-day-head">
+        <h2>{{ day.date }}</h2>
+        <span class="c">{{ day.rows|length }} sign-in{{ 's' if day.rows|length != 1 else '' }}</span>
+      </div>
+      <div class="sa-tablewrap">
+        <table class="sa-tbl">
+          <thead>
+            <tr>
+              <th>Name</th><th>Shift</th><th>Login (IST)</th><th>Logout (IST)</th>
+              <th>Hours</th><th>Where they signed in</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in day.rows %}
+            <tr>
+              <td class="sa-name">{{ r.username }}</td>
+              <td>{{ r.shift_name }}</td>
+              <td class="sa-mono">{{ r.login_time or '—' }}</td>
+              <td class="sa-mono">{{ r.logout_time or '—' }}</td>
+              <td class="sa-mono">{{ r.hours }}</td>
+              <td>
+                <span class="sa-badge {{ 'office' if r.at_office == 'Yes' else 'remote' }}">
+                  {{ 'On campus' if r.at_office == 'Yes' else 'Remote' }}
+                </span>
+                <div class="sa-addr">
+                  {{ r.login_address or 'Location not recorded' }}
+                  {% if r.login_lat and r.login_lng %}
+                    · <a href="https://www.google.com/maps/search/?api=1&query={{ r.login_lat }},{{ r.login_lng }}" target="_blank" rel="noopener">map ↗</a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endfor %}
+  {% else %}
+    <div class="sa-empty">
+      <i class="fas fa-map-marker-slash"></i>
+      <p>No sign-in records for the selected day{{ 's' if dates|length != 1 else '' }}.</p>
+    </div>
+  {% endif %}
+
+  <div class="sa-foot">
+    Shared from the JAIN Attendance Portal{% if created_by %} by {{ created_by }}{% endif %}.
+    This is a read-only view — no login required.
+  </div>
+{% endif %}
+</div>
+</body>
+</html>

@@ -15,6 +15,7 @@ pytz==2025.2
 
 pandas==2.2.3
 numpy>=2.0.0
+openpyxl==3.1.5
 
 # imported by app.py but missing from the original file
 opencv-python-headless==4.10.0.84

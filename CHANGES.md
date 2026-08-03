@@ -182,6 +182,34 @@ them a pass on staging before this goes to the VPS.
 
 ---
 
+## 6b. Sign-in analysis — Excel download & shareable link (admin)
+
+On the admin console's **Locations & Map** tab you can now turn the "where
+people signed in" view into a report:
+
+* **Download this day (Excel)** — the day shown in the date picker, as a
+  formatted `.xlsx` (name, shift, login/logout time, hours, on-campus flag,
+  the address and coordinates people signed in from, and device details).
+* **Add day to report** — gather several days into one report; each shows as a
+  removable chip. **Download report (Excel)** pulls all of them into a single
+  workbook.
+* **Create shareable link** — mints an unguessable link that opens the same
+  analysis and the Excel download **without a login**, for forwarding to HR.
+  Links can be revoked; revoked links 404.
+
+### Backend
+
+* `openpyxl` added to `requirements.txt` (Excel writer).
+* New routes in `app.py`: `/admin/analysis/excel`,
+  `/api/admin/analysis/share` (+ `shares`, `share/<token>/revoke`), and the
+  public `/share/analysis/<token>` and `/share/analysis/<token>/excel`.
+* Shares live in a new `analysis_shares` collection keyed by a
+  `secrets.token_urlsafe(24)` token. No existing schema changed.
+* New standalone public template `templates/shared_analysis.html`
+  (`noindex`, read-only).
+
+---
+
 ## 7. Deploying
 
     # from your repo root, after copying these files in
