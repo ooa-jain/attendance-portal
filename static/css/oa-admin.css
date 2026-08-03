@@ -536,3 +536,23 @@
 .cal-key.met  { background: #E8F5EC; border-color: #A7D8B8; }
 .cal-key.part { background: #FCF3E2; border-color: #EAD3A0; }
 .cal-key.none { background: var(--paper); }
+
+/* ── Saved share links (history) ────────────────────────────────────── */
+.ad-saved {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px dashed var(--line-2);
+}
+.ad-saved-head {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  font-size: .82rem; color: var(--t1);
+}
+.ad-saved-item {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; margin-bottom: 8px;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.ad-saved-info { flex: 1; min-width: 180px; }
+.ad-saved-title { font-size: .82rem; font-weight: 700; color: var(--t1); }
+.ad-saved-meta { font-size: .7rem; color: var(--t2); margin-top: 2px; font-family: var(--mono); }
+.ad-saved-acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.ad-saved-acts .oa-btn { padding: 6px 9px; }
