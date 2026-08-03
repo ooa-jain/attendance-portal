@@ -52,6 +52,15 @@
   .ov-in-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); }
   .ov-in-row .nm { font-weight: 700; font-size: .8rem; color: var(--t1); }
   .ov-in-row .tm { font-family: var(--mono); font-size: .68rem; color: var(--t2); margin-left: auto; }
+  .ov-in-row2 { padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); }
+  .ov-in-top { display: flex; align-items: baseline; gap: 8px; }
+  .ov-in-top .nm { font-weight: 700; font-size: .8rem; color: var(--t1); }
+  .ov-in-top .tm { font-family: var(--mono); font-size: .66rem; color: var(--t2); margin-left: auto; }
+  .ov-loc { font-size: .72rem; color: var(--t2); margin-top: 4px; }
+  .ov-loc a { color: var(--ink-600); font-weight: 600; white-space: nowrap; }
+  .ov-locbadge { font-size: .58rem; font-weight: 800; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; }
+  .ov-locbadge.office { background: #E8F5EC; color: #1E7D46; }
+  .ov-locbadge.remote { background: #FCF3E2; color: #B0740A; }
   .ov-chip { font-size: .74rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; display: inline-block; }
   .ov-chip.out   { background: #FCEBEA; color: #8A3833; border: 1px solid #E7B4AF; }
   .ov-chip.leave { background: #EEF0F3; color: #5D6470; border: 1px solid #D3D8DF; }
@@ -216,10 +225,21 @@
     const inPeople = [].concat(b.complete||[], b.active||[], b.early||[])
       .sort((a,c)=> (a.login_time||'').localeCompare(c.login_time||''));
     document.getElementById('ovInCount').textContent = inPeople.length;
-    document.getElementById('ovInList').innerHTML = inPeople.length ? inPeople.map(p =>
-      `<div class="ov-in-row"><span class="nm">${esc(p.username)}</span>
-         <span class="tm">${p.login_time||'—'}${p.logout_time ? ' → '+p.logout_time : ' · active'} · ${p.hours}h</span></div>`
-    ).join('') : '<div class="ov-empty-row">Nobody yet</div>';
+    document.getElementById('ovInList').innerHTML = inPeople.length ? inPeople.map(p => {
+      const hasCoords = p.login_lat != null && p.login_lng != null;
+      const badge = p.at_office
+        ? '<span class="ov-locbadge office">On campus</span>'
+        : '<span class="ov-locbadge remote">Remote</span>';
+      const maplink = hasCoords
+        ? ` · <a href="https://www.google.com/maps/search/?api=1&query=${p.login_lat},${p.login_lng}" target="_blank" rel="noopener">map ↗</a>`
+        : '';
+      const addr = p.login_address ? esc(p.login_address) : 'Location not recorded';
+      return `<div class="ov-in-row2">
+        <div class="ov-in-top"><span class="nm">${esc(p.username)}</span>
+          <span class="tm">${p.login_time||'—'}${p.logout_time ? ' → '+p.logout_time : ' · active'} · ${p.hours}h</span></div>
+        <div class="ov-loc">${badge} ${addr}${maplink}</div>
+      </div>`;
+    }).join('') : '<div class="ov-empty-row">Nobody yet</div>';
 
     ovChips('ovOutList','ovOutCount', b.absent, 'out');
     ovChips('ovLeaveList','ovLeaveCount', b.on_leave, 'leave');

@@ -225,7 +225,9 @@ The share panel now mints **two kinds** of no-login link:
   sees **who signed in and who did not**, on-leave and off/weekend, the
   attendance rate, a **per-person calendar** (click a name → From→To calendar
   with worked/absent/leave/holiday days), and a **Download Excel (this day)**
-  button. It always reflects current data — no fixed dates.
+  button. It always reflects current data — no fixed dates. Each signed-in
+  person shows **where they signed in** — an on-campus / remote badge, the
+  recorded address and a map link — for whatever day is picked.
 
 Saved links show a **Monthly / Overall** badge. Overall links honour the same
 user scope and the weekend rules (Sun holiday, Sat optional).
