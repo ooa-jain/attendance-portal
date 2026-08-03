@@ -1901,8 +1901,14 @@ def admin_analysis_overview():
             prog.setdefault(uid, {})
             prog[uid][r.get("date")] = prog[uid].get(r.get("date"), 0.0) + (r.get("hours", 0) or 0)
 
-        buckets = {k: [] for k in ("complete", "active", "early", "absent", "on_leave")}
-        totals  = {"registered": 0, "complete": 0, "active": 0, "early": 0, "absent": 0, "on_leave": 0}
+        # Sunday = holiday, Saturday = optional: on those days a no-show is "off",
+        # not "absent".
+        day_wd  = day_date.weekday()   # 0=Mon … 5=Sat, 6=Sun
+        weekend = day_wd in (5, 6)
+
+        buckets = {k: [] for k in ("complete", "active", "early", "absent", "on_leave", "off")}
+        totals  = {"registered": 0, "complete": 0, "active": 0, "early": 0,
+                   "absent": 0, "on_leave": 0, "off": 0}
 
         for u in users:
             uid    = str(u["_id"])
@@ -1925,7 +1931,12 @@ def admin_analysis_overview():
                         has_active = True
 
             if not recs:
-                status = "on_leave" if (uid in leave_uids or uname in leave_names) else "absent"
+                if uid in leave_uids or uname in leave_names:
+                    status = "on_leave"
+                elif weekend:
+                    status = "off"      # Saturday optional / Sunday holiday
+                else:
+                    status = "absent"
             elif has_active:
                 status = "active"
             elif total_hours + 1e-6 >= target:
@@ -1961,15 +1972,18 @@ def admin_analysis_overview():
         # Sort each bucket most-relevant-first.
         buckets["early"].sort(key=lambda x: x["shortfall"], reverse=True)
         buckets["complete"].sort(key=lambda x: x["progress_pct"], reverse=True)
-        for k in ("absent", "on_leave", "active"):
+        for k in ("absent", "on_leave", "active", "off"):
             buckets[k].sort(key=lambda x: x["username"].lower())
 
         signed_in = totals["complete"] + totals["active"] + totals["early"]
-        expected  = totals["registered"] - totals["on_leave"]   # people who were due in
+        # People due in excludes those on leave and those off (weekend/holiday).
+        expected  = totals["registered"] - totals["on_leave"] - totals["off"]
         rate      = round(signed_in / expected * 100) if expected else 0
 
         return jsonify({
             "date":       day,
+            "weekend":    weekend,
+            "day_label":  "Sunday · holiday" if day_wd == 6 else ("Saturday · optional" if day_wd == 5 else ""),
             "totals":     totals,
             "signed_in":  signed_in,
             "expected":   expected,
@@ -2023,17 +2037,30 @@ def compute_user_analysis(user_doc, start, end):
     today = date.today()
     present_set = set(days.keys())
     timeline = []
-    working = present = absent = leave = 0
+    # working = compulsory Mon–Fri days; Sunday is a holiday, Saturday is optional
+    # (a Saturday sign-in counts as worked, but a missed Saturday is never absent).
+    working = present = absent = leave = optional_worked = 0
     cur = start
     guard = 0
     while cur <= end and guard < 800:
         guard += 1
         if cur > today:
             break
-        if cur.weekday() != 6:              # Sunday off
-            iso = cur.isoformat()
+        wd  = cur.weekday()                 # 0=Mon … 5=Sat, 6=Sun
+        iso = cur.isoformat()
+        is_present = iso in present_set
+
+        if wd == 6:                         # Sunday — holiday
+            status, hrs, met = "holiday", 0, False
+        elif wd == 5:                       # Saturday — optional
+            if is_present:
+                present += 1; optional_worked += 1
+                status, hrs, met = "present", days[iso]["hours"], days[iso]["met_target"]
+            else:
+                status, hrs, met = "optional", 0, False
+        else:                               # Mon–Fri — compulsory
             working += 1
-            if iso in present_set:
+            if is_present:
                 present += 1
                 status, hrs, met = "present", days[iso]["hours"], days[iso]["met_target"]
             elif iso in leave_dates:
@@ -2042,13 +2069,15 @@ def compute_user_analysis(user_doc, start, end):
             else:
                 absent += 1
                 status, hrs, met = "absent", 0, False
-            timeline.append({"date": iso, "weekday": cur.strftime("%a"),
-                             "status": status, "hours": hrs, "met": met})
+
+        timeline.append({"date": iso, "weekday": cur.strftime("%a"),
+                         "status": status, "hours": hrs, "met": met})
         cur += timedelta(days=1)
 
     total_hours = round(sum(e["hours"] for e in days.values()), 2)
-    denom = max(working - leave, 0)
-    rate  = round(present / denom * 100) if denom else 0
+    denom = max(working - leave, 0)          # rate is against compulsory days only
+    present_weekday = working - absent - leave
+    rate  = round(present_weekday / denom * 100) if denom else 0
 
     return {
         "target_hours": round(target, 2),
@@ -2058,13 +2087,14 @@ def compute_user_analysis(user_doc, start, end):
         "timeline":     timeline,
         "months":       months_in_range(start, min(end, today)),
         "summary": {
-            "working_days":    working,
-            "present":         present,
-            "absent":          absent,
-            "leave":           leave,
-            "total_hours":     total_hours,
-            "avg_hours":       round(total_hours / present, 1) if present else 0,
-            "attendance_rate": rate,
+            "working_days":     working,
+            "present":          present,
+            "absent":           absent,
+            "leave":            leave,
+            "saturdays_worked": optional_worked,
+            "total_hours":      total_hours,
+            "avg_hours":        round(total_hours / present, 1) if present else 0,
+            "attendance_rate":  rate,
         },
     }
 
@@ -2490,18 +2520,59 @@ def shared_analysis_view(token):
     dates = share.get("dates", [])
     users = share.get("users", [])
     rows  = build_analysis_rows(dates, users)
-    # Group rows by day so the page reads like a diary of arrivals.
+
+    # Who was expected in? The share's user filter, or every non-admin if "all".
+    if users:
+        expected_users = sorted(set(users), key=lambda x: x.lower())
+    else:
+        expected_users = sorted(
+            (u.get("username", "") for u in mongo.db.users.find({"role": {"$ne": "admin"}})),
+            key=lambda x: x.lower())
+    expected_set = set(expected_users)
+
+    # Group rows by day; for each day work out who signed in and who did not
+    # (Sunday = holiday, Saturday = optional — no "absent" on those days).
     by_day = {}
     for r in rows:
         by_day.setdefault(r["date"], []).append(r)
-    days = [{"date": d, "rows": by_day[d]} for d in sorted(by_day.keys())]
+    days = []
+    for d in sorted(by_day.keys()):
+        day_rows = by_day[d]
+        present_names = {r["username"] for r in day_rows}
+        try:
+            wd = date.fromisoformat(d).weekday()
+        except ValueError:
+            wd = 0
+        weekend = wd in (5, 6)
+        absent_names = [] if weekend else sorted(
+            (n for n in expected_set if n not in present_names), key=lambda x: x.lower())
+        days.append({
+            "date":          d,
+            "rows":          day_rows,
+            "present_count": len(present_names),
+            "absent_names":  absent_names,
+            "weekend_label": ("Sunday · holiday" if wd == 6 else "Saturday · optional") if weekend else "",
+        })
 
     # Per-person breakdown, scoped to exactly what this share already contains
     # (its selected days and users) — click a name to see that person's days,
     # present vs absent across the report's days, and hours.
     report_days = sorted(set(dates))
-    total_days  = len(report_days)
-    by_user = {}
+
+    def _wd(d):
+        try:
+            return date.fromisoformat(d).weekday()
+        except ValueError:
+            return 0
+
+    # Only Mon–Fri report days are compulsory; Saturday optional, Sunday holiday.
+    compulsory_days = [d for d in report_days if _wd(d) < 5]
+    n_comp = len(compulsory_days)
+
+    # Every expected person appears, even those who never signed in (so absentees
+    # are visible), keyed off the same roster used for the daily absent lists.
+    by_user = {name: {"username": name, "present": set(), "hours": 0.0, "rows": []}
+               for name in expected_users}
     for r in rows:
         p = by_user.setdefault(r["username"], {"username": r["username"], "present": set(),
                                                "hours": 0.0, "rows": []})
@@ -2511,14 +2582,15 @@ def shared_analysis_view(token):
     people_breakdown = []
     for uname in sorted(by_user, key=lambda x: x.lower()):
         p = by_user[uname]
-        present = len(p["present"])
+        present_total   = len(p["present"])
+        present_weekday = len([d for d in p["present"] if _wd(d) < 5])
         people_breakdown.append({
             "username":   uname,
-            "present":    present,
-            "absent":     max(total_days - present, 0),
-            "total_days": total_days,
+            "present":    present_total,
+            "absent":     max(n_comp - present_weekday, 0),
+            "total_days": n_comp,
             "hours":      round(p["hours"], 2),
-            "avg":        round(p["hours"] / present, 1) if present else 0,
+            "avg":        round(p["hours"] / present_total, 1) if present_total else 0,
             "rows":       sorted(p["rows"], key=lambda x: (x["date"], x.get("login_time") or "")),
         })
 
@@ -2531,9 +2603,9 @@ def shared_analysis_view(token):
         users=users,
         days=days,
         people_breakdown=people_breakdown,
-        report_day_count=total_days,
+        report_day_count=n_comp,
         total_records=len(rows),
-        people=len(by_user),
+        people=len({r["username"] for r in rows}),
         created_by=share.get("created_by", ""),
         office_lat=OFFICE_LAT,
         office_lng=OFFICE_LNG,
