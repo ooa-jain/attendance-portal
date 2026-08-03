@@ -238,8 +238,13 @@ Under the category columns the tab also carries an **Individual attendance
 calendar**: a searchable list of every registered person. Click a name and a
 month calendar opens showing exactly which days they signed in — green for
 days that met their hours target, amber for a short day, plain for no sign-in
-— with the **count of days logged in** and total hours for the month, and
-‹ › month navigation. It's login days only; no location is shown here.
+— with ‹ › month navigation. It's login days only; no location is shown here.
+
+Above the calendar a **full month summary** now shows **Days worked · Absent ·
+On leave · Total hours · Avg/day · Attendance %**, measured against the
+month's working days (Mon–Sat, only up to today). Absent = working days minus
+the days present minus approved leave; the attendance rate does not count
+leave days against the person.
 
 ### Backend
 
