@@ -185,17 +185,17 @@ them a pass on staging before this goes to the VPS.
 ## 6b. Sign-in analysis — Excel download & shareable link (admin)
 
 On the admin console's **Locations & Map** tab you can now turn the "where
-people signed in" view into a report:
+people signed in" view into a report. Pick a **From → To date range**, choose
+**which users** to include (leave all unchecked for everyone), give it a
+**title** (auto-fills to `users-…` from your selection), then:
 
-* **Download this day (Excel)** — the day shown in the date picker, as a
-  formatted `.xlsx` (name, shift, login/logout time, hours, on-campus flag,
-  the address and coordinates people signed in from, and device details).
-* **Add day to report** — gather several days into one report; each shows as a
-  removable chip. **Download report (Excel)** pulls all of them into a single
-  workbook.
+* **Download Excel** — a formatted `.xlsx` for the chosen range and users
+  (name, shift, login/logout time, hours, on-campus flag, the address and
+  coordinates people signed in from, and device details). The title becomes
+  the workbook heading and the file name.
 * **Create shareable link** — mints an unguessable link that opens the same
-  analysis and the Excel download **without a login**, for forwarding to HR.
-  Links can be revoked; revoked links 404.
+  analysis (same range, users and title) and the Excel download **without a
+  login**, for forwarding to HR. Links can be revoked; revoked links 404.
 
 ### Backend
 

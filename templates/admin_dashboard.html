@@ -389,58 +389,62 @@
           <input type="date" id="locationDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadLocations()">
         </div>
 
-        <!-- ── Sign-in analysis: download this day, build a multi-day report, share ── -->
+        <!-- ── Sign-in analysis: pick dates + users + title, then download / share ── -->
         <div class="ad-analysis">
-          <div class="ad-analysis-row">
-            <a id="analysisDayDownload" class="oa-btn oa-btn-primary" href="#"
-               title="Download this day's sign-in analysis as Excel">
-              <i class="fas fa-file-excel"></i> Download this day (Excel)
-            </a>
-            <button type="button" class="oa-btn oa-btn-quiet" onclick="addDayToReport()"
-                    title="Add the day shown above to the report you're building">
-              <i class="fas fa-plus"></i> Add day to report
-            </button>
+          <div class="ad-analysis-boxhead">
+            <strong><i class="fas fa-file-excel"></i> Sign-in analysis — download or share</strong>
           </div>
 
-          <!-- ── Add a whole date range at once ── -->
-          <div class="ad-analysis-range">
-            <span class="ad-range-lbl"><i class="fas fa-calendar-week"></i> Add a range</span>
-            <label>From <input type="date" id="analysisRangeFrom" class="oa-input" value="{{ today_date }}"></label>
-            <label>To <input type="date" id="analysisRangeTo" class="oa-input" value="{{ today_date }}"></label>
-            <button type="button" class="oa-btn oa-btn-secondary oa-btn-sm" onclick="addRangeToReport()">
-              <i class="fas fa-plus"></i> Add all days
-            </button>
+          <!-- Step 1: date range -->
+          <div class="ad-analysis-grid">
+            <label class="ad-fld"><span>From</span>
+              <input type="date" id="anFrom" class="oa-input" value="{{ today_date }}"></label>
+            <label class="ad-fld"><span>To</span>
+              <input type="date" id="anTo" class="oa-input" value="{{ today_date }}"></label>
           </div>
 
-          <div id="analysisReportBox" class="ad-analysis-box" style="display:none">
-            <div class="ad-analysis-boxhead">
-              <strong><i class="fas fa-layer-group"></i> Report days</strong>
-              <span id="analysisDayCount" class="oa-tag">0</span>
+          <!-- Step 2: which users (empty = everyone) -->
+          <div class="ad-fld">
+            <div class="ad-users-head">
+              <span>Users</span>
+              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(true)">Select all</button>
+              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(false)">Clear</button>
               <span class="spacer"></span>
-              <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="clearReport()">
-                <i class="fas fa-xmark"></i> Clear
-              </button>
+              <span id="anUsersCount" class="oa-tag">All users</span>
             </div>
-            <div id="analysisChips" class="ad-chips"></div>
-            <div class="ad-analysis-row">
-              <a id="analysisReportDownload" class="oa-btn oa-btn-primary" href="#">
-                <i class="fas fa-file-excel"></i> Download report (Excel)
+            <div id="anUsers" class="ad-users-box">
+              {% for u in users %}
+                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" onchange="anUsersChanged()"> {{ u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
+              {% endfor %}
+            </div>
+            <small class="ad-hint">Leave every box unchecked to include everyone.</small>
+          </div>
+
+          <!-- Step 3: title -->
+          <label class="ad-fld"><span>Title</span>
+            <input type="text" id="anTitle" class="oa-input" maxlength="120"
+                   placeholder="e.g. users-July  ·  auto-fills from your selection">
+          </label>
+
+          <div class="ad-analysis-row">
+            <button type="button" class="oa-btn oa-btn-primary" onclick="downloadAnalysis()">
+              <i class="fas fa-file-excel"></i> Download Excel
+            </button>
+            <button type="button" id="analysisShareBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink()">
+              <i class="fas fa-link"></i> Create shareable link
+            </button>
+          </div>
+
+          <div id="analysisShareResult" class="ad-share-result" style="display:none">
+            <label>Anyone with this link can view the analysis and download the Excel — <strong>no login needed</strong>.</label>
+            <div class="ad-share-linkrow">
+              <input type="text" id="analysisShareUrl" class="oa-input" readonly>
+              <button type="button" class="oa-btn oa-btn-primary oa-btn-sm" onclick="copyShareLink()">
+                <i class="fas fa-copy"></i> Copy
+              </button>
+              <a id="analysisShareOpen" class="oa-btn oa-btn-quiet oa-btn-sm" href="#" target="_blank">
+                <i class="fas fa-arrow-up-right-from-square"></i> Open
               </a>
-              <button type="button" id="analysisShareBtn" class="oa-btn oa-btn-secondary" onclick="createShareLink()">
-                <i class="fas fa-link"></i> Create shareable link
-              </button>
-            </div>
-            <div id="analysisShareResult" class="ad-share-result" style="display:none">
-              <label>Anyone with this link can view the analysis and download the Excel — <strong>no login needed</strong>.</label>
-              <div class="ad-share-linkrow">
-                <input type="text" id="analysisShareUrl" class="oa-input" readonly>
-                <button type="button" class="oa-btn oa-btn-primary oa-btn-sm" onclick="copyShareLink()">
-                  <i class="fas fa-copy"></i> Copy
-                </button>
-                <a id="analysisShareOpen" class="oa-btn oa-btn-quiet oa-btn-sm" href="#" target="_blank">
-                  <i class="fas fa-arrow-up-right-from-square"></i> Open
-                </a>
-              </div>
             </div>
           </div>
         </div>
