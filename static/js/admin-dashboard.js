@@ -657,10 +657,10 @@
           </div>`;
     }
 
-    // ── Individual attendance calendar ────────────────────────────────────
+    // ── Individual attendance analysis (calendar + summary over a range) ──
     const CAL_MONTHS = ['January','February','March','April','May','June',
                         'July','August','September','October','November','December'];
-    let calUserId = null, calUsername = '', calMonth = '';
+    let calUserId = null, calUsername = '';
 
     function filterUserCalList() {
         const q = (document.getElementById('anUserSearch').value || '').toLowerCase();
@@ -672,10 +672,12 @@
     function openUserCalendar(btn) {
         calUserId = btn.dataset.uid;
         calUsername = btn.dataset.fullname || '';
-        const username = calUsername;
-        calMonth = (document.getElementById('analysisDate').value || '').slice(0, 7)
-                   || new Date().toISOString().slice(0, 7);
-        document.getElementById('calTitle').textContent = username + ' · attendance';
+        // Default range: 1st of the month being viewed → today.
+        const viewed = (document.getElementById('analysisDate').value || '').slice(0, 10)
+                       || new Date().toISOString().slice(0, 10);
+        document.getElementById('calFrom').value = viewed.slice(0, 8) + '01';
+        document.getElementById('calTo').value   = new Date().toISOString().slice(0, 10);
+        document.getElementById('calTitle').textContent = calUsername + ' · attendance';
         document.getElementById('calendarModal').classList.add('active');
         loadCalendar();
     }
@@ -684,20 +686,15 @@
         document.getElementById('calendarModal').classList.remove('active');
     }
 
-    function calShiftMonth(delta) {
-        let [y, m] = calMonth.split('-').map(Number);
-        m += delta;
-        if (m < 1)  { m = 12; y--; }
-        if (m > 12) { m = 1;  y++; }
-        calMonth = `${y}-${String(m).padStart(2, '0')}`;
-        loadCalendar();
-    }
-
     async function loadCalendar() {
+        let from = document.getElementById('calFrom').value;
+        let to   = document.getElementById('calTo').value;
+        if (!from || !to) { showAlert('Pick a From and To date', 'danger'); return; }
+        if (from > to) { [from, to] = [to, from]; document.getElementById('calFrom').value = from; document.getElementById('calTo').value = to; }
         const body = document.getElementById('calBody');
         body.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
         try {
-            const res = await fetch(`/api/admin/user-calendar/${calUserId}?month=${encodeURIComponent(calMonth)}`);
+            const res = await fetch(`/api/admin/user-calendar/${calUserId}?from=${from}&to=${to}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to load');
             renderCalendar(data);
@@ -706,33 +703,42 @@
         }
     }
 
-    function renderCalendar(data) {
-        const [y, m] = data.month.split('-').map(Number);
+    // Build a { 'YYYY-MM-DD': {status, hours, met} } map from the day-by-day timeline.
+    function calStatusMap(data) {
+        const map = {};
+        (data.timeline || []).forEach(t => { map[t.date] = t; });
+        return map;
+    }
+
+    // One month grid, cells coloured by the day's status.
+    function calMonthGrid(monthStr, statusMap) {
+        const [y, m] = monthStr.split('-').map(Number);
         const startDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();   // 0=Sun
         const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-        const byDate = {};
-        (data.days || []).forEach(d => { byDate[d.date] = d; });
-
         const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         let cells = dow.map(d => `<div class="cal-dow">${d}</div>`).join('');
         for (let i = 0; i < startDow; i++) cells += '<div class="cal-cell empty"></div>';
         for (let day = 1; day <= daysInMonth; day++) {
-            const ds = `${data.month}-${String(day).padStart(2, '0')}`;
-            const e = byDate[ds];
-            let cls = 'none', tip = 'No sign-in';
-            if (e) { cls = e.met_target ? 'met' : 'part'; tip = `${e.hours}h · ${e.sessions} session(s)`; }
+            const ds = `${monthStr}-${String(day).padStart(2, '0')}`;
+            const t = statusMap[ds];
+            let cls = 'off', tip = '';
+            if (t) {
+                if (t.status === 'present')    { cls = t.met ? 'met' : 'part'; tip = `${t.hours}h`; }
+                else if (t.status === 'absent') { cls = 'absent'; tip = 'Absent'; }
+                else if (t.status === 'leave')  { cls = 'leave';  tip = 'On leave'; }
+            }
             cells += `<div class="cal-cell ${cls}" title="${tip}">
                         <span class="cal-num">${day}</span>
-                        ${e ? `<span class="cal-hrs">${e.hours}h</span>` : ''}
+                        ${t && t.status === 'present' ? `<span class="cal-hrs">${t.hours}h</span>` : ''}
                       </div>`;
         }
-        document.getElementById('calBody').innerHTML = `<div class="cal-grid">${cells}</div>`;
-        document.getElementById('calMonthLabel').textContent = `${CAL_MONTHS[m - 1]} ${y}`;
-        const n = data.days_logged;
-        document.getElementById('calDaysCount').textContent =
-            `${n} day${n !== 1 ? 's' : ''} · ${data.total_hours}h`;
+        return `<div class="cal-monthblock">
+                  <div class="cal-month">${CAL_MONTHS[m - 1]} ${y}</div>
+                  <div class="cal-grid">${cells}</div>
+                </div>`;
+    }
 
-        // Full summary for the month (worked / absent / leave / hours / rate)
+    function renderCalendar(data) {
         const s = data.summary || {};
         const tiles = [
             { n: s.present ?? 0,  l: 'Days worked', c: '#1E7D46' },
@@ -744,7 +750,17 @@
         ];
         document.getElementById('calSummary').innerHTML = tiles.map(t =>
             `<div class="cal-stat"><div class="n" style="color:${t.c}">${t.n}</div><div class="l">${t.l}</div></div>`
-        ).join('') + `<div class="cal-note">of ${s.working_days ?? 0} working days (Mon–Sat, up to today)</div>`;
+        ).join('') + `<div class="cal-note">${s.working_days ?? 0} working days (Mon–Sat, up to today) in this range</div>`;
+
+        const statusMap = calStatusMap(data);
+        const months = data.months || [];
+        document.getElementById('calBody').innerHTML =
+            months.length ? months.map(mo => calMonthGrid(mo, statusMap)).join('')
+                          : '<div class="oa-empty"><i class="fas fa-calendar-xmark"></i><p>No working days in this range yet.</p></div>';
+
+        const n = data.days_logged;
+        document.getElementById('calDaysCount').textContent =
+            `${n} day${n !== 1 ? 's' : ''} · ${data.total_hours}h`;
     }
 
     // ── Sign-in analysis: date range + users + title → download / share ───
