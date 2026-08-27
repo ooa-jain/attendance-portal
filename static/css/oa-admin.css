@@ -593,6 +593,35 @@
 .cal-key.optional { background: #FCF7EA; border-color: #E9DCB8; }
 .cal-key.holiday  { background: repeating-linear-gradient(45deg,#F2F1EE,#F2F1EE 3px,#E9E7E2 3px,#E9E7E2 6px); border-color: #DAD7D0; }
 
+/* ── Per-day work note: clickable cell + note panel ──────────────────── */
+.cal-cell[onclick] { cursor: pointer; }
+.cal-cell[onclick]:hover { box-shadow: 0 0 0 2px var(--gold-400) inset; }
+.cal-cell.has-note { position: relative; }
+.cal-note-dot {
+  position: absolute; top: 5px; right: 6px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold-500);
+}
+.cal-note-panel {
+  margin-top: 12px; padding: 12px; background: #fff;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.cal-note-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: .78rem; color: var(--t1); margin-bottom: 8px;
+}
+.cal-note-item {
+  font-size: .8rem; color: var(--t1); line-height: 1.5;
+  padding: 8px 0; border-top: 1px dashed var(--line-2);
+  white-space: pre-wrap; word-break: break-word;
+}
+.cal-note-item:first-child { border-top: none; padding-top: 0; }
+.cal-note-shift {
+  display: block; font-size: .62rem; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--t3); margin-bottom: 2px;
+}
+.cal-note-empty { font-size: .78rem; color: var(--t3); }
+
 /* Saved-link kind badges */
 .ad-kind { font-size: .56rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
            padding: 2px 7px; border-radius: 999px; vertical-align: middle; }

@@ -702,11 +702,28 @@
         }
     }
 
-    // Build a { 'YYYY-MM-DD': {status, hours, met} } map from the day-by-day timeline.
+    // Build a { 'YYYY-MM-DD': {status, hours, met, comments} } map from the day-by-day timeline.
     function calStatusMap(data) {
         const map = {};
         (data.timeline || []).forEach(t => { map[t.date] = t; });
         return map;
+    }
+
+    let calStatusMapCache = {};
+
+    // Show the note(s) logged for a given day in the side panel below the calendar.
+    function showCalNote(ds) {
+        const panel = document.getElementById('calNotePanel');
+        const t = calStatusMapCache[ds];
+        if (!t) { panel.style.display = 'none'; return; }
+        const notes = t.comments || [];
+        const statusLabel = { present: 'Present', absent: 'Absent', leave: 'On leave', holiday: 'Sunday · holiday', optional: 'Saturday · optional' }[t.status] || t.status;
+        const head = `${ds} · ${statusLabel}${t.status === 'present' ? ` · ${t.hours}h` : ''}`;
+        const body = notes.length
+            ? notes.map(c => `<div class="cal-note-item"><span class="cal-note-shift">${escapeHtml(c.shift)}</span>${escapeHtml(c.text)}</div>`).join('')
+            : '<div class="cal-note-empty">No note logged for this day.</div>';
+        panel.innerHTML = `<div class="cal-note-head"><strong>${head}</strong><button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="document.getElementById('calNotePanel').style.display='none'"><i class="fas fa-xmark"></i></button></div><div class="cal-note-body">${body}</div>`;
+        panel.style.display = 'block';
     }
 
     // One month grid, cells coloured by the day's status.
@@ -728,9 +745,12 @@
                 else if (t.status === 'holiday') { cls = 'holiday'; tip = 'Sunday · holiday'; }
                 else if (t.status === 'optional'){ cls = 'optional';tip = 'Saturday · optional'; }
             }
-            cells += `<div class="cal-cell ${cls}" title="${tip}">
+            const hasNote = !!(t && t.comments && t.comments.length);
+            if (hasNote) { cls += ' has-note'; tip += (tip ? ' · ' : '') + 'note logged'; }
+            cells += `<div class="cal-cell ${cls}" title="${tip}" ${t ? `onclick="showCalNote('${ds}')"` : ''}>
                         <span class="cal-num">${day}</span>
                         ${t && t.status === 'present' ? `<span class="cal-hrs">${t.hours}h</span>` : ''}
+                        ${hasNote ? '<span class="cal-note-dot"></span>' : ''}
                       </div>`;
         }
         return `<div class="cal-monthblock">
@@ -754,6 +774,9 @@
         ).join('') + `<div class="cal-note">${s.working_days ?? 0} compulsory working days (Mon–Fri) in this range · Sat optional, Sun holiday${s.saturdays_worked ? ` · ${s.saturdays_worked} Saturday(s) worked` : ''}</div>`;
 
         const statusMap = calStatusMap(data);
+        calStatusMapCache = statusMap;
+        const notePanel = document.getElementById('calNotePanel');
+        if (notePanel) notePanel.style.display = 'none';
         const months = data.months || [];
         document.getElementById('calBody').innerHTML =
             months.length ? months.map(mo => calMonthGrid(mo, statusMap)).join('')

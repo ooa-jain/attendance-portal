@@ -1126,6 +1126,7 @@ def attendance_logout():
     data         = request.get_json() if request.is_json else {}
     lat, lng     = _get_lat_lng_from_request()
     force_logout = data.get("force_logout", False)
+    comment      = (data.get("comment") or "").strip()[:2000]
 
     ist_now   = get_ist_now()
     today     = ist_now.date().isoformat()
@@ -1168,6 +1169,8 @@ def attendance_logout():
         address = get_address_from_coords(lat, lng)
         updates["logout_location"] = {"lat": lat, "lng": lng, "address": address}
         updates["logout_address"]  = address
+    if comment:
+        updates["work_comment"] = comment
 
     mongo.db.attendance.update_one({"_id": rec["_id"]}, {"$set": updates})
 
@@ -1186,6 +1189,7 @@ def attendance_logout():
         "ok":               True,
         "logout_time":      format_ist_time(logout_time),
         "hours":            updates["hours"],
+        "comment":          comment,
         "total_daily_hours": round(total_daily_hours, 1),
         "target_hours":     target_hours,
         "target_achieved":  target_achieved,
@@ -2039,9 +2043,12 @@ def compute_user_analysis(user_doc, start, end):
         d = r.get("date")
         if not d:
             continue
-        e = days.setdefault(d, {"date": d, "sessions": 0, "hours": 0.0})
+        e = days.setdefault(d, {"date": d, "sessions": 0, "hours": 0.0, "comments": []})
         e["sessions"] += 1
         e["hours"]    += r.get("hours", 0) or 0
+        comment = (r.get("work_comment") or "").strip()
+        if comment:
+            e["comments"].append({"shift": r.get("shift_name") or r.get("shift_type") or "Normal", "text": comment})
     for e in days.values():
         e["hours"]      = round(e["hours"], 2)
         e["met_target"] = e["hours"] + 1e-6 >= target
@@ -2088,7 +2095,8 @@ def compute_user_analysis(user_doc, start, end):
                 status, hrs, met = "absent", 0, False
 
         timeline.append({"date": iso, "weekday": cur.strftime("%a"),
-                         "status": status, "hours": hrs, "met": met})
+                         "status": status, "hours": hrs, "met": met,
+                         "comments": days.get(iso, {}).get("comments", [])})
         cur += timedelta(days=1)
 
     total_hours = round(sum(e["hours"] for e in days.values()), 2)
