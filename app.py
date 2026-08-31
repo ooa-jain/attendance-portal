@@ -1128,6 +1128,9 @@ def attendance_logout():
     force_logout = data.get("force_logout", False)
     comment      = (data.get("comment") or "").strip()[:2000]
 
+    if not comment:
+        return jsonify({"error": "Please add a short note about today's work before logging out."}), 400
+
     ist_now   = get_ist_now()
     today     = ist_now.date().isoformat()
     shift_type = data.get("shift_type")

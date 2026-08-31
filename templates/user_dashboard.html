@@ -616,11 +616,12 @@
   <div class="oa-sheet">
     <div class="oa-handle"></div>
     <div class="oa-sheet-title">Before you go…</div>
-    <div class="oa-sheet-sub">Add a quick note on today's work — what you did, places visited. Optional.</div>
+    <div class="oa-sheet-sub">Add a note on today's work — what you did, places visited. Required to log out.</div>
     <div class="oa-sheet-body">
       <div class="oa-field">
-        <label for="wcText">Today's update</label>
-        <textarea id="wcText" rows="4" placeholder="e.g. Visited client site at MG Road, completed the weekly report…"></textarea>
+        <label for="wcText">Today's update *</label>
+        <textarea id="wcText" rows="4" required placeholder="e.g. Visited client site at MG Road, completed the weekly report…"></textarea>
+        <div id="wcErr" style="display:none;color:var(--bad);font-size:.76rem;margin-top:4px">Please add a note before logging out.</div>
       </div>
     </div>
     <div class="oa-sheet-actions">

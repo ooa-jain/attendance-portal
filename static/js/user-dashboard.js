@@ -721,17 +721,26 @@ function doShiftLogout(type){
     .finally(()=>{btn.disabled=false;btn.innerHTML=`<i class="fas fa-stop"></i> End ${type==='shift1'?'S1':'S2'}`});
 }
 
-// ─ Logout note sheet ─
+// ─ Logout note sheet (comment is mandatory) ─
 let wcState=null;
 function openWorkComment(lat,lng,type){
   wcState={lat,lng,type};
   document.getElementById('wcText').value='';
+  document.getElementById('wcErr').style.display='none';
   document.getElementById('workBD').classList.add('show');
 }
 function closeWorkBD(){document.getElementById('workBD').classList.remove('show');wcState=null;}
+document.getElementById('wcText').addEventListener('input',()=>{
+  if(document.getElementById('wcText').value.trim())document.getElementById('wcErr').style.display='none';
+});
 document.getElementById('wcSubmit').addEventListener('click',()=>{
   if(!wcState)return;
   const comment=document.getElementById('wcText').value.trim();
+  if(!comment){
+    document.getElementById('wcErr').style.display='block';
+    document.getElementById('wcText').focus();
+    return;
+  }
   const {lat,lng,type}=wcState;
   document.getElementById('workBD').classList.remove('show');
   doLogout(lat,lng,type,false,comment);
