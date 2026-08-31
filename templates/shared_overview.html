@@ -121,10 +121,23 @@
     <input type="date" id="ovDate" class="oa-input" style="width:auto" value="{{ today }}" onchange="ovLoad()">
     <button class="ov-btn" onclick="ovSet('{{ today }}')">Today</button>
     <button class="ov-btn" onclick="ovSet('{{ yesterday }}')">Yesterday</button>
+    <button class="ov-btn" onclick="ovTogglePicker()"><i class="fas fa-calendar-days"></i> Calendar</button>
     <a class="ov-dl" id="ovDownload" href="{{ url_for('shared_analysis_excel', token=token) }}?date={{ today }}">
       <i class="fas fa-file-excel"></i> Download Excel (this day)
     </a>
     <span class="ov-daylabel" id="ovDayLabel"></span>
+  </div>
+
+  <div class="ov-col" id="ovPicker" style="display:none;margin-bottom:18px">
+    <div class="ov-col-head">
+      <button class="ov-btn" style="padding:5px 9px" onclick="ovShiftPickMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+      <span id="ovPickMonthLabel">—</span>
+      <button class="ov-btn" style="padding:5px 9px" onclick="ovShiftPickMonth(1)"><i class="fas fa-chevron-right"></i></button>
+      <span class="c" style="margin-left:auto">Pick a day</span>
+    </div>
+    <div class="ov-col-body" id="ovPickGrid" style="max-height:none">
+      <div class="ov-empty-row">Loading…</div>
+    </div>
   </div>
 
   <div id="ovWeekNote" class="ov-weeknote" style="display:none"></div>
@@ -190,6 +203,74 @@
 
   function ovSet(d) { document.getElementById('ovDate').value = d; ovLoad(); }
 
+  // ── Calendar date-picker (quicker than typing a date) ──
+  let ovPickMonth = OV_TODAY.slice(0, 7);
+  let ovPickCounts = {};
+  let ovPickTotalPeople = 0;
+
+  function ovTogglePicker() {
+    const el = document.getElementById('ovPicker');
+    const show = el.style.display === 'none';
+    el.style.display = show ? 'block' : 'none';
+    if (show) {
+      const d = document.getElementById('ovDate').value || OV_TODAY;
+      ovPickMonth = d.slice(0, 7);
+      loadDayPicker();
+    }
+  }
+
+  function ovShiftPickMonth(delta) {
+    let [y, m] = ovPickMonth.split('-').map(Number);
+    m += delta;
+    if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+    ovPickMonth = `${y}-${String(m).padStart(2, '0')}`;
+    loadDayPicker();
+  }
+
+  async function loadDayPicker() {
+    const grid = document.getElementById('ovPickGrid');
+    grid.innerHTML = '<div class="ov-empty-row">Loading…</div>';
+    try {
+      const res = await fetch(`/share/analysis/${OV_TOKEN}/day-counts?month=${ovPickMonth}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      ovPickCounts = data.days || {};
+      ovPickTotalPeople = data.total_people || 0;
+      const [y, m] = ovPickMonth.split('-').map(Number);
+      document.getElementById('ovPickMonthLabel').textContent = `${CAL_MONTHS[m - 1]} ${y}`;
+      renderDayPicker();
+    } catch (e) {
+      grid.innerHTML = '<div class="ov-empty-row">' + e.message + '</div>';
+    }
+  }
+
+  function renderDayPicker() {
+    const totalPeople = ovPickTotalPeople;
+    const [y, m] = ovPickMonth.split('-').map(Number);
+    const startDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+    const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const todayStr = OV_TODAY;
+    const selected = document.getElementById('ovDate').value;
+    let cells = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-dow">${d}</div>`).join('');
+    for (let i = 0; i < startDow; i++) cells += '<div class="cal-cell empty"></div>';
+    for (let d = 1; d <= dim; d++) {
+      const ds = `${ovPickMonth}-${String(d).padStart(2, '0')}`;
+      const n = ovPickCounts[ds] || 0;
+      const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+      let cls = 'off';
+      if (ds > todayStr) cls = 'off';
+      else if (n > 0) cls = (totalPeople && n >= totalPeople) ? 'met' : 'part';
+      else if (wd === 0) cls = 'holiday';
+      else if (wd === 6) cls = 'optional';
+      else cls = 'absent';
+      const ring = ds === selected ? 'border:2px solid var(--gold-500);' : '';
+      cells += `<div class="cal-cell ${cls}" style="cursor:pointer;${ring}" title="${n} signed in" onclick="ovSet('${ds}')">
+                  <span class="cal-num">${d}</span>${n ? `<span class="cal-hrs">${n}</span>` : ''}
+                </div>`;
+    }
+    document.getElementById('ovPickGrid').innerHTML = `<div class="cal-grid">${cells}</div>`;
+  }
+
   async function ovLoad() {
     const d = document.getElementById('ovDate').value || OV_TODAY;
     document.getElementById('ovDownload').href = `/share/analysis/${OV_TOKEN}/excel?date=${d}`;
@@ -200,6 +281,10 @@
       ovRender(data);
     } catch (e) {
       document.getElementById('ovKpis').innerHTML = '<div class="ov-empty-row">' + e.message + '</div>';
+    }
+    if (document.getElementById('ovPicker').style.display !== 'none') {
+      if (d.slice(0, 7) !== ovPickMonth) { ovPickMonth = d.slice(0, 7); loadDayPicker(); }
+      else renderDayPicker();
     }
   }
 

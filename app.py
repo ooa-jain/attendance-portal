@@ -1742,10 +1742,42 @@ def admin_user_locations(date_str):
                 "logout_lng":    logout_loc.get("lng"),
                 "at_office":     r.get("at_office", False),
                 "device_info":   r.get("device_info", {}),
+                "work_comment":  r.get("work_comment", ""),
             })
         return jsonify({"locations": locations, "count": len(set(r.get("username") for r in records)), "date": date_str, "office_lat": OFFICE_LAT, "office_lng": OFFICE_LNG})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/calendar-overview")
+@login_required
+def admin_calendar_overview():
+    """One month, every non-admin user: how many people signed in each day.
+    Powers the org-wide 'Calendar' tab (as opposed to the per-person one).
+    """
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    month = request.args.get("month") or date.today().strftime("%Y-%m")
+    try:
+        d0 = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+    except ValueError:
+        return jsonify({"error": "Invalid month"}), 400
+    nxt = date(d0.year + 1, 1, 1) if d0.month == 12 else date(d0.year, d0.month + 1, 1)
+    recs = mongo.db.attendance.find(
+        {"date": {"$gte": d0.isoformat(), "$lt": nxt.isoformat()}},
+        {"date": 1, "username": 1})
+    counts = {}
+    for r in recs:
+        d = r.get("date")
+        if not d:
+            continue
+        counts.setdefault(d, set()).add(r.get("username"))
+    total_people = mongo.db.users.count_documents({"role": {"$ne": "admin"}})
+    return jsonify({
+        "month":        month,
+        "days":         {d: len(u) for d, u in counts.items()},
+        "total_people": total_people,
+    })
 
 
 @app.route("/api/user/team-today")
@@ -2694,6 +2726,39 @@ def shared_overview_data(token):
         return jsonify({"error": "Not found"}), 404
     day = request.args.get("date") or date.today().isoformat()
     return jsonify(compute_day_overview(day, share.get("users") or None))
+
+
+@app.route("/share/analysis/<token>/day-counts")
+def shared_day_counts(token):
+    """Public month view for an 'overall' share: how many (of the share's
+    scoped users) signed in each day. Powers the calendar date-picker.
+    """
+    share = _get_live_share(token)
+    if not share or share.get("kind") != "overall":
+        return jsonify({"error": "Not found"}), 404
+    month = request.args.get("month") or date.today().strftime("%Y-%m")
+    try:
+        d0 = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+    except ValueError:
+        return jsonify({"error": "Invalid month"}), 400
+    nxt = date(d0.year + 1, 1, 1) if d0.month == 12 else date(d0.year, d0.month + 1, 1)
+    query = {"date": {"$gte": d0.isoformat(), "$lt": nxt.isoformat()}}
+    users = share.get("users")
+    if users:
+        query["username"] = {"$in": users}
+    recs = mongo.db.attendance.find(query, {"date": 1, "username": 1})
+    counts = {}
+    for r in recs:
+        d = r.get("date")
+        if not d:
+            continue
+        counts.setdefault(d, set()).add(r.get("username"))
+    total_people = len(set(users)) if users else mongo.db.users.count_documents({"role": {"$ne": "admin"}})
+    return jsonify({
+        "month":        month,
+        "days":         {d: len(u) for d, u in counts.items()},
+        "total_people": total_people,
+    })
 
 
 @app.route("/share/analysis/<token>/user-calendar/<user_id>")
