@@ -103,6 +103,29 @@
   .cal-cell.holiday { background: repeating-linear-gradient(45deg,#F2F1EE,#F2F1EE 4px,#E9E7E2 4px,#E9E7E2 8px); border-color: #DAD7D0; } .cal-cell.holiday .cal-num { color: #9AA0A8; }
   .cal-cell.optional { background: #FCF7EA; border-color: #E9DCB8; } .cal-cell.optional .cal-num { color: #A98A2E; }
   .cal-cell.off { border-color: transparent; } .cal-cell.off .cal-num { color: var(--t3); opacity: .5; }
+
+  /* day-by-day table + legend inside the per-person modal */
+  .cal-legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0 4px; font-size: .7rem; color: var(--t2); }
+  .cal-legend-row span { display: inline-flex; align-items: center; gap: 6px; }
+  .cal-key { width: 12px; height: 12px; border-radius: 4px; border: 1px solid var(--line-2); }
+  .cal-key.met { background: #E8F5EC; border-color: #A7D8B8; }
+  .cal-key.part { background: #FCF3E2; border-color: #EAD3A0; }
+  .cal-key.absent { background: #FCEBEA; border-color: #E7B4AF; }
+  .cal-key.leave { background: #EEF0F3; border-color: #D3D8DF; }
+  .cal-key.optional { background: #FCF7EA; border-color: #E9DCB8; }
+  .cal-tblhead { font-weight: 700; font-size: .84rem; color: var(--ink-800); margin: 16px 0 8px; }
+  .cal-tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .cal-tbl { width: 100%; border-collapse: collapse; font-size: .74rem; }
+  .cal-tbl th { background: var(--ink-800); color: #fff; text-align: left; white-space: nowrap;
+                padding: 7px 9px; font-size: .58rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  .cal-tbl td { padding: 6px 9px; border-top: 1px solid var(--line); color: var(--t1); vertical-align: top; }
+  .cal-tbl td:nth-child(-n+6) { white-space: nowrap; }
+  .cal-tbl tr.met { background: #E8F5EC; } .cal-tbl tr.met td { color: #1E7D46; }
+  .cal-tbl tr.part { background: #FCF3E2; } .cal-tbl tr.part td { color: #B0740A; }
+  .cal-tbl tr.absent { background: #FCEBEA; } .cal-tbl tr.absent td { color: #B7302A; font-weight: 700; }
+  .cal-tbl tr.leave { background: #EEF0F3; } .cal-tbl tr.leave td { color: #6B7480; }
+  .cal-tbl tr.holiday, .cal-tbl tr.optional { background: #FCF7EA; }
+  .cal-tbl tr.holiday td, .cal-tbl tr.optional td { color: #A98A2E; }
 </style>
 </head>
 <body>
@@ -121,10 +144,23 @@
     <input type="date" id="ovDate" class="oa-input" style="width:auto" value="{{ today }}" onchange="ovLoad()">
     <button class="ov-btn" onclick="ovSet('{{ today }}')">Today</button>
     <button class="ov-btn" onclick="ovSet('{{ yesterday }}')">Yesterday</button>
+    <button class="ov-btn" onclick="ovTogglePicker()"><i class="fas fa-calendar-days"></i> Calendar</button>
     <a class="ov-dl" id="ovDownload" href="{{ url_for('shared_analysis_excel', token=token) }}?date={{ today }}">
       <i class="fas fa-file-excel"></i> Download Excel (this day)
     </a>
     <span class="ov-daylabel" id="ovDayLabel"></span>
+  </div>
+
+  <div class="ov-col" id="ovPicker" style="display:none;margin-bottom:18px">
+    <div class="ov-col-head">
+      <button class="ov-btn" style="padding:5px 9px" onclick="ovShiftPickMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+      <span id="ovPickMonthLabel">—</span>
+      <button class="ov-btn" style="padding:5px 9px" onclick="ovShiftPickMonth(1)"><i class="fas fa-chevron-right"></i></button>
+      <span class="c" style="margin-left:auto">Pick a day</span>
+    </div>
+    <div class="ov-col-body" id="ovPickGrid" style="max-height:none">
+      <div class="ov-empty-row">Loading…</div>
+    </div>
   </div>
 
   <div id="ovWeekNote" class="ov-weeknote" style="display:none"></div>
@@ -175,9 +211,19 @@
         <label style="font-size:.72rem;color:var(--t2)">From <input type="date" id="ovCalFrom" class="oa-input" style="width:auto"></label>
         <label style="font-size:.72rem;color:var(--t2)">To <input type="date" id="ovCalTo" class="oa-input" style="width:auto"></label>
         <button class="ov-btn" onclick="ovCalLoad()">Analyse</button>
+        <a class="ov-dl" id="ovCalExcel" href="#"><i class="fas fa-file-excel"></i> Export Excel</a>
       </div>
       <div class="cal-summary" id="ovCalSummary"></div>
       <div id="ovCalBody"></div>
+      <div class="cal-legend-row">
+        <span><span class="cal-key met"></span> Met target</span>
+        <span><span class="cal-key part"></span> Short</span>
+        <span><span class="cal-key absent"></span> Absent</span>
+        <span><span class="cal-key leave"></span> On leave</span>
+        <span><span class="cal-key optional"></span> Sat / Sun</span>
+      </div>
+      <div class="cal-tblhead">Day by day</div>
+      <div id="ovCalTable"></div>
     </div>
   </div>
 </div>
@@ -190,6 +236,74 @@
 
   function ovSet(d) { document.getElementById('ovDate').value = d; ovLoad(); }
 
+  // ── Calendar date-picker (quicker than typing a date) ──
+  let ovPickMonth = OV_TODAY.slice(0, 7);
+  let ovPickCounts = {};
+  let ovPickTotalPeople = 0;
+
+  function ovTogglePicker() {
+    const el = document.getElementById('ovPicker');
+    const show = el.style.display === 'none';
+    el.style.display = show ? 'block' : 'none';
+    if (show) {
+      const d = document.getElementById('ovDate').value || OV_TODAY;
+      ovPickMonth = d.slice(0, 7);
+      loadDayPicker();
+    }
+  }
+
+  function ovShiftPickMonth(delta) {
+    let [y, m] = ovPickMonth.split('-').map(Number);
+    m += delta;
+    if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+    ovPickMonth = `${y}-${String(m).padStart(2, '0')}`;
+    loadDayPicker();
+  }
+
+  async function loadDayPicker() {
+    const grid = document.getElementById('ovPickGrid');
+    grid.innerHTML = '<div class="ov-empty-row">Loading…</div>';
+    try {
+      const res = await fetch(`/share/analysis/${OV_TOKEN}/day-counts?month=${ovPickMonth}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      ovPickCounts = data.days || {};
+      ovPickTotalPeople = data.total_people || 0;
+      const [y, m] = ovPickMonth.split('-').map(Number);
+      document.getElementById('ovPickMonthLabel').textContent = `${CAL_MONTHS[m - 1]} ${y}`;
+      renderDayPicker();
+    } catch (e) {
+      grid.innerHTML = '<div class="ov-empty-row">' + e.message + '</div>';
+    }
+  }
+
+  function renderDayPicker() {
+    const totalPeople = ovPickTotalPeople;
+    const [y, m] = ovPickMonth.split('-').map(Number);
+    const startDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+    const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const todayStr = OV_TODAY;
+    const selected = document.getElementById('ovDate').value;
+    let cells = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-dow">${d}</div>`).join('');
+    for (let i = 0; i < startDow; i++) cells += '<div class="cal-cell empty"></div>';
+    for (let d = 1; d <= dim; d++) {
+      const ds = `${ovPickMonth}-${String(d).padStart(2, '0')}`;
+      const n = ovPickCounts[ds] || 0;
+      const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+      let cls = 'off';
+      if (ds > todayStr) cls = 'off';
+      else if (n > 0) cls = (totalPeople && n >= totalPeople) ? 'met' : 'part';
+      else if (wd === 0) cls = 'holiday';
+      else if (wd === 6) cls = 'optional';
+      else cls = 'absent';
+      const ring = ds === selected ? 'border:2px solid var(--gold-500);' : '';
+      cells += `<div class="cal-cell ${cls}" style="cursor:pointer;${ring}" title="${n} signed in" onclick="ovSet('${ds}')">
+                  <span class="cal-num">${d}</span>${n ? `<span class="cal-hrs">${n}</span>` : ''}
+                </div>`;
+    }
+    document.getElementById('ovPickGrid').innerHTML = `<div class="cal-grid">${cells}</div>`;
+  }
+
   async function ovLoad() {
     const d = document.getElementById('ovDate').value || OV_TODAY;
     document.getElementById('ovDownload').href = `/share/analysis/${OV_TOKEN}/excel?date=${d}`;
@@ -200,6 +314,10 @@
       ovRender(data);
     } catch (e) {
       document.getElementById('ovKpis').innerHTML = '<div class="ov-empty-row">' + e.message + '</div>';
+    }
+    if (document.getElementById('ovPicker').style.display !== 'none') {
+      if (d.slice(0, 7) !== ovPickMonth) { ovPickMonth = d.slice(0, 7); loadDayPicker(); }
+      else renderDayPicker();
     }
   }
 
@@ -283,6 +401,8 @@
     let from = document.getElementById('ovCalFrom').value, to = document.getElementById('ovCalTo').value;
     if (!from || !to) return;
     if (from > to) { [from,to]=[to,from]; }
+    document.getElementById('ovCalExcel').href =
+      `/share/analysis/${OV_TOKEN}/user-excel/${ovCalUid}?from=${from}&to=${to}`;
     document.getElementById('ovCalBody').innerHTML = '<div class="ov-empty-row">Loading…</div>';
     try {
       const res = await fetch(`/share/analysis/${OV_TOKEN}/user-calendar/${ovCalUid}?from=${from}&to=${to}`);
@@ -290,6 +410,34 @@
       if (!res.ok) throw new Error(data.error || 'Failed');
       ovCalRender(data);
     } catch (e) { document.getElementById('ovCalBody').innerHTML = '<div class="ov-empty-row">'+e.message+'</div>'; }
+  }
+
+  const OV_STATUS_LABEL = {
+    present: 'Present', absent: 'Absent', leave: 'On leave',
+    holiday: 'Sunday · holiday', optional: 'Saturday · off',
+  };
+
+  // Day-by-day table — the same rows the Excel export carries.
+  function ovCalTable(data) {
+    const body = (data.timeline || []).map(t => {
+      const cls  = t.status === 'present' ? (t.met ? 'met' : 'part') : t.status;
+      const note = (t.comments || []).map(c => esc(c.text)).join(' | ');
+      return `<tr class="${cls}">
+        <td>${t.date}</td><td>${t.weekday}</td>
+        <td>${OV_STATUS_LABEL[t.status] || t.status}</td>
+        <td>${t.login_time || '—'}</td><td>${t.logout_time || '—'}</td>
+        <td>${t.status === 'present' ? t.hours + 'h' : '—'}</td>
+        <td>${esc(t.login_address || '—')}</td>
+        <td>${esc(t.logout_address || '—')}</td>
+        <td>${note || '—'}</td></tr>`;
+    }).join('');
+    return `<div class="cal-tbl-wrap"><table class="cal-tbl">
+      <thead><tr>
+        <th>Date</th><th>Day</th><th>Status</th><th>Login</th><th>Logout</th>
+        <th>Hours</th><th>Login location</th><th>Logout location</th><th>Work note</th>
+      </tr></thead>
+      <tbody>${body || '<tr><td colspan="9" style="text-align:center;color:var(--t3)">No days in this range.</td></tr>'}</tbody>
+    </table></div>`;
   }
 
   function ovCalRender(data) {
@@ -302,6 +450,7 @@
     const map = {}; (data.timeline||[]).forEach(t=>map[t.date]=t);
     document.getElementById('ovCalBody').innerHTML = (data.months||[]).map(mo=>ovMonth(mo,map)).join('')
       || '<div class="ov-empty-row">No working days in range.</div>';
+    document.getElementById('ovCalTable').innerHTML = ovCalTable(data);
   }
 
   function ovMonth(monthStr, map) {

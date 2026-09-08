@@ -24,6 +24,7 @@
         if (tab === 'locations') loadLocations();
         if (tab === 'face') loadFaceLogs(1);
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
+        if (tab === 'calendar') loadCalendarOverview();
     }
 
     // ── Dashboard Stats ──────────────────────────────────────────────────
@@ -685,6 +686,46 @@
         document.getElementById('calendarModal').classList.remove('active');
     }
 
+    // The same range the calendar is showing, downloaded as a formatted workbook.
+    function downloadUserExcel() {
+        let from = document.getElementById('calFrom').value;
+        let to   = document.getElementById('calTo').value;
+        if (!calUserId || !from || !to) { showAlert('Pick a From and To date', 'danger'); return; }
+        if (from > to) [from, to] = [to, from];
+        window.location.href = `/api/admin/user-excel/${calUserId}?from=${from}&to=${to}`;
+    }
+
+    const CAL_STATUS_LABEL = {
+        present: 'Present', absent: 'Absent', leave: 'On leave',
+        holiday: 'Sunday · holiday', optional: 'Saturday · off',
+    };
+
+    // Day-by-day table under the calendar — mirrors the Excel export exactly.
+    function calDayTable(data) {
+        const body = (data.timeline || []).map(t => {
+            const cls  = t.status === 'present' ? (t.met ? 'met' : 'part') : t.status;
+            const note = (t.comments || []).map(c => escapeHtml(c.text)).join(' | ');
+            return `<tr class="${cls}">
+                <td>${t.date}</td>
+                <td>${t.weekday}</td>
+                <td>${CAL_STATUS_LABEL[t.status] || t.status}</td>
+                <td>${t.login_time || '—'}</td>
+                <td>${t.logout_time || '—'}</td>
+                <td>${t.status === 'present' ? t.hours + 'h' : '—'}</td>
+                <td>${escapeHtml(t.login_address || '—')}</td>
+                <td>${escapeHtml(t.logout_address || '—')}</td>
+                <td>${note || '—'}</td>
+            </tr>`;
+        }).join('');
+        return `<div class="cal-tbl-wrap"><table class="cal-tbl">
+            <thead><tr>
+              <th>Date</th><th>Day</th><th>Status</th><th>Login</th><th>Logout</th>
+              <th>Hours</th><th>Login location</th><th>Logout location</th><th>Work note</th>
+            </tr></thead>
+            <tbody>${body || '<tr><td colspan="9" style="text-align:center;color:var(--t3)">No days in this range.</td></tr>'}</tbody>
+        </table></div>`;
+    }
+
     async function loadCalendar() {
         let from = document.getElementById('calFrom').value;
         let to   = document.getElementById('calTo').value;
@@ -702,11 +743,28 @@
         }
     }
 
-    // Build a { 'YYYY-MM-DD': {status, hours, met} } map from the day-by-day timeline.
+    // Build a { 'YYYY-MM-DD': {status, hours, met, comments} } map from the day-by-day timeline.
     function calStatusMap(data) {
         const map = {};
         (data.timeline || []).forEach(t => { map[t.date] = t; });
         return map;
+    }
+
+    let calStatusMapCache = {};
+
+    // Show the note(s) logged for a given day in the side panel below the calendar.
+    function showCalNote(ds) {
+        const panel = document.getElementById('calNotePanel');
+        const t = calStatusMapCache[ds];
+        if (!t) { panel.style.display = 'none'; return; }
+        const notes = t.comments || [];
+        const statusLabel = { present: 'Present', absent: 'Absent', leave: 'On leave', holiday: 'Sunday · holiday', optional: 'Saturday · optional' }[t.status] || t.status;
+        const head = `${ds} · ${statusLabel}${t.status === 'present' ? ` · ${t.hours}h` : ''}`;
+        const body = notes.length
+            ? notes.map(c => `<div class="cal-note-item"><span class="cal-note-shift">${escapeHtml(c.shift)}</span>${escapeHtml(c.text)}</div>`).join('')
+            : '<div class="cal-note-empty">No note logged for this day.</div>';
+        panel.innerHTML = `<div class="cal-note-head"><strong>${head}</strong><button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="document.getElementById('calNotePanel').style.display='none'"><i class="fas fa-xmark"></i></button></div><div class="cal-note-body">${body}</div>`;
+        panel.style.display = 'block';
     }
 
     // One month grid, cells coloured by the day's status.
@@ -728,9 +786,12 @@
                 else if (t.status === 'holiday') { cls = 'holiday'; tip = 'Sunday · holiday'; }
                 else if (t.status === 'optional'){ cls = 'optional';tip = 'Saturday · optional'; }
             }
-            cells += `<div class="cal-cell ${cls}" title="${tip}">
+            const hasNote = !!(t && t.comments && t.comments.length);
+            if (hasNote) { cls += ' has-note'; tip += (tip ? ' · ' : '') + 'note logged'; }
+            cells += `<div class="cal-cell ${cls}" title="${tip}" ${t ? `onclick="showCalNote('${ds}')"` : ''}>
                         <span class="cal-num">${day}</span>
                         ${t && t.status === 'present' ? `<span class="cal-hrs">${t.hours}h</span>` : ''}
+                        ${hasNote ? '<span class="cal-note-dot"></span>' : ''}
                       </div>`;
         }
         return `<div class="cal-monthblock">
@@ -754,6 +815,9 @@
         ).join('') + `<div class="cal-note">${s.working_days ?? 0} compulsory working days (Mon–Fri) in this range · Sat optional, Sun holiday${s.saturdays_worked ? ` · ${s.saturdays_worked} Saturday(s) worked` : ''}</div>`;
 
         const statusMap = calStatusMap(data);
+        calStatusMapCache = statusMap;
+        const notePanel = document.getElementById('calNotePanel');
+        if (notePanel) notePanel.style.display = 'none';
         const months = data.months || [];
         document.getElementById('calBody').innerHTML =
             months.length ? months.map(mo => calMonthGrid(mo, statusMap)).join('')
@@ -762,6 +826,95 @@
         const n = data.days_logged;
         document.getElementById('calDaysCount').textContent =
             `${n} day${n !== 1 ? 's' : ''} · ${data.total_hours}h`;
+
+        document.getElementById('calTable').innerHTML = calDayTable(data);
+    }
+
+    // ── Attendance calendar tab: everyone, one month at a time ────────────
+    let acMonth = new Date().toISOString().slice(0, 7);   // 'YYYY-MM'
+    let acDayCounts = {};
+
+    function acShiftMonth(delta) {
+        let [y, m] = acMonth.split('-').map(Number);
+        m += delta;
+        if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+        acMonth = `${y}-${String(m).padStart(2, '0')}`;
+        loadCalendarOverview();
+    }
+
+    async function loadCalendarOverview() {
+        const grid = document.getElementById('acGrid');
+        grid.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
+        try {
+            const res = await fetch(`/api/admin/calendar-overview?month=${acMonth}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load');
+            acDayCounts = data.days || {};
+            const [y, m] = acMonth.split('-').map(Number);
+            document.getElementById('acMonthLabel').textContent = `${CAL_MONTHS[m - 1]} ${y}`;
+            renderAcGrid(data.total_people || 0);
+        } catch (err) {
+            grid.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
+    }
+
+    function renderAcGrid(totalPeople) {
+        const [y, m] = acMonth.split('-').map(Number);
+        const startDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+        const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const todayStr = new Date().toISOString().slice(0, 10);
+        let cells = dow.map(d => `<div class="cal-dow">${d}</div>`).join('');
+        for (let i = 0; i < startDow; i++) cells += '<div class="cal-cell empty"></div>';
+        for (let day = 1; day <= daysInMonth; day++) {
+            const ds = `${acMonth}-${String(day).padStart(2, '0')}`;
+            const n = acDayCounts[ds] || 0;
+            const wd = new Date(Date.UTC(y, m - 1, day)).getUTCDay();
+            let cls = 'off', tip = 'No data';
+            if (ds > todayStr) { cls = 'off'; tip = ''; }
+            else if (n > 0) { cls = (totalPeople && n >= totalPeople) ? 'met' : 'part'; tip = `${n} signed in`; }
+            else if (wd === 0) { cls = 'holiday'; tip = 'Sunday · holiday'; }
+            else if (wd === 6) { cls = 'optional'; tip = 'Saturday · optional'; }
+            else { cls = 'absent'; tip = 'Nobody signed in'; }
+            cells += `<div class="cal-cell ${cls}" title="${tip}" onclick="acShowDay('${ds}')">
+                        <span class="cal-num">${day}</span>
+                        ${n ? `<span class="cal-hrs">${n}</span>` : ''}
+                      </div>`;
+        }
+        document.getElementById('acGrid').innerHTML = `<div class="cal-grid">${cells}</div>`;
+    }
+
+    async function acShowDay(ds) {
+        const card = document.getElementById('acDayCard');
+        card.style.display = 'block';
+        document.getElementById('acDayTitle').textContent = ds;
+        document.getElementById('acDayList').innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        try {
+            const res = await fetch(`/api/admin/user-locations/${ds}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load');
+            const locs = data.locations || [];
+            document.getElementById('acDayCount').textContent = `${data.count || 0} signed in`;
+            document.getElementById('acDayList').innerHTML = locs.length ? locs.map(l => `
+                <div class="ac-day-item">
+                    <div class="ac-day-item-head">
+                        <strong>${escapeHtml(l.username)}</strong>
+                        <span class="oa-tag ${l.at_office ? 'ok' : 'warn'}">${l.at_office ? 'On campus' : 'Remote'}</span>
+                        <span class="oa-tag">${escapeHtml(l.shift_name)}</span>
+                        <span class="spacer"></span>
+                        <span class="ac-day-item-hrs">${l.hours}h</span>
+                    </div>
+                    <div class="ac-day-item-times">
+                        <span><i class="fas fa-right-to-bracket"></i> ${l.login_time} · ${escapeHtml(l.login_address || 'N/A')}</span>
+                        ${l.logout_time ? `<span><i class="fas fa-right-from-bracket"></i> ${l.logout_time} · ${escapeHtml(l.logout_address || 'N/A')}</span>` : ''}
+                    </div>
+                    ${l.work_comment ? `<div class="ac-day-item-note"><i class="fas fa-note-sticky"></i> ${escapeHtml(l.work_comment)}</div>` : ''}
+                </div>
+            `).join('') : '<div class="oa-empty"><i class="fas fa-calendar-xmark"></i><p>No one signed in this day.</p></div>';
+        } catch (err) {
+            document.getElementById('acDayList').innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
     }
 
     // ── Sign-in analysis: date range + users + title → download / share ───

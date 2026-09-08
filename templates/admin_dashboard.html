@@ -37,6 +37,7 @@
     <nav class="oa-rail-nav">
       <button class="oa-navitem on ad-tab" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave requests</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-id-card"></i> Face log</button>
@@ -77,6 +78,7 @@
     <div class="ad-tabs oa-only-mobile">
       <button class="ad-tab on" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
       <button class="ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
+      <button class="ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave</button>
       <button class="ad-tab" onclick="switchTab('face', event)"><i class="fas fa-id-card"></i> Face log</button>
@@ -274,6 +276,39 @@
             {% endif %}
           {% endfor %}
         </div>
+      </section>
+    </div>
+
+    <!-- ════════ CALENDAR (everyone, one click per day) ════════ -->
+    <div id="calendar-tab" class="ad-panel">
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Attendance calendar</h2>
+          <span class="spacer"></span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="acShiftMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+          <span class="oa-tag" id="acMonthLabel">—</span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="acShiftMonth(1)"><i class="fas fa-chevron-right"></i></button>
+        </div>
+        <p class="ad-hint" style="margin-top:-4px">Click any day to see everyone who signed in — times, locations and their work note.</p>
+        <div id="acGrid">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+        <div class="cal-legend">
+          <span><span class="cal-key met"></span> Everyone in</span>
+          <span><span class="cal-key part"></span> Some signed in</span>
+          <span><span class="cal-key absent"></span> Nobody signed in</span>
+          <span><span class="cal-key optional"></span> Sat (optional)</span>
+          <span><span class="cal-key holiday"></span> Sun (holiday)</span>
+        </div>
+      </section>
+
+      <section class="oa-card" id="acDayCard" style="display:none;margin-top:16px">
+        <div class="oa-card-head">
+          <h2 id="acDayTitle">—</h2>
+          <span class="spacer"></span>
+          <span class="oa-tag" id="acDayCount">0 signed in</span>
+        </div>
+        <div id="acDayList"></div>
       </section>
     </div>
 
@@ -622,6 +657,7 @@
         <label class="cal-fld">From <input type="date" id="calFrom" class="oa-input"></label>
         <label class="cal-fld">To <input type="date" id="calTo" class="oa-input"></label>
         <button class="oa-btn oa-btn-primary oa-btn-sm" onclick="loadCalendar()"><i class="fas fa-magnifying-glass-chart"></i> Analyse</button>
+        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
         <span class="spacer"></span>
         <span class="oa-tag" id="calDaysCount">0 days</span>
       </div>
@@ -629,6 +665,8 @@
       <div id="calBody">
         <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
       </div>
+      <div class="cal-note-panel" id="calNotePanel" style="display:none"></div>
+      <p class="ad-hint" style="margin-top:8px">Click a day to see that day's status and any work note logged.</p>
       <div class="cal-legend">
         <span><span class="cal-key met"></span> Met target</span>
         <span><span class="cal-key part"></span> Signed in (short)</span>
@@ -637,6 +675,10 @@
         <span><span class="cal-key optional"></span> Sat (optional)</span>
         <span><span class="cal-key holiday"></span> Sun (holiday)</span>
       </div>
+
+      <!-- Day by day: the same rows the Excel export carries -->
+      <div class="oa-card-head" style="margin-top:18px"><h2 style="font-size:1rem">Day by day</h2></div>
+      <div id="calTable"></div>
     </div>
   </div>
 </div>

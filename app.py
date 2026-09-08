@@ -1126,6 +1126,10 @@ def attendance_logout():
     data         = request.get_json() if request.is_json else {}
     lat, lng     = _get_lat_lng_from_request()
     force_logout = data.get("force_logout", False)
+    comment      = (data.get("comment") or "").strip()[:2000]
+
+    if not comment:
+        return jsonify({"error": "Please add a short note about today's work before logging out."}), 400
 
     ist_now   = get_ist_now()
     today     = ist_now.date().isoformat()
@@ -1168,6 +1172,8 @@ def attendance_logout():
         address = get_address_from_coords(lat, lng)
         updates["logout_location"] = {"lat": lat, "lng": lng, "address": address}
         updates["logout_address"]  = address
+    if comment:
+        updates["work_comment"] = comment
 
     mongo.db.attendance.update_one({"_id": rec["_id"]}, {"$set": updates})
 
@@ -1186,6 +1192,7 @@ def attendance_logout():
         "ok":               True,
         "logout_time":      format_ist_time(logout_time),
         "hours":            updates["hours"],
+        "comment":          comment,
         "total_daily_hours": round(total_daily_hours, 1),
         "target_hours":     target_hours,
         "target_achieved":  target_achieved,
@@ -1738,10 +1745,42 @@ def admin_user_locations(date_str):
                 "logout_lng":    logout_loc.get("lng"),
                 "at_office":     r.get("at_office", False),
                 "device_info":   r.get("device_info", {}),
+                "work_comment":  r.get("work_comment", ""),
             })
         return jsonify({"locations": locations, "count": len(set(r.get("username") for r in records)), "date": date_str, "office_lat": OFFICE_LAT, "office_lng": OFFICE_LNG})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/calendar-overview")
+@login_required
+def admin_calendar_overview():
+    """One month, every non-admin user: how many people signed in each day.
+    Powers the org-wide 'Calendar' tab (as opposed to the per-person one).
+    """
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    month = request.args.get("month") or date.today().strftime("%Y-%m")
+    try:
+        d0 = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+    except ValueError:
+        return jsonify({"error": "Invalid month"}), 400
+    nxt = date(d0.year + 1, 1, 1) if d0.month == 12 else date(d0.year, d0.month + 1, 1)
+    recs = mongo.db.attendance.find(
+        {"date": {"$gte": d0.isoformat(), "$lt": nxt.isoformat()}},
+        {"date": 1, "username": 1})
+    counts = {}
+    for r in recs:
+        d = r.get("date")
+        if not d:
+            continue
+        counts.setdefault(d, set()).add(r.get("username"))
+    total_people = mongo.db.users.count_documents({"role": {"$ne": "admin"}})
+    return jsonify({
+        "month":        month,
+        "days":         {d: len(u) for d, u in counts.items()},
+        "total_people": total_people,
+    })
 
 
 @app.route("/api/user/team-today")
@@ -2034,17 +2073,34 @@ def compute_user_analysis(user_doc, start, end):
     recs = list(mongo.db.attendance.find({
         "user_id": uid, "date": {"$gte": start_s, "$lte": end_s},
     }))
+    def _login_key(r):
+        v = r.get("login_time")
+        return v if isinstance(v, datetime) else datetime.min
+
     days = {}
     for r in recs:
         d = r.get("date")
         if not d:
             continue
-        e = days.setdefault(d, {"date": d, "sessions": 0, "hours": 0.0})
+        e = days.setdefault(d, {"date": d, "sessions": 0, "hours": 0.0, "comments": [], "_recs": []})
         e["sessions"] += 1
         e["hours"]    += r.get("hours", 0) or 0
+        e["_recs"].append(r)
+        comment = (r.get("work_comment") or "").strip()
+        if comment:
+            e["comments"].append({"shift": r.get("shift_name") or r.get("shift_type") or "Normal", "text": comment})
     for e in days.values():
         e["hours"]      = round(e["hours"], 2)
         e["met_target"] = e["hours"] + 1e-6 >= target
+        # First sign-in and last sign-out of the day, with where each happened.
+        srecs = sorted(e.pop("_recs"), key=_login_key)
+        first, last = srecs[0], srecs[-1]
+        lt, lot = first.get("login_time"), last.get("logout_time")
+        e["login_time"]     = format_ist_time(lt) if lt else ""
+        e["logout_time"]    = format_ist_time(lot) if lot else ""
+        e["login_address"]  = (first.get("login_location") or {}).get("address") or first.get("login_address") or ""
+        e["logout_address"] = (last.get("logout_location") or {}).get("address") or last.get("logout_address") or ""
+        e["at_office"]      = bool(first.get("at_office"))
 
     leave_recs = list(mongo.db.leave_applications.find({
         "user_id": uid, "status": "approved", "date": {"$gte": start_s, "$lte": end_s},
@@ -2087,8 +2143,15 @@ def compute_user_analysis(user_doc, start, end):
                 absent += 1
                 status, hrs, met = "absent", 0, False
 
+        info = days.get(iso, {})
         timeline.append({"date": iso, "weekday": cur.strftime("%a"),
-                         "status": status, "hours": hrs, "met": met})
+                         "status": status, "hours": hrs, "met": met,
+                         "comments":       info.get("comments", []),
+                         "login_time":     info.get("login_time", ""),
+                         "logout_time":    info.get("logout_time", ""),
+                         "login_address":  info.get("login_address", ""),
+                         "logout_address": info.get("logout_address", ""),
+                         "at_office":      info.get("at_office", False)})
         cur += timedelta(days=1)
 
     total_hours = round(sum(e["hours"] for e in days.values()), 2)
@@ -2134,6 +2197,22 @@ def _resolve_user_range():
             pass
     today = date.today()
     return today.replace(day=1), today
+
+
+@app.route("/api/admin/user-excel/<user_id>")
+@login_required
+def admin_user_excel(user_id):
+    """Download ONE person's day-by-day attendance report as .xlsx (admin only)."""
+    if current_user.role != "admin":
+        return redirect(url_for("admin_dashboard"))
+    user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+    if not user_doc:
+        return ("User not found", 404)
+    start, end = _resolve_user_range()
+    mem = build_person_workbook(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end),
+                     mimetype=XLSX_MIME)
 
 
 @app.route("/api/admin/user-calendar/<user_id>")
@@ -2439,6 +2518,186 @@ def analysis_download_name(dates, title=None):
     return f"{base}_{dates[0]}_to_{dates[-1]}.xlsx"
 
 
+# ─────────────────────────────────────────────────────────────
+#  PER-PERSON REPORT  —  every day in a range, colour-coded
+#
+#  One row per calendar day (not per session): the day, what it was
+#  (present / absent / leave / weekend), when they signed in and out,
+#  from where, and the note they left at sign-out. Absent days are red,
+#  Saturday/Sunday yellow — the same colours the on-screen calendar uses.
+# ─────────────────────────────────────────────────────────────
+
+PERSON_COLUMNS = [
+    ("date",           "Date"),
+    ("weekday",        "Day"),
+    ("status_label",   "Status"),
+    ("login_time",     "Login (IST)"),
+    ("logout_time",    "Logout (IST)"),
+    ("hours",          "Hours"),
+    ("login_address",  "Login location"),
+    ("logout_address", "Logout location"),
+    ("comment",        "Work note"),
+]
+
+PERSON_STATUS_LABEL = {
+    "present":  "Present",
+    "absent":   "Absent",
+    "leave":    "On leave",
+    "holiday":  "Sunday · holiday",
+    "optional": "Saturday · off",
+}
+
+
+def build_person_rows(data):
+    """compute_user_analysis() output → one plain row per day for the report."""
+    rows = []
+    for t in data.get("timeline", []):
+        rows.append({
+            "date":           t.get("date", ""),
+            "weekday":        t.get("weekday", ""),
+            "status":         t.get("status", ""),
+            "status_label":   PERSON_STATUS_LABEL.get(t.get("status"), t.get("status", "")),
+            "login_time":     t.get("login_time", ""),
+            "logout_time":    t.get("logout_time", ""),
+            "hours":          t.get("hours", 0) or 0,
+            "login_address":  t.get("login_address", ""),
+            "logout_address": t.get("logout_address", ""),
+            "comment":        " | ".join(c.get("text", "") for c in (t.get("comments") or [])),
+        })
+    return rows
+
+
+def build_person_workbook(user_doc, start, end, data=None):
+    """A formatted .xlsx for ONE person over start..end: a summary block, then
+    every day colour-coded (absent red, Sat/Sun yellow, leave grey)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    data  = data or compute_user_analysis(user_doc, start, end)
+    rows  = build_person_rows(data)
+    s     = data.get("summary", {})
+    uname = user_doc.get("username", "")
+    ncols = len(PERSON_COLUMNS)
+    navy, paper = "0A1324", "F6F4EF"
+
+    # Row fills — the same palette as the calendar on screen.
+    FILLS = {
+        "absent":   PatternFill("solid", fgColor="FCEBEA"),   # red
+        "holiday":  PatternFill("solid", fgColor="FCF7EA"),   # yellow (Sunday)
+        "optional": PatternFill("solid", fgColor="FCF7EA"),   # yellow (Saturday)
+        "leave":    PatternFill("solid", fgColor="EEF0F3"),   # grey
+        "met":      PatternFill("solid", fgColor="E8F5EC"),   # green  (target met)
+        "short":    PatternFill("solid", fgColor="FCF3E2"),   # amber  (signed in, short)
+    }
+    FONTS = {
+        "absent":   Font(color="B7302A", bold=True),
+        "holiday":  Font(color="A98A2E"),
+        "optional": Font(color="A98A2E"),
+        "leave":    Font(color="6B7480"),
+        "met":      Font(color="1E7D46"),
+        "short":    Font(color="B0740A"),
+    }
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Attendance"
+
+    thin   = Side(style="thin", color="D8D5CE")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Title band
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+    tcell = ws.cell(row=1, column=1, value=f"{uname} · attendance report")
+    tcell.font = Font(bold=True, size=15, color="FFFFFF")
+    tcell.fill = PatternFill("solid", fgColor=navy)
+    tcell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[1].height = 30
+
+    # Sub-band: the range and when this was generated
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=ncols)
+    scell = ws.cell(row=2, column=1,
+                    value=f"{start.isoformat()} → {end.isoformat()}"
+                          f"   ·   generated {format_ist_time(datetime.utcnow(), '%Y-%m-%d %I:%M %p')} IST")
+    scell.font = Font(size=10, color="5A5A5A")
+    scell.fill = PatternFill("solid", fgColor=paper)
+    scell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[2].height = 20
+
+    # Summary block — the headline numbers, two rows of label / value pairs.
+    summary_pairs = [
+        ("Days worked",      s.get("present", 0)),
+        ("Absent",           s.get("absent", 0)),
+        ("On leave",         s.get("leave", 0)),
+        ("Saturdays worked", s.get("saturdays_worked", 0)),
+        ("Total hours",      s.get("total_hours", 0)),
+        ("Avg hours / day",  s.get("avg_hours", 0)),
+        ("Working days",     s.get("working_days", 0)),
+        ("Attendance",       f"{s.get('attendance_rate', 0)}%"),
+    ]
+    lrow, vrow = 4, 5
+    for ci, (label, value) in enumerate(summary_pairs, start=1):
+        lc = ws.cell(row=lrow, column=ci, value=label)
+        lc.font = Font(bold=True, size=8, color="6B7480")
+        lc.alignment = Alignment(horizontal="center")
+        lc.border = border
+        vc = ws.cell(row=vrow, column=ci, value=value)
+        vc.font = Font(bold=True, size=13, color=navy)
+        vc.alignment = Alignment(horizontal="center")
+        vc.fill = PatternFill("solid", fgColor=paper)
+        vc.border = border
+    ws.row_dimensions[vrow].height = 22
+
+    # Header row
+    hrow = 7
+    for ci, (_, header) in enumerate(PERSON_COLUMNS, start=1):
+        cell = ws.cell(row=hrow, column=ci, value=header)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=navy)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[hrow].height = 22
+
+    # Data rows — one per day, tinted by what that day was.
+    widths = [len(h) for _, h in PERSON_COLUMNS]
+    for ri, row in enumerate(rows, start=hrow + 1):
+        status = row.get("status")
+        key    = status if status in FILLS else None
+        if status == "present":
+            key = "met" if row.get("hours", 0) + 1e-6 >= float(data.get("target_hours") or 0) else "short"
+        for ci, (col, _) in enumerate(PERSON_COLUMNS, start=1):
+            val = row.get(col)
+            if val is None:
+                val = ""
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.border = border
+            cell.alignment = Alignment(vertical="center", wrap_text=(col == "comment"),
+                                       horizontal="left" if isinstance(val, str) else "right")
+            if key:
+                cell.fill = FILLS[key]
+                cell.font = FONTS[key]
+            widths[ci - 1] = max(widths[ci - 1], min(len(str(val)), 60))
+
+    for ci, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = min(max(w + 2, 10), 46)
+    ws.freeze_panes = f"A{hrow + 1}"
+
+    if not rows:
+        ws.merge_cells(start_row=hrow + 1, start_column=1, end_row=hrow + 1, end_column=ncols)
+        ecell = ws.cell(row=hrow + 1, column=1, value="No days in the selected range.")
+        ecell.alignment = Alignment(horizontal="center")
+        ecell.font = Font(italic=True, color="888888")
+
+    mem = io.BytesIO()
+    wb.save(mem)
+    mem.seek(0)
+    return mem
+
+
+def person_download_name(username, start, end):
+    return f"{slugify_title(username) or 'person'}_{start.isoformat()}_to_{end.isoformat()}.xlsx"
+
+
 @app.route("/admin/analysis/excel")
 @login_required
 def admin_analysis_excel():
@@ -2688,6 +2947,39 @@ def shared_overview_data(token):
     return jsonify(compute_day_overview(day, share.get("users") or None))
 
 
+@app.route("/share/analysis/<token>/day-counts")
+def shared_day_counts(token):
+    """Public month view for an 'overall' share: how many (of the share's
+    scoped users) signed in each day. Powers the calendar date-picker.
+    """
+    share = _get_live_share(token)
+    if not share or share.get("kind") != "overall":
+        return jsonify({"error": "Not found"}), 404
+    month = request.args.get("month") or date.today().strftime("%Y-%m")
+    try:
+        d0 = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+    except ValueError:
+        return jsonify({"error": "Invalid month"}), 400
+    nxt = date(d0.year + 1, 1, 1) if d0.month == 12 else date(d0.year, d0.month + 1, 1)
+    query = {"date": {"$gte": d0.isoformat(), "$lt": nxt.isoformat()}}
+    users = share.get("users")
+    if users:
+        query["username"] = {"$in": users}
+    recs = mongo.db.attendance.find(query, {"date": 1, "username": 1})
+    counts = {}
+    for r in recs:
+        d = r.get("date")
+        if not d:
+            continue
+        counts.setdefault(d, set()).add(r.get("username"))
+    total_people = len(set(users)) if users else mongo.db.users.count_documents({"role": {"$ne": "admin"}})
+    return jsonify({
+        "month":        month,
+        "days":         {d: len(u) for d, u in counts.items()},
+        "total_people": total_people,
+    })
+
+
 @app.route("/share/analysis/<token>/user-calendar/<user_id>")
 def shared_user_calendar(token, user_id):
     """Public, no-login per-person calendar for an 'overall' share.
@@ -2712,6 +3004,30 @@ def shared_user_calendar(token, user_id):
     data.update({"user_id": user_id, "username": user_doc.get("username", ""),
                  "start": start.isoformat(), "end": end.isoformat()})
     return jsonify(data)
+
+
+@app.route("/share/analysis/<token>/user-excel/<user_id>")
+def shared_user_excel(token, user_id):
+    """Public, no-login .xlsx of one person's day-by-day report, for an
+    'overall' share. Same scoping rule as the per-person calendar above.
+    """
+    share = _get_live_share(token)
+    if not share or share.get("kind") != "overall":
+        return ("This share link is no longer available.", 404)
+    try:
+        user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id), "role": {"$ne": "admin"}})
+    except Exception:
+        user_doc = None
+    if not user_doc:
+        return ("User not found", 404)
+    scoped = share.get("users")
+    if scoped and user_doc.get("username") not in scoped:
+        return ("Not in this share", 403)
+    start, end = _resolve_user_range()
+    mem = build_person_workbook(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end),
+                     mimetype=XLSX_MIME)
 
 
 @app.route("/admin/create_user", methods=["POST"])

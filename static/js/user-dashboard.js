@@ -690,7 +690,7 @@ function doNLogin(){
 function doNLogout(){
   const btn=document.getElementById('btnNLogout');
   btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner spin"></i>';
-  getGeo().catch(()=>({lat:null,lng:null})).then(geo=>doLogout(geo.lat,geo.lng,'normal'))
+  getGeo().catch(()=>({lat:null,lng:null})).then(geo=>openWorkComment(geo.lat,geo.lng,'normal'))
     .finally(()=>{btn.disabled=false;btn.innerHTML='<i class="fas fa-sign-out-alt"></i> Logout';});
 }
 
@@ -717,15 +717,40 @@ function doShiftLogin(type){
 function doShiftLogout(type){
   const btn=document.getElementById(type==='shift1'?'btnS1O':'btnS2O');
   btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner spin"></i>';
-  getGeo().catch(()=>({lat:null,lng:null})).then(geo=>doLogout(geo.lat,geo.lng,type))
+  getGeo().catch(()=>({lat:null,lng:null})).then(geo=>openWorkComment(geo.lat,geo.lng,type))
     .finally(()=>{btn.disabled=false;btn.innerHTML=`<i class="fas fa-stop"></i> End ${type==='shift1'?'S1':'S2'}`});
 }
 
-async function doLogout(lat,lng,type,force=false){
-  const r=await fetch('/attendance/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,shift_type:type,force_logout:force})});
+// ─ Logout note sheet (comment is mandatory) ─
+let wcState=null;
+function openWorkComment(lat,lng,type){
+  wcState={lat,lng,type};
+  document.getElementById('wcText').value='';
+  document.getElementById('wcErr').style.display='none';
+  document.getElementById('workBD').classList.add('show');
+}
+function closeWorkBD(){document.getElementById('workBD').classList.remove('show');wcState=null;}
+document.getElementById('wcText').addEventListener('input',()=>{
+  if(document.getElementById('wcText').value.trim())document.getElementById('wcErr').style.display='none';
+});
+document.getElementById('wcSubmit').addEventListener('click',()=>{
+  if(!wcState)return;
+  const comment=document.getElementById('wcText').value.trim();
+  if(!comment){
+    document.getElementById('wcErr').style.display='block';
+    document.getElementById('wcText').focus();
+    return;
+  }
+  const {lat,lng,type}=wcState;
+  document.getElementById('workBD').classList.remove('show');
+  doLogout(lat,lng,type,false,comment);
+});
+
+async function doLogout(lat,lng,type,force=false,comment=''){
+  const r=await fetch('/attendance/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,shift_type:type,force_logout:force,comment})});
   const d=await r.json();
   if(d.warning){
-    openConf(d.message,()=>doLogout(lat,lng,type,true));
+    openConf(d.message,()=>doLogout(lat,lng,type,true,comment));
   } else if(d.ok){
     toast(`✅ Logged out · ${d.hours}h worked`,d.target_achieved?'ok':'warn');
     if(type==='normal'){document.getElementById('nLogoutTime').textContent=d.logout_time;document.getElementById('nLogoutAddr').textContent=d.address||'—';}
@@ -1050,11 +1075,12 @@ function openConf(msg,cb){
 function closeConf(){document.getElementById('confBD').classList.remove('show');}
 
 // ─ Backdrop tap ─
-['faceBD','leaveBD','confBD'].forEach(id=>{
+['faceBD','leaveBD','confBD','workBD'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{
     if(e.target.id===id){
       if(id==='faceBD')closeFace();
       else if(id==='leaveBD')closeLeaveBD();
+      else if(id==='workBD')closeWorkBD();
       else closeConf();
     }
   });

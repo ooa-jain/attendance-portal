@@ -593,6 +593,72 @@
 .cal-key.optional { background: #FCF7EA; border-color: #E9DCB8; }
 .cal-key.holiday  { background: repeating-linear-gradient(45deg,#F2F1EE,#F2F1EE 3px,#E9E7E2 3px,#E9E7E2 6px); border-color: #DAD7D0; }
 
+/* ── Per-day work note: clickable cell + note panel ──────────────────── */
+.cal-cell[onclick] { cursor: pointer; }
+.cal-cell[onclick]:hover { box-shadow: 0 0 0 2px var(--gold-400) inset; }
+.cal-cell.has-note { position: relative; }
+.cal-note-dot {
+  position: absolute; top: 5px; right: 6px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold-500);
+}
+.cal-note-panel {
+  margin-top: 12px; padding: 12px; background: #fff;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.cal-note-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: .78rem; color: var(--t1); margin-bottom: 8px;
+}
+.cal-note-item {
+  font-size: .8rem; color: var(--t1); line-height: 1.5;
+  padding: 8px 0; border-top: 1px dashed var(--line-2);
+  white-space: pre-wrap; word-break: break-word;
+}
+.cal-note-item:first-child { border-top: none; padding-top: 0; }
+.cal-note-shift {
+  display: block; font-size: .62rem; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--t3); margin-bottom: 2px;
+}
+.cal-note-empty { font-size: .78rem; color: var(--t3); }
+
+/* ── Day-by-day table under the per-person calendar ──────────────────── */
+.cal-tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.cal-tbl { width: 100%; border-collapse: collapse; font-size: .76rem; }
+.cal-tbl th {
+  background: var(--ink-800); color: #fff; text-align: left; white-space: nowrap;
+  padding: 8px 10px; font-size: .62rem; font-weight: 800;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.cal-tbl td { padding: 7px 10px; border-top: 1px solid var(--line); color: var(--t1); vertical-align: top; }
+.cal-tbl td:nth-child(-n+6) { white-space: nowrap; }
+.cal-tbl tr.met      { background: #E8F5EC; } .cal-tbl tr.met td      { color: #1E7D46; }
+.cal-tbl tr.part     { background: #FCF3E2; } .cal-tbl tr.part td     { color: #B0740A; }
+.cal-tbl tr.absent   { background: #FCEBEA; } .cal-tbl tr.absent td   { color: #B7302A; font-weight: 700; }
+.cal-tbl tr.leave    { background: #EEF0F3; } .cal-tbl tr.leave td    { color: #6B7480; }
+.cal-tbl tr.holiday,
+.cal-tbl tr.optional { background: #FCF7EA; }
+.cal-tbl tr.holiday td, .cal-tbl tr.optional td { color: #A98A2E; }
+
+/* ── Attendance calendar tab: one day's roster ───────────────────────── */
+.ac-day-item {
+  padding: 12px 14px; margin-bottom: 8px;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.ac-day-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .84rem; color: var(--t1); }
+.ac-day-item-hrs { font-family: var(--mono); font-weight: 700; color: var(--t1); }
+.ac-day-item-times {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px;
+  font-size: .76rem; color: var(--t2);
+}
+.ac-day-item-times i { color: var(--gold-500); margin-right: 3px; }
+.ac-day-item-note {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-2);
+  font-size: .8rem; color: var(--t1); line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+.ac-day-item-note i { color: var(--gold-500); margin-right: 5px; }
+
 /* Saved-link kind badges */
 .ad-kind { font-size: .56rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
            padding: 2px 7px; border-radius: 999px; vertical-align: middle; }

@@ -611,6 +611,26 @@
   </div>
 </div>
 
+<!-- ══ LOGOUT NOTE SHEET ════════════════════════════════════════ -->
+<div class="oa-backdrop" id="workBD">
+  <div class="oa-sheet">
+    <div class="oa-handle"></div>
+    <div class="oa-sheet-title">Before you go…</div>
+    <div class="oa-sheet-sub">Add a note on today's work — what you did, places visited. Required to log out.</div>
+    <div class="oa-sheet-body">
+      <div class="oa-field">
+        <label for="wcText">Today's update *</label>
+        <textarea id="wcText" rows="4" required placeholder="e.g. Visited client site at MG Road, completed the weekly report…"></textarea>
+        <div id="wcErr" style="display:none;color:var(--bad);font-size:.76rem;margin-top:4px">Please add a note before logging out.</div>
+      </div>
+    </div>
+    <div class="oa-sheet-actions">
+      <button class="oa-btn oa-btn-primary" id="wcSubmit"><i class="fas fa-sign-out-alt"></i> Log out</button>
+      <button class="oa-btn oa-btn-ghost" onclick="closeWorkBD()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ CONFIRM SHEET ════════════════════════════════════════════ -->
 <div class="oa-backdrop" id="confBD">
   <div class="oa-sheet">
