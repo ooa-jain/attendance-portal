@@ -40,6 +40,7 @@
       <button class="oa-navitem ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave requests</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations &amp; Map</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early sign-outs</button>
@@ -81,6 +82,7 @@
       <button class="ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave</button>
+      <button class="ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <button class="ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations</button>
       <button class="ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early outs</button>
@@ -530,6 +532,104 @@
     </div>
 
     <!-- ════════ FACE LOG ════════ -->
+    <!-- ════════ NOTICES ════════ -->
+    <div id="notices-tab" class="ad-panel">
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Write a notice</h2>
+          <span class="spacer"></span>
+          <button class="oa-btn oa-btn-gold oa-btn-sm" onclick="ntPreset()">
+            <i class="fas fa-wand-magic-sparkles"></i> Use the "new reports" template
+          </button>
+        </div>
+        <p class="ad-hint" style="margin-top:-4px">
+          People see this when they open their dashboard — as a card with the JAIN mark. It keeps
+          appearing until the days run out, they have seen it the set number of times, or they
+          tap "Got it". Nothing is emailed; it shows inside the portal.
+        </p>
+
+        <div class="oa-formgrid">
+          <div class="oa-field" style="grid-column:1/-1">
+            <label for="ntfTitle">Title</label>
+            <input type="text" id="ntfTitle" maxlength="120" placeholder="e.g. New: download your report in Excel and Word">
+          </div>
+          <div class="oa-field" style="grid-column:1/-1">
+            <label for="ntfBody">Message</label>
+            <textarea id="ntfBody" rows="5" maxlength="2000" placeholder="Say what changed and what they can do with it."></textarea>
+          </div>
+          <div class="oa-field">
+            <label for="ntfKind">Style</label>
+            <select id="ntfKind">
+              <option value="feature">New feature</option>
+              <option value="info">Information</option>
+              <option value="warning">Important</option>
+            </select>
+          </div>
+          <div class="oa-field">
+            <label for="ntfDays">Show for (days)</label>
+            <input type="number" id="ntfDays" min="1" max="60" value="2">
+          </div>
+          <div class="oa-field">
+            <label for="ntfViews">Show at most (sign-ins)</label>
+            <input type="number" id="ntfViews" min="1" max="20" value="2">
+          </div>
+          <div class="oa-field">
+            <label for="ntfCta">Button label (optional)</label>
+            <input type="text" id="ntfCta" maxlength="40" placeholder="e.g. Show me">
+          </div>
+          <div class="oa-field">
+            <label for="ntfTab">Button opens</label>
+            <select id="ntfTab">
+              <option value="">Nothing — just close</option>
+              <option value="stats">Statistics (reports)</option>
+              <option value="calendar">Calendar</option>
+              <option value="normal">Today</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="oa-field" style="margin-top:6px">
+          <label>Who gets it</label>
+          <div class="nt-aud">
+            <label class="nt-radio"><input type="radio" name="ntAud" value="all" checked onchange="ntAudChanged()"> Everyone</label>
+            <label class="nt-radio"><input type="radio" name="ntAud" value="some" onchange="ntAudChanged()"> Only the people I pick</label>
+          </div>
+          <div id="ntPeople" style="display:none;margin-top:10px">
+            <input type="text" class="oa-input" id="ntPeopleSearch" placeholder="Search a name…" oninput="ntFilterPeople()" style="margin-bottom:8px">
+            <div class="nt-people">
+              {% for u in users %}
+                {% if u.role != 'admin' %}
+                <label class="nt-person" data-name="{{ u.username|lower }}">
+                  <input type="checkbox" class="nt-pick" value="{{ u.username }}"> {{ u.username }}
+                </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+          <button class="oa-btn oa-btn-primary" onclick="ntCreate(true)">
+            <i class="fas fa-paper-plane"></i> Start sending
+          </button>
+          <button class="oa-btn oa-btn-secondary" onclick="ntCreate(false)">
+            <i class="fas fa-floppy-disk"></i> Save without sending
+          </button>
+        </div>
+      </section>
+
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Notices</h2>
+          <span class="spacer"></span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadNotices()"><i class="fas fa-rotate"></i> Refresh</button>
+        </div>
+        <div id="ntList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+      </section>
+    </div>
+
     <div id="face-tab" class="ad-panel">
 
       <!-- ── Integrity signals for one day ── -->
@@ -677,7 +777,8 @@
         <label class="cal-fld">From <input type="date" id="calFrom" class="oa-input"></label>
         <label class="cal-fld">To <input type="date" id="calTo" class="oa-input"></label>
         <button class="oa-btn oa-btn-primary oa-btn-sm" onclick="loadCalendar()"><i class="fas fa-magnifying-glass-chart"></i> Analyse</button>
-        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
+        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserReport('excel')"><i class="fas fa-file-excel"></i> Excel</button>
+        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserReport('word')"><i class="fas fa-file-word"></i> Word</button>
         <span class="spacer"></span>
         <span class="oa-tag" id="calDaysCount">0 days</span>
       </div>

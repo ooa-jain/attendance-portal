@@ -1307,6 +1307,148 @@ def purge_old_face_logs():
         return jsonify({"error": str(e)}), 500
 
 
+# ─────────────────────────────────────────────────────────────
+#  NOTICES  —  what people see when they sign in
+#
+#  An admin writes a notice once, chooses who gets it (everyone or
+#  named people) and how long it should keep appearing — a number of
+#  days, and a number of sign-ins per person. It shows on the intern's
+#  dashboard until either limit is spent or they dismiss it. Start and
+#  stop are just a flag, so a notice can be paused and resumed without
+#  losing who has already seen it.
+# ─────────────────────────────────────────────────────────────
+
+def _notice_public(n, seen_count=0):
+    return {
+        "id":         str(n["_id"]),
+        "title":      n.get("title", ""),
+        "body":       n.get("body", ""),
+        "kind":       n.get("kind", "feature"),
+        "audience":   n.get("audience", []),
+        "everyone":   not n.get("audience"),
+        "days":       n.get("days", 2),
+        "max_views":  n.get("max_views", 2),
+        "active":     bool(n.get("active")),
+        "cta_label":  n.get("cta_label", ""),
+        "cta_tab":    n.get("cta_tab", ""),
+        "created_by": n.get("created_by", ""),
+        "created_at": n.get("created_at").isoformat() if n.get("created_at") else None,
+        "started_at": n.get("started_at").isoformat() if n.get("started_at") else None,
+        "seen_by":    seen_count,
+    }
+
+
+@app.route("/api/user/notices")
+@login_required
+def user_notices():
+    """The notice this person should see right now, if any.
+
+    A notice qualifies while it is running, they are in its audience, it is
+    within its day window, they have not dismissed it, and they have seen it
+    fewer than `max_views` times.
+    """
+    try:
+        uid  = ObjectId(current_user.id)
+        now  = datetime.utcnow()
+        name = current_user.username
+        for n in mongo.db.notices.find({"active": True}).sort("started_at", -1):
+            audience = n.get("audience") or []
+            if audience and name not in audience:
+                continue
+            started = n.get("started_at")
+            if started and (now - started).days >= int(n.get("days", 2) or 2):
+                continue
+            view = mongo.db.notice_views.find_one({"notice_id": n["_id"], "user_id": uid})
+            if view and (view.get("dismissed") or view.get("views", 0) >= int(n.get("max_views", 2) or 2)):
+                continue
+            return jsonify({"notice": _notice_public(n)})
+        return jsonify({"notice": None})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/user/notices/<notice_id>/seen", methods=["POST"])
+@login_required
+def user_notice_seen(notice_id):
+    """Count one showing — and, if asked, stop showing it to this person."""
+    try:
+        dismissed = bool((request.get_json(silent=True) or {}).get("dismissed"))
+        update = {"$inc": {"views": 1},
+                  "$set": {"last_seen": datetime.utcnow(), "username": current_user.username},
+                  "$setOnInsert": {"first_seen": datetime.utcnow()}}
+        if dismissed:
+            update["$set"]["dismissed"] = True
+        mongo.db.notice_views.update_one(
+            {"notice_id": ObjectId(notice_id), "user_id": ObjectId(current_user.id)},
+            update, upsert=True)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/notices", methods=["GET", "POST"])
+@login_required
+def admin_notices():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        title = (body.get("title") or "").strip()[:120]
+        text  = (body.get("body") or "").strip()[:2000]
+        if not title or not text:
+            return jsonify({"error": "A notice needs a title and a message."}), 400
+        doc = {
+            "title":      title,
+            "body":       text,
+            "kind":       body.get("kind") if body.get("kind") in ("feature", "info", "warning") else "feature",
+            "audience":   parse_users_arg(body.get("audience")),
+            "days":       max(1, min(int(body.get("days") or 2), 60)),
+            "max_views":  max(1, min(int(body.get("max_views") or 2), 20)),
+            "cta_label":  (body.get("cta_label") or "").strip()[:40],
+            "cta_tab":    (body.get("cta_tab") or "").strip()[:20],
+            "active":     bool(body.get("start")),
+            "created_by": current_user.username,
+            "created_at": datetime.utcnow(),
+            "started_at": datetime.utcnow() if body.get("start") else None,
+        }
+        res = mongo.db.notices.insert_one(doc)
+        doc["_id"] = res.inserted_id
+        return jsonify({"ok": True, "notice": _notice_public(doc)})
+
+    out = []
+    for n in mongo.db.notices.find().sort("created_at", -1).limit(50):
+        seen = mongo.db.notice_views.count_documents({"notice_id": n["_id"]})
+        out.append(_notice_public(n, seen))
+    return jsonify({"notices": out})
+
+
+@app.route("/api/admin/notices/<notice_id>/<action>", methods=["POST", "DELETE"])
+@login_required
+def admin_notice_action(notice_id, action):
+    """start / stop / reset / delete a notice."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        oid = ObjectId(notice_id)
+    except Exception:
+        return jsonify({"error": "Unknown notice"}), 404
+
+    if action == "start":
+        mongo.db.notices.update_one({"_id": oid}, {"$set": {"active": True, "started_at": datetime.utcnow()}})
+    elif action == "stop":
+        mongo.db.notices.update_one({"_id": oid}, {"$set": {"active": False, "stopped_at": datetime.utcnow()}})
+    elif action == "reset":
+        # Show it afresh to everyone, without rewriting the notice itself.
+        mongo.db.notice_views.delete_many({"notice_id": oid})
+        mongo.db.notices.update_one({"_id": oid}, {"$set": {"started_at": datetime.utcnow()}})
+    elif action == "delete":
+        mongo.db.notices.delete_one({"_id": oid})
+        mongo.db.notice_views.delete_many({"notice_id": oid})
+    else:
+        return jsonify({"error": "Unknown action"}), 400
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admin/security-insights")
 @login_required
 def admin_security_insights():
@@ -2327,6 +2469,36 @@ def my_excel():
                      mimetype=XLSX_MIME)
 
 
+@app.route("/api/user/my-word")
+@login_required
+def my_word():
+    """The signed-in person's own report as a Word document."""
+    user_doc = mongo.db.users.find_one({"_id": ObjectId(current_user.id)})
+    if not user_doc:
+        return ("User not found", 404)
+    start, end = _resolve_user_range()
+    mem = build_person_docx(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end, "docx"),
+                     mimetype=DOCX_MIME)
+
+
+@app.route("/api/admin/user-word/<user_id>")
+@login_required
+def admin_user_word(user_id):
+    """One person's day-by-day report as a Word document (admin only)."""
+    if current_user.role != "admin":
+        return redirect(url_for("admin_dashboard"))
+    user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+    if not user_doc:
+        return ("User not found", 404)
+    start, end = _resolve_user_range()
+    mem = build_person_docx(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end, "docx"),
+                     mimetype=DOCX_MIME)
+
+
 @app.route("/api/admin/user-excel/<user_id>")
 @login_required
 def admin_user_excel(user_id):
@@ -2886,8 +3058,136 @@ def build_people_report_workbook(user_docs, start, end):
     return mem
 
 
-def person_download_name(username, start, end):
-    return f"{slugify_title(username) or 'person'}_{start.isoformat()}_to_{end.isoformat()}.xlsx"
+def person_download_name(username, start, end, ext="xlsx"):
+    return f"{slugify_title(username) or 'person'}_{start.isoformat()}_to_{end.isoformat()}.{ext}"
+
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+# Row tints, shared with the workbook so both reports read the same.
+DOCX_FILLS = {
+    "absent": "FCEBEA", "holiday": "FCF7EA", "optional": "FCF7EA",
+    "leave": "EEF0F3", "met": "E8F5EC", "short": "FCF3E2",
+}
+
+
+def _docx_shade(cell, fill):
+    """Tint a table cell. 'clear' + fill — 'solid' renders as black in Word."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill)
+    cell._tc.get_or_add_tcPr().append(shd)
+
+
+def build_person_docx(user_doc, start, end, data=None):
+    """The same report as a Word document: logo, summary, then every day
+    colour-shaded (absent red, Sat/Sun yellow, leave grey)."""
+    from docx import Document
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.section import WD_ORIENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    data  = data or compute_user_analysis(user_doc, start, end)
+    rows  = build_person_rows(data)
+    s     = data.get("summary", {})
+    uname = user_doc.get("username", "")
+    target = float(data.get("target_hours") or 0)
+
+    doc = Document()
+    sec = doc.sections[0]
+    sec.orient = WD_ORIENT.LANDSCAPE
+    sec.page_width, sec.page_height = sec.page_height, sec.page_width
+    for side in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
+        setattr(sec, side, Inches(0.5))
+
+    # Letterhead: the JAIN mark, then who and when.
+    logo = os.path.join(app.static_folder, "images", "jain.png")
+    if os.path.exists(logo):
+        try:
+            doc.add_picture(logo, height=Inches(0.42))
+        except Exception:
+            pass
+
+    h = doc.add_paragraph()
+    run = h.add_run(f"{uname} · Attendance report")
+    run.bold = True
+    run.font.size = Pt(18)
+    run.font.color.rgb = RGBColor(0x0A, 0x13, 0x24)
+
+    sub = doc.add_paragraph()
+    srun = sub.add_run(f"{start.isoformat()} to {end.isoformat()}   ·   "
+                       f"generated {format_ist_time(datetime.utcnow(), '%Y-%m-%d %I:%M %p')} IST")
+    srun.font.size = Pt(9)
+    srun.font.color.rgb = RGBColor(0x5A, 0x5A, 0x5A)
+
+    # Summary — label row over value row.
+    pairs = [
+        ("Days worked",      s.get("present", 0)),
+        ("Absent",           s.get("absent", 0)),
+        ("On leave",         s.get("leave", 0)),
+        ("Saturdays worked", s.get("saturdays_worked", 0)),
+        ("Total hours",      s.get("total_hours", 0)),
+        ("Avg / day",        s.get("avg_hours", 0)),
+        ("Working days",     s.get("working_days", 0)),
+        ("Attendance",       f"{s.get('attendance_rate', 0)}%"),
+    ]
+    st = doc.add_table(rows=2, cols=len(pairs))
+    st.style = "Table Grid"
+    for i, (label, value) in enumerate(pairs):
+        lc, vc = st.cell(0, i), st.cell(1, i)
+        lp = lc.paragraphs[0]; lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        lr = lp.add_run(label); lr.bold = True; lr.font.size = Pt(7)
+        lr.font.color.rgb = RGBColor(0x6B, 0x74, 0x80)
+        vp = vc.paragraphs[0]; vp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        vr = vp.add_run(str(value)); vr.bold = True; vr.font.size = Pt(12)
+        vr.font.color.rgb = RGBColor(0x0A, 0x13, 0x24)
+        _docx_shade(vc, "F6F4EF")
+
+    doc.add_paragraph()
+
+    # Day-by-day table.
+    headers = [h for _, h in PERSON_COLUMNS]
+    tbl = doc.add_table(rows=1, cols=len(headers))
+    tbl.style = "Table Grid"
+    for i, header in enumerate(headers):
+        cell = tbl.rows[0].cells[i]
+        run = cell.paragraphs[0].add_run(header)
+        run.bold = True
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        _docx_shade(cell, "0A1324")
+
+    for row in rows:
+        status = row.get("status")
+        key = status if status in DOCX_FILLS else None
+        if status == "present":
+            key = "met" if (row.get("hours", 0) or 0) + 1e-6 >= target else "short"
+        cells = tbl.add_row().cells
+        for i, (col, _) in enumerate(PERSON_COLUMNS):
+            val = row.get(col)
+            run = cells[i].paragraphs[0].add_run("" if val is None else str(val))
+            run.font.size = Pt(8)
+            if status == "absent":
+                run.bold = True
+            if key:
+                _docx_shade(cells[i], DOCX_FILLS[key])
+
+    if not rows:
+        doc.add_paragraph("No days in the selected range.")
+
+    foot = doc.add_paragraph()
+    frun = foot.add_run("Absent days are shaded red, Saturday and Sunday yellow, "
+                        "approved leave grey. Generated by the JAIN Attendance Portal.")
+    frun.font.size = Pt(8)
+    frun.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+
+    mem = io.BytesIO()
+    doc.save(mem)
+    mem.seek(0)
+    return mem
 
 
 @app.route("/admin/analysis/excel")
@@ -3212,28 +3512,49 @@ def shared_user_calendar(token, user_id):
     return jsonify(data)
 
 
-@app.route("/share/analysis/<token>/user-excel/<user_id>")
-def shared_user_excel(token, user_id):
-    """Public, no-login .xlsx of one person's day-by-day report, for an
-    'overall' share. Same scoping rule as the per-person calendar above.
-    """
+def _shared_person_or_error(token, user_id):
+    """Resolve a person inside an 'overall' share, or an (message, status) pair."""
     share = _get_live_share(token)
     if not share or share.get("kind") != "overall":
-        return ("This share link is no longer available.", 404)
+        return None, ("This share link is no longer available.", 404)
     try:
         user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id), "role": {"$ne": "admin"}})
     except Exception:
         user_doc = None
     if not user_doc:
-        return ("User not found", 404)
+        return None, ("User not found", 404)
     scoped = share.get("users")
     if scoped and user_doc.get("username") not in scoped:
-        return ("Not in this share", 403)
+        return None, ("Not in this share", 403)
+    return user_doc, None
+
+
+@app.route("/share/analysis/<token>/user-excel/<user_id>")
+def shared_user_excel(token, user_id):
+    """Public, no-login .xlsx of one person's day-by-day report, for an
+    'overall' share. Same scoping rule as the per-person calendar above.
+    """
+    user_doc, err = _shared_person_or_error(token, user_id)
+    if err:
+        return err
     start, end = _resolve_user_range()
     mem = build_person_workbook(user_doc, start, end)
     return send_file(mem, as_attachment=True,
                      download_name=person_download_name(user_doc.get("username", ""), start, end),
                      mimetype=XLSX_MIME)
+
+
+@app.route("/share/analysis/<token>/user-word/<user_id>")
+def shared_user_word(token, user_id):
+    """The same report as a Word document, for an 'overall' share."""
+    user_doc, err = _shared_person_or_error(token, user_id)
+    if err:
+        return err
+    start, end = _resolve_user_range()
+    mem = build_person_docx(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end, "docx"),
+                     mimetype=DOCX_MIME)
 
 
 @app.route("/admin/create_user", methods=["POST"])

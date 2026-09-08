@@ -505,7 +505,8 @@
           <div class="oa-field"><label for="rpTo">To</label><input type="date" id="rpTo"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="oa-btn oa-btn-primary" onclick="downloadMyReport()"><i class="fas fa-download"></i> Download report</button>
+          <button class="oa-btn oa-btn-primary" onclick="downloadMyReport('excel')"><i class="fas fa-file-excel"></i> Excel</button>
+          <button class="oa-btn oa-btn-primary" onclick="downloadMyReport('word')"><i class="fas fa-file-word"></i> Word</button>
           <button class="oa-btn oa-btn-ghost" onclick="setReportRange('month')">This month</button>
           <button class="oa-btn oa-btn-ghost" onclick="setReportRange('prev')">Last month</button>
         </div>
@@ -643,6 +644,22 @@
     <div class="oa-sheet-actions">
       <button class="oa-btn oa-btn-primary" onclick="submitLeave()">Submit application</button>
       <button class="oa-btn oa-btn-ghost" onclick="closeLeaveBD()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ NOTICE ("what's new") ════════════════════════════════════ -->
+<div class="oa-backdrop" id="noticeBD">
+  <div class="oa-sheet nt-sheet">
+    <div class="oa-handle"></div>
+    <div class="nt-badge" id="ntBadge">NEW</div>
+    <div class="nt-mark"><img src="{{ url_for('static', filename='images/jain.png') }}" alt=""></div>
+    <div class="nt-title" id="ntTitle">—</div>
+    <div class="nt-body" id="ntBody"></div>
+    <div class="oa-sheet-actions">
+      <button class="oa-btn oa-btn-primary" id="ntCta" style="display:none"></button>
+      <button class="oa-btn oa-btn-ghost" onclick="closeNotice(false)">Remind me later</button>
+      <button class="oa-btn oa-btn-ghost" onclick="closeNotice(true)">Got it, don't show again</button>
     </div>
   </div>
 </div>

@@ -26,6 +26,131 @@
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
         if (tab === 'calendar') loadCalendarOverview();
         if (tab === 'face') loadSecurityInsights();
+        if (tab === 'notices') loadNotices();
+    }
+
+    // ── Notices: what people see when they open their dashboard ───────────
+    const NT_PRESET = {
+        title: 'New: download your attendance report in Excel and Word',
+        body: 'Your dashboard can now hand you your own attendance report.\n\n'
+            + 'Open Statistics, pick a date range (or tap "This month"), and download it as '
+            + 'Excel or Word. It lists every day — when you signed in and out, from where, your '
+            + 'hours and the note you left at sign-out — with absent days in red and Saturday '
+            + 'and Sunday in yellow, plus a summary of days worked on top.\n\n'
+            + 'It carries your name and the JAIN mark, so it is ready to hand in. '
+            + 'Do this at the end of every month for your records.',
+        kind: 'feature', days: 2, max_views: 2,
+        cta_label: 'Show me', cta_tab: 'stats',
+    };
+
+    function ntPreset() {
+        document.getElementById('ntfTitle').value  = NT_PRESET.title;
+        document.getElementById('ntfBody').value   = NT_PRESET.body;
+        document.getElementById('ntfKind').value   = NT_PRESET.kind;
+        document.getElementById('ntfDays').value   = NT_PRESET.days;
+        document.getElementById('ntfViews').value  = NT_PRESET.max_views;
+        document.getElementById('ntfCta').value    = NT_PRESET.cta_label;
+        document.getElementById('ntfTab').value    = NT_PRESET.cta_tab;
+        showAlert('Template loaded — edit the wording, then Start sending.', 'success');
+    }
+
+    function ntAudChanged() {
+        const some = document.querySelector('input[name="ntAud"]:checked').value === 'some';
+        document.getElementById('ntPeople').style.display = some ? 'block' : 'none';
+    }
+
+    function ntFilterPeople() {
+        const q = (document.getElementById('ntPeopleSearch').value || '').toLowerCase();
+        document.querySelectorAll('#ntPeople .nt-person').forEach(el => {
+            el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+        });
+    }
+
+    async function ntCreate(start) {
+        const some = document.querySelector('input[name="ntAud"]:checked').value === 'some';
+        const audience = some
+            ? Array.from(document.querySelectorAll('.nt-pick:checked')).map(c => c.value)
+            : [];
+        if (some && !audience.length) { showAlert('Pick at least one person, or choose Everyone.', 'danger'); return; }
+
+        const payload = {
+            title:     document.getElementById('ntfTitle').value.trim(),
+            body:      document.getElementById('ntfBody').value.trim(),
+            kind:      document.getElementById('ntfKind').value,
+            days:      parseInt(document.getElementById('ntfDays').value, 10) || 2,
+            max_views: parseInt(document.getElementById('ntfViews').value, 10) || 2,
+            cta_label: document.getElementById('ntfCta').value.trim(),
+            cta_tab:   document.getElementById('ntfTab').value,
+            audience, start,
+        };
+        if (!payload.title || !payload.body) { showAlert('A notice needs a title and a message.', 'danger'); return; }
+
+        try {
+            const res = await fetch('/api/admin/notices', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to save');
+            showAlert(start ? 'Notice is now going out.' : 'Saved — start it whenever you like.', 'success');
+            ['ntfTitle', 'ntfBody', 'ntfCta'].forEach(id => { document.getElementById(id).value = ''; });
+            document.querySelectorAll('.nt-pick:checked').forEach(c => { c.checked = false; });
+            loadNotices();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
+    async function loadNotices() {
+        const list = document.getElementById('ntList');
+        if (!list) return;
+        list.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
+        try {
+            const res = await fetch('/api/admin/notices');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load');
+            const items = data.notices || [];
+            list.innerHTML = items.length ? items.map(n => `
+                <div class="nt-row ${n.active ? 'on' : ''}">
+                    <div class="nt-row-main">
+                        <div class="nt-row-title">
+                            <span class="nt-state ${n.active ? 'on' : ''}">${n.active ? 'Sending' : 'Stopped'}</span>
+                            ${escapeHtml(n.title)}
+                        </div>
+                        <div class="nt-row-meta">
+                            ${n.everyone ? 'Everyone' : escapeHtml(n.audience.join(', '))}
+                            · ${n.days} day${n.days !== 1 ? 's' : ''}
+                            · up to ${n.max_views} sign-in${n.max_views !== 1 ? 's' : ''}
+                            · seen by ${n.seen_by}
+                            · by ${escapeHtml(n.created_by || '—')}
+                        </div>
+                    </div>
+                    <div class="nt-row-acts">
+                        ${n.active
+                            ? `<button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="ntAction('${n.id}','stop')"><i class="fas fa-stop"></i> Stop</button>`
+                            : `<button class="oa-btn oa-btn-primary oa-btn-sm" onclick="ntAction('${n.id}','start')"><i class="fas fa-paper-plane"></i> Start</button>`}
+                        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="ntAction('${n.id}','reset')" title="Show it again to everyone, from now"><i class="fas fa-rotate-left"></i> Show again</button>
+                        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="ntAction('${n.id}','delete')"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>`).join('')
+                : '<div class="oa-empty"><i class="fas fa-bullhorn"></i><p>No notices yet. Write one above.</p></div>';
+        } catch (err) {
+            list.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
+    }
+
+    async function ntAction(id, action) {
+        if (action === 'delete' && !confirm('Delete this notice for good?')) return;
+        try {
+            const res = await fetch(`/api/admin/notices/${id}/${action}`, { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed');
+            showAlert({ start: 'Notice is now going out.', stop: 'Stopped — nobody new will see it.',
+                        reset: 'It will show again to everyone.', delete: 'Notice deleted.' }[action] || 'Done', 'success');
+            loadNotices();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
     }
 
     // ── Security & integrity: signals worth a second look, for one day ────
@@ -787,13 +912,14 @@
         document.getElementById('calendarModal').classList.remove('active');
     }
 
-    // The same range the calendar is showing, downloaded as a formatted workbook.
-    function downloadUserExcel() {
+    // The same range the calendar is showing, as a workbook or a Word document.
+    function downloadUserReport(kind) {
         let from = document.getElementById('calFrom').value;
         let to   = document.getElementById('calTo').value;
         if (!calUserId || !from || !to) { showAlert('Pick a From and To date', 'danger'); return; }
         if (from > to) [from, to] = [to, from];
-        window.location.href = `/api/admin/user-excel/${calUserId}?from=${from}&to=${to}`;
+        const path = kind === 'word' ? 'user-word' : 'user-excel';
+        window.location.href = `/api/admin/${path}/${calUserId}?from=${from}&to=${to}`;
     }
 
     const CAL_STATUS_LABEL = {

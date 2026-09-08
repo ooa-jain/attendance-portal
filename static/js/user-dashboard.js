@@ -1080,12 +1080,54 @@ function setReportRange(which){
   document.getElementById('rpTo').value=to;
 }
 
-function downloadMyReport(){
+function downloadMyReport(kind){
   let from=document.getElementById('rpFrom').value, to=document.getElementById('rpTo').value;
   if(!from||!to){toast('Pick a From and To date','warn');return;}
   if(from>to)[from,to]=[to,from];
-  toast('Preparing your report…','info');
-  window.location.href=`/api/user/my-excel?from=${from}&to=${to}`;
+  const path = kind==='word' ? 'my-word' : 'my-excel';
+  toast(`Preparing your ${kind==='word'?'Word':'Excel'} report…`,'info');
+  window.location.href=`/api/user/${path}?from=${from}&to=${to}`;
+}
+
+// ─ Notices: what the office wants you to know, shown on sign-in ─
+let ntCurrent=null;
+
+async function loadNotice(){
+  try{
+    const r=await fetch('/api/user/notices');
+    const d=await r.json();
+    if(!r.ok||!d.notice)return;
+    ntCurrent=d.notice;
+    document.getElementById('ntBadge').textContent=
+      ({feature:'NEW',info:'NOTICE',warning:'IMPORTANT'})[d.notice.kind]||'NEW';
+    document.getElementById('ntTitle').textContent=d.notice.title;
+    document.getElementById('ntBody').textContent=d.notice.body;
+    const cta=document.getElementById('ntCta');
+    if(d.notice.cta_label){
+      cta.style.display='';
+      cta.innerHTML=`<i class="fas fa-arrow-right"></i> ${esc(d.notice.cta_label)}`;
+      cta.onclick=()=>{closeNotice(true); if(d.notice.cta_tab) goTab(d.notice.cta_tab);};
+    } else cta.style.display='none';
+    document.getElementById('noticeBD').classList.add('show');
+    // Count the showing straight away, so "first 2 sign-ins" means what it says
+    // even if they close the tab without touching a button.
+    markNoticeSeen(false);
+  }catch{}
+}
+
+async function markNoticeSeen(dismissed){
+  if(!ntCurrent)return;
+  try{
+    await fetch(`/api/user/notices/${ntCurrent.id}/seen`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dismissed:!!dismissed})});
+  }catch{}
+}
+
+function closeNotice(dismissed){
+  document.getElementById('noticeBD').classList.remove('show');
+  if(dismissed) markNoticeSeen(true);
+  ntCurrent=null;
 }
 
 // ─ This month at a glance (+ the streak you're on) ─
@@ -1181,13 +1223,14 @@ function openConf(msg,cb){
 function closeConf(){document.getElementById('confBD').classList.remove('show');}
 
 // ─ Backdrop tap ─
-['faceBD','leaveBD','confBD','workBD','dayBD'].forEach(id=>{
+['faceBD','leaveBD','confBD','workBD','dayBD','noticeBD'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{
     if(e.target.id===id){
       if(id==='faceBD')closeFace();
       else if(id==='leaveBD')closeLeaveBD();
       else if(id==='workBD')closeWorkBD();
       else if(id==='dayBD')closeDayBD();
+      else if(id==='noticeBD')closeNotice(false);
       else closeConf();
     }
   });
@@ -1264,6 +1307,8 @@ Promise.all([loadDD(), loadTeamToday()]).then(() => {
 }).catch(() => {
   setTimeout(refreshLocation, 200);
 });
+// Let the dashboard paint first, then show anything the office has posted.
+setTimeout(loadNotice, 900);
 setInterval(loadDD, 60000);
 setInterval(loadTeamToday, 60000);
 

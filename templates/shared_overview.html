@@ -227,7 +227,8 @@
         <label style="font-size:.72rem;color:var(--t2)">From <input type="date" id="ovCalFrom" class="oa-input" style="width:auto"></label>
         <label style="font-size:.72rem;color:var(--t2)">To <input type="date" id="ovCalTo" class="oa-input" style="width:auto"></label>
         <button class="ov-btn" onclick="ovCalLoad()">Analyse</button>
-        <a class="ov-dl" id="ovCalExcel" href="#"><i class="fas fa-file-excel"></i> Export Excel</a>
+        <a class="ov-dl" id="ovCalExcel" href="#"><i class="fas fa-file-excel"></i> Excel</a>
+        <a class="ov-dl" id="ovCalWord" href="#"><i class="fas fa-file-word"></i> Word</a>
       </div>
       <div class="cal-summary" id="ovCalSummary"></div>
       <div id="ovCalBody"></div>
@@ -442,6 +443,8 @@
     if (from > to) { [from,to]=[to,from]; }
     document.getElementById('ovCalExcel').href =
       `/share/analysis/${OV_TOKEN}/user-excel/${ovCalUid}?from=${from}&to=${to}`;
+    document.getElementById('ovCalWord').href =
+      `/share/analysis/${OV_TOKEN}/user-word/${ovCalUid}?from=${from}&to=${to}`;
     document.getElementById('ovCalBody').innerHTML = '<div class="ov-empty-row">Loading…</div>';
     try {
       const res = await fetch(`/share/analysis/${OV_TOKEN}/user-calendar/${ovCalUid}?from=${from}&to=${to}`);

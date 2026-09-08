@@ -679,6 +679,37 @@
   .oa-backdrop.show .oa-sheet { transform: translateY(0) scale(1); opacity: 1; }
 }
 
+/* ══ NOTICE SHEET ("what's new") ═════════════════════════════ */
+
+.nt-sheet {
+  text-align: center;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(238, 189, 27, .16) 0%, rgba(238, 189, 27, 0) 62%),
+    var(--card);
+  border-top: 3px solid var(--gold-500);
+}
+.nt-badge {
+  display: inline-block;
+  margin: 6px auto 0;
+  font-size: .56rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-800); background: var(--gold-500);
+  padding: 4px 12px; border-radius: 999px;
+}
+.nt-mark { margin: 14px auto 2px; }
+.nt-mark img { height: 34px; width: auto; }
+.nt-title {
+  font-family: var(--display);
+  font-size: 1.3rem; font-weight: 600; line-height: 1.3;
+  color: var(--ink-800);
+  padding: 10px 24px 4px;
+}
+.nt-body {
+  font-size: .84rem; line-height: 1.65; color: var(--t2);
+  padding: 4px 24px 6px;
+  white-space: pre-wrap; text-align: left;
+}
+.nt-body strong { color: var(--t1); }
+
 /* ══ TOAST ═══════════════════════════════════════════════════ */
 
 .oa-toast {
