@@ -790,7 +790,7 @@ async function loadDD(){
       d.face_photo_count         || 0
     );
 
-    document.getElementById('wname').textContent  =d.username;
+    document.getElementById('wname').textContent  =d.name||d.username;
     document.getElementById('dname').textContent  =d.username;
     document.getElementById('davatar').textContent=d.username[0].toUpperCase();
 

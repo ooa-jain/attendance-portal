@@ -29,6 +29,33 @@
         if (tab === 'notices') loadNotices();
     }
 
+    // ── A person's display name and role ──────────────────────────────────
+    async function saveUserProfile(userId) {
+        const name = document.getElementById('pfname-' + userId).value.trim();
+        const role = document.getElementById('pfrole-' + userId).value;
+        try {
+            const res = await fetch(`/api/admin/user/${userId}/profile`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ full_name: name, role })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Could not save');
+            // Reflect it on the card straight away.
+            const card = document.getElementById('ucard-' + userId);
+            if (card) {
+                const nm = card.querySelector('.nm');
+                const av = card.querySelector('.ad-user-av');
+                if (nm) nm.textContent = data.name;
+                if (av) av.textContent = (data.name || '?')[0].toUpperCase();
+            }
+            const tag = document.querySelector(`[data-role-tag="${userId}"]`);
+            if (tag) { tag.textContent = data.role; tag.classList.toggle('gold', data.role === 'admin'); }
+            showAlert(`Saved — ${escapeHtml(data.name)} is now ${escapeHtml(data.role)}.`, 'success');
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
     // ── Notices: what people see when they open their dashboard ───────────
 
     // A JSON call that says something useful when the reply isn't JSON —
@@ -200,7 +227,7 @@
         const where = p.address ? ` · ${escapeHtml(p.address)}` : '';
         const dev   = [p.device, p.browser].filter(Boolean).map(escapeHtml).join(' · ');
         return `<div class="sec-item">
-            <div class="sec-item-top"><strong>${escapeHtml(p.username || '—')}</strong>
+            <div class="sec-item-top"><strong>${escapeHtml(p.name || p.username || '—')}</strong>
               <span class="oa-tag">${escapeHtml(p.shift_name || 'Normal')}</span>
               <span class="spacer"></span>
               <span class="sec-mono">${p.login_time || '—'}${p.logout_time ? ' → ' + p.logout_time : ''}${p.hours ? ' · ' + p.hours + 'h' : ''}</span>
@@ -236,7 +263,7 @@
                 'The photo taken at sign-in did not match the registered face.',
                 data.face_failures,
                 f => `<div class="sec-item">
-                        <div class="sec-item-top"><strong>${escapeHtml(f.username || '—')}</strong>
+                        <div class="sec-item-top"><strong>${escapeHtml(f.name || f.username || '—')}</strong>
                           <span class="oa-tag">${escapeHtml(f.shift_name || '')}</span>
                           <span class="spacer"></span>
                           <span class="sec-mono">${escapeHtml(f.time || '')}</span></div>
@@ -294,7 +321,7 @@
             let html = '';
             (allLocData.locations || []).slice(0, 15).forEach(l => {
                 html += `<tr>
-                    <td><strong>${l.username}</strong></td>
+                    <td><strong>${l.name || l.username}</strong></td>
                     <td>${l.date}</td>
                     <td>${l.shift_name}</td>
                     <td>${l.login_time}</td>
@@ -733,7 +760,7 @@
                         const marker = L.marker([l.login_lat, l.login_lng]).addTo(adminMap)
                             .bindPopup(`
                                 <div style="font-family:sans-serif;padding:4px;">
-                                    <strong style="color:#0071e3;font-size:0.95rem;">${l.username}</strong><br>
+                                    <strong style="color:#0071e3;font-size:0.95rem;">${l.name || l.username}</strong><br>
                                     <span style="font-size:0.8rem;color:#555;">Shift: ${l.shift_name}</span><br>
                                     <span style="font-size:0.8rem;color:#555;">Login: ${l.login_time}</span><br>
                                     <div style="font-size:0.75rem;margin-top:4px;color:#333;">${l.login_address}</div>
@@ -750,7 +777,7 @@
                     html += `<div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);box-shadow:0 4px 15px rgba(0,0,0,0.03);border-radius:16px;padding:20px;margin-bottom:18px;">
                         <div style="display:flex;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;align-items:center;">
                             <div style="display:flex;align-items:center;gap:10px;">
-                                <strong style="font-size:1.05rem;">${l.username}</strong>
+                                <strong style="font-size:1.05rem;">${l.name || l.username}</strong>
                                 <span class="badge" style="background:${l.at_office?'#34c759':'#ff9500'};color:white;">${l.at_office?'🏛️ On Campus':'📡 Remote'}</span>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;">
@@ -890,7 +917,7 @@
         const barColor = p.progress_pct >= 80 ? '#2E7D46' : p.progress_pct >= 50 ? '#C77700' : '#C0362C';
         return `<div class="an-u">
             <div class="an-u-top">
-              <span class="an-u-name">${p.username}</span>
+              <span class="an-u-name">${p.name || p.username}</span>
               <span class="an-u-prog">${p.progress_pct}%</span>
             </div>
             ${timeline}
@@ -1142,7 +1169,7 @@
             document.getElementById('acDayList').innerHTML = locs.length ? locs.map(l => `
                 <div class="ac-day-item">
                     <div class="ac-day-item-head">
-                        <strong>${escapeHtml(l.username)}</strong>
+                        <strong>${escapeHtml(l.name || l.username)}</strong>
                         <span class="oa-tag ${l.at_office ? 'ok' : 'warn'}">${l.at_office ? 'On campus' : 'Remote'}</span>
                         <span class="oa-tag">${escapeHtml(l.shift_name)}</span>
                         <span class="spacer"></span>

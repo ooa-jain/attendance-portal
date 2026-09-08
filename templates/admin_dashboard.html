@@ -198,7 +198,7 @@
             </div>
             <div id="anUsers" class="ad-users-box">
               {% for u in users %}
-                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" onchange="anUsersChanged()"> {{ u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
+                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" onchange="anUsersChanged()"> {{ u.full_name or u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
               {% endfor %}
             </div>
             <small class="ad-hint">Leave every box unchecked to include everyone.</small>
@@ -270,10 +270,11 @@
         <div id="anUserCalList" class="an-namelist">
           {% for u in users %}
             {% if u.role != 'admin' %}
-            <button type="button" class="an-name" data-name="{{ u.username|lower }}"
-                    data-uid="{{ u._id }}" data-fullname="{{ u.username }}"
+            {% set nm = u.full_name or u.username %}
+            <button type="button" class="an-name" data-name="{{ (nm ~ ' ' ~ u.username)|lower }}"
+                    data-uid="{{ u._id }}" data-fullname="{{ nm }}"
                     onclick="openUserCalendar(this)">
-              <span class="an-name-av">{{ u.username[0]|upper }}</span>{{ u.username }}
+              <span class="an-name-av">{{ nm[0]|upper }}</span>{{ nm }}
             </button>
             {% endif %}
           {% endfor %}
@@ -341,14 +342,30 @@
         <div class="oa-card-head"><h2>Add a person</h2></div>
         <form method="POST" action="{{ url_for('admin_create_user') }}">
           <div class="oa-formgrid">
-            <div class="oa-field"><label for="nu">Username</label><input type="text" id="nu" name="username" required autocapitalize="none"></div>
+            <div class="oa-field">
+              <label for="nfn">Full name <span style="font-weight:400;color:var(--t3)">— shown everywhere</span></label>
+              <input type="text" id="nfn" name="full_name" placeholder="e.g. Dr. Madhavi R">
+            </div>
+            <div class="oa-field">
+              <label for="nu">Username <span style="font-weight:400;color:var(--t3)">— used to sign in</span></label>
+              <input type="text" id="nu" name="username" required autocapitalize="none" placeholder="e.g. madhavi">
+            </div>
             <div class="oa-field"><label for="ne">Email</label><input type="email" id="ne" name="email"></div>
             <div class="oa-field"><label for="np">Password</label><input type="password" id="np" name="password" required></div>
             <div class="oa-field"><label for="nr">Role</label>
-              <select id="nr" name="role"><option value="intern">Intern</option><option value="admin">Admin</option></select>
+              <select id="nr" name="role">
+                <option value="intern">Intern</option>
+                <option value="employee">Employee</option>
+                <option value="admin">Admin</option>
+              </select>
             </div>
             <div class="oa-field"><label for="nh">Daily hours target</label><input type="number" id="nh" name="work_hours" step="0.5" value="8" required></div>
           </div>
+          <p class="ad-hint" style="margin:-4px 0 12px">
+            Keep the username short and lower-case — it is what they type to sign in, and it never
+            changes. The full name is what appears on their dashboard, in your lists and on reports.
+            Interns and employees both record attendance; admins do not.
+          </p>
           <button type="submit" class="oa-btn oa-btn-primary"><i class="fas fa-user-plus"></i> Create account</button>
         </form>
       </section>
@@ -371,15 +388,34 @@
       <div class="ad-usergrid">
         {% for user in users %}
         <div class="ad-user" id="ucard-{{ user._id }}">
+          {% set shown_name = user.full_name or user.username %}
           <div class="ad-user-head">
-            <div class="ad-user-av">{{ user.username[0]|upper }}</div>
-            <span class="nm">{{ user.username }}</span>
-            <span class="oa-tag {% if user.role == 'admin' %}gold{% endif %}">{{ user.role }}</span>
+            <div class="ad-user-av">{{ shown_name[0]|upper }}</div>
+            <span class="nm">{{ shown_name }}</span>
+            <span class="oa-tag {% if user.role == 'admin' %}gold{% endif %}" data-role-tag="{{ user._id }}">{{ user.role }}</span>
           </div>
 
           <div class="ad-meta">
+            <div><i class="fas fa-at"></i> Signs in as <strong>{{ user.username }}</strong></div>
             <div><i class="fas fa-envelope"></i> {{ user.email or 'No email on file' }}</div>
             <div><i class="fas fa-clock"></i> Target {{ user.work_hours or 8 }} hours per day</div>
+          </div>
+
+          <div class="ad-control">
+            <div class="ad-control-title"><i class="fas fa-id-badge"></i> Name &amp; role</div>
+            <div class="ad-profile-row">
+              <input type="text" class="oa-input" id="pfname-{{ user._id }}"
+                     value="{{ user.full_name or '' }}" placeholder="Full name, e.g. Dr. Madhavi R">
+              <select class="oa-input" id="pfrole-{{ user._id }}">
+                <option value="intern"   {% if user.role == 'intern'   %}selected{% endif %}>Intern</option>
+                <option value="employee" {% if user.role == 'employee' %}selected{% endif %}>Employee</option>
+                <option value="admin"    {% if user.role == 'admin'    %}selected{% endif %}>Admin</option>
+              </select>
+              <button class="oa-btn oa-btn-primary oa-btn-sm"
+                      onclick="saveUserProfile('{{ user._id }}')">
+                <i class="fas fa-check"></i> Save
+              </button>
+            </div>
           </div>
 
           {% if user.role != 'admin' %}
@@ -599,8 +635,9 @@
             <div class="nt-people">
               {% for u in users %}
                 {% if u.role != 'admin' %}
-                <label class="nt-person" data-name="{{ u.username|lower }}">
-                  <input type="checkbox" class="nt-pick" value="{{ u.username }}"> {{ u.username }}
+                {% set nm = u.full_name or u.username %}
+                <label class="nt-person" data-name="{{ (nm ~ ' ' ~ u.username)|lower }}">
+                  <input type="checkbox" class="nt-pick" value="{{ u.username }}"> {{ nm }}
                 </label>
                 {% endif %}
               {% endfor %}

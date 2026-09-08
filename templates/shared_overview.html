@@ -393,7 +393,7 @@
         : '';
       const addr = p.login_address ? esc(p.login_address) : 'Location not recorded';
       return `<div class="ov-in-row2">
-        <div class="ov-in-top"><span class="nm">${esc(p.username)}</span>
+        <div class="ov-in-top"><span class="nm">${esc(p.name || p.username)}</span>
           <span class="tm">${p.login_time||'—'}${p.logout_time ? ' → '+p.logout_time : ' · active'} · ${p.hours}h</span></div>
         <div class="ov-loc">${badge} ${addr}${maplink}</div>
       </div>`;
@@ -407,10 +407,10 @@
     const all = [].concat(b.complete||[],b.active||[],b.early||[],b.absent||[],b.on_leave||[],b.off||[]);
     const seen = {}; const names = [];
     all.forEach(p => { if (!seen[p.user_id]) { seen[p.user_id]=1; names.push(p); } });
-    names.sort((a,c)=>a.username.toLowerCase().localeCompare(c.username.toLowerCase()));
+    names.sort((a,c)=>(a.name||a.username).toLowerCase().localeCompare((c.name||c.username).toLowerCase()));
     document.getElementById('ovNames').innerHTML = names.map(p =>
-      `<button class="ov-name" onclick="ovOpenCal('${p.user_id}','${esc(p.username).replace(/'/g,'&#39;')}')">
-         <span class="av">${esc((p.username||'?')[0]).toUpperCase()}</span>${esc(p.username)}</button>`
+      `<button class="ov-name" onclick="ovOpenCal('${p.user_id}','${esc(p.name || p.username).replace(/'/g,'&#39;')}')">
+         <span class="av">${esc(((p.name || p.username)||'?')[0]).toUpperCase()}</span>${esc(p.name || p.username)}</button>`
     ).join('') || '<div class="ov-empty-row">No people</div>';
   }
 
@@ -418,7 +418,7 @@
     arr = arr || [];
     document.getElementById(countId).textContent = arr.length;
     document.getElementById(listId).innerHTML = arr.length
-      ? arr.map(p => `<span class="ov-chip ${cls}">${esc(p.username)}</span>`).join('')
+      ? arr.map(p => `<span class="ov-chip ${cls}">${esc(p.name || p.username)}</span>`).join('')
       : '<div class="ov-empty-row">Nobody</div>';
   }
 

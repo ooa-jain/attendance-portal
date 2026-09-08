@@ -279,10 +279,38 @@ def img_to_b64_jpeg(img_bgr, quality: int = 75) -> str:
 #  USER MODEL
 # ─────────────────────────────────────────────────────────────
 
+# Roles. "username" stays the login handle and the key attendance records are
+# filed under; "full_name" is only ever what people read on screen.
+STAFF_ROLES = ("intern", "employee")     # these record attendance
+ALL_ROLES   = ("intern", "employee", "admin")
+
+
+def is_staff(role):
+    """Does this role sign in and out, and use the staff dashboard?"""
+    return role in STAFF_ROLES
+
+
+def display_name(doc):
+    """The name to show for a person, falling back to their login name.
+    A blank or whitespace-only full name falls back too, so nobody renders
+    as an empty string."""
+    if not doc:
+        return ""
+    return (doc.get("full_name") or "").strip() or (doc.get("username") or "").strip()
+
+
+def name_map():
+    """login name -> display name, for lists built from attendance records
+    (which are filed under the login name, not the display one)."""
+    return {u.get("username"): display_name(u)
+            for u in mongo.db.users.find({}, {"username": 1, "full_name": 1})}
+
+
 class User(UserMixin):
     def __init__(self, user_doc):
         self.id         = str(user_doc["_id"])
         self.username   = user_doc["username"]
+        self.full_name  = display_name(user_doc)
         self.role       = user_doc.get("role", "intern")
         self.email      = user_doc.get("email")
         self.work_hours = user_doc.get("work_hours", DEFAULT_WORK_HOURS)
@@ -437,7 +465,7 @@ def _get_lat_lng_from_request():
 @app.route("/")
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for("user_dashboard") if current_user.role == "intern" else url_for("admin_dashboard"))
+        return redirect(url_for("user_dashboard") if is_staff(current_user.role) else url_for("admin_dashboard"))
     return redirect(url_for("login"))
 
 
@@ -445,8 +473,11 @@ def index():
 def register():
     if request.method == "POST":
         username   = request.form["username"].strip()
+        full_name  = (request.form.get("full_name") or "").strip()[:120]
         password   = request.form["password"]
-        role       = request.form.get("role", "intern")
+        # Self sign-up is always an intern. Never take the role from the form —
+        # an admin promotes people from the People tab.
+        role       = "intern"
         email      = request.form.get("email", "")
         work_hours = float(request.form.get("work_hours", DEFAULT_WORK_HOURS))
 
@@ -456,7 +487,8 @@ def register():
 
         hashed = bcrypt.generate_password_hash(password).decode("utf-8")
         mongo.db.users.insert_one({
-            "username": username, "password": hashed, "role": role,
+            "username": username, "full_name": full_name or username,
+            "password": hashed, "role": role,
             "email": email, "work_hours": work_hours,
             "created_at": datetime.utcnow(), "face_registered": False,
             "face_required": False,             # admin must enable this
@@ -481,7 +513,7 @@ def login():
             user_obj = User(user)
             login_user(user_obj)
             flash("Logged in", "success")
-            return redirect(url_for("user_dashboard") if user_obj.role == "intern" else url_for("admin_dashboard"))
+            return redirect(url_for("user_dashboard") if is_staff(user_obj.role) else url_for("admin_dashboard"))
         flash("Invalid credentials", "danger")
     return render_template("login.html")
 
@@ -881,8 +913,8 @@ def _extract_browser(ua: str) -> str:
 @app.route("/attendance/login", methods=["POST"])
 @login_required
 def attendance_login():
-    if current_user.role != "intern":
-        return jsonify({"error": "Only interns can record attendance"}), 403
+    if not is_staff(current_user.role):
+        return jsonify({"error": "Only staff accounts can record attendance"}), 403
 
     data = request.get_json() if request.is_json else {}
     lat, lng = _get_lat_lng_from_request()
@@ -1120,8 +1152,8 @@ def attendance_login():
 @app.route("/attendance/logout", methods=["POST"])
 @login_required
 def attendance_logout():
-    if current_user.role != "intern":
-        return jsonify({"error": "Only interns can record attendance"}), 403
+    if not is_staff(current_user.role):
+        return jsonify({"error": "Only staff accounts can record attendance"}), 403
 
     data         = request.get_json() if request.is_json else {}
     lat, lng     = _get_lat_lng_from_request()
@@ -1462,8 +1494,9 @@ def admin_security_insights():
     if current_user.role != "admin":
         return jsonify({"error": "Admin access required"}), 403
     try:
-        day  = request.args.get("date") or date.today().isoformat()
-        recs = list(mongo.db.attendance.find({"date": day}))
+        day   = request.args.get("date") or date.today().isoformat()
+        recs  = list(mongo.db.attendance.find({"date": day}))
+        names = name_map()
 
         def _fingerprint(di):
             ua = (di.get("user_agent") or "").strip()
@@ -1484,6 +1517,7 @@ def admin_security_insights():
 
             entry = {
                 "username":    uname,
+                "name":        names.get(uname) or uname,
                 "shift_name":  r.get("shift_name", "Normal"),
                 "login_time":  format_ist_time(lt) if lt else "N/A",
                 "logout_time": format_ist_time(lot) if lot else None,
@@ -1514,6 +1548,7 @@ def admin_security_insights():
 
         face_fails = [{
             "username":   f.get("username"),
+            "name":       names.get(f.get("username")) or f.get("username"),
             "time":       f.get("timestamp_ist"),
             "distance":   f.get("match_distance"),
             "at_office":  f.get("at_office"),
@@ -1621,7 +1656,7 @@ def admin_user_stats(user_id):
 @app.route("/api/dashboard-data")
 @login_required
 def get_dashboard_data():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can access this dashboard"}), 403
     try:
         ist_now = get_ist_now()
@@ -1736,6 +1771,8 @@ def get_dashboard_data():
 
         return jsonify({
             "username":               current_user.username,
+            "name":                   display_name(user),
+            "role":                   current_user.role,
             "face_registered":        bool(user.get("face_registered")),
             "face_required":          bool(user.get("face_required", False)),
             "face_registration_enabled": bool(user.get("face_registration_enabled", False)),
@@ -1777,7 +1814,7 @@ def get_dashboard_data():
 @app.route("/api/statistics", methods=["POST"])
 @login_required
 def get_statistics():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can access statistics"}), 403
     try:
         data       = request.get_json()
@@ -1814,7 +1851,7 @@ def get_statistics():
 @app.route("/api/leave/apply", methods=["POST"])
 @login_required
 def apply_leave():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can apply for leave"}), 403
     try:
         if not request.is_json:
@@ -1854,7 +1891,7 @@ def apply_leave():
 @app.route("/api/leaves", methods=["GET"])
 @login_required
 def get_all_leaves():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can access leave data"}), 403
     try:
         cutoff = (date.today() - timedelta(days=365)).isoformat()
@@ -1883,7 +1920,7 @@ def get_holidays():
 @app.route("/api/notifications")
 @login_required
 def get_notifications():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns"}), 403
     try:
         notifications = list(mongo.db.leave_applications.find({"user_id": ObjectId(current_user.id), "status": {"$in": ["approved","denied"]}, "user_notified": {"$ne": True}}).sort("updated_at",-1))
@@ -1938,6 +1975,40 @@ def update_leave_status(leave_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/user/<user_id>/profile", methods=["POST"])
+@login_required
+def admin_update_user_profile(user_id):
+    """Set a person's display name and role. The login name is left alone —
+    attendance records are filed under it, so renaming it would orphan them.
+    """
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        data      = request.get_json(silent=True) or {}
+        updates   = {}
+        full_name = (data.get("full_name") or "").strip()[:120]
+        role      = data.get("role")
+
+        if full_name:
+            updates["full_name"] = full_name
+        if role:
+            if role not in ALL_ROLES:
+                return jsonify({"error": "Unknown role"}), 400
+            if str(user_id) == str(current_user.id) and role != "admin":
+                return jsonify({"error": "You cannot take away your own admin access."}), 400
+            updates["role"] = role
+        if not updates:
+            return jsonify({"error": "Nothing to change"}), 400
+
+        res = mongo.db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
+        if not res.matched_count:
+            return jsonify({"error": "User not found"}), 404
+        doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+        return jsonify({"ok": True, "name": display_name(doc), "role": doc.get("role", "intern")})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/admin/update-user-work-hours", methods=["POST"])
 @login_required
 def update_user_work_hours():
@@ -1962,6 +2033,7 @@ def admin_user_locations(date_str):
         return jsonify({"error": "Admin access required"}), 403
     try:
         records = list(mongo.db.attendance.find({"date": date_str}).sort("login_time", 1))
+        names = name_map()
         locations = []
         for r in records:
             lt  = r.get("login_time")
@@ -1970,6 +2042,7 @@ def admin_user_locations(date_str):
             logout_loc = r.get("logout_location", {})
             locations.append({
                 "username":      r.get("username"),
+                "name":          names.get(r.get("username")) or r.get("username"),
                 "date":          r.get("date"),
                 "shift_type":    r.get("shift_type", "normal"),
                 "shift_name":    r.get("shift_name", "Normal"),
@@ -2237,6 +2310,7 @@ def compute_day_overview(day, usernames=None):
             buckets[status].append({
                 "user_id":       uid,
                 "username":      uname,
+                "name":          display_name(u),
                 "role":          u.get("role", "intern"),
                 "status":        status,
                 "target_hours":  round(target, 2),
@@ -2450,6 +2524,7 @@ def my_analysis():
     start, end = _resolve_user_range()
     data = compute_user_analysis(user_doc, start, end)
     data.update({"username": user_doc.get("username", ""),
+                 "name": display_name(user_doc),
                  "start": start.isoformat(), "end": end.isoformat()})
     return jsonify(data)
 
@@ -2532,6 +2607,7 @@ def admin_user_calendar(user_id):
         data.update({
             "user_id":  user_id,
             "username": user_doc.get("username", ""),
+            "name":     display_name(user_doc),
             "role":     user_doc.get("role", "intern"),
             "email":    user_doc.get("email", ""),
             "start":    start.isoformat(),
@@ -2549,7 +2625,7 @@ def admin_user_calendar(user_id):
 @app.route("/user/dashboard")
 @login_required
 def user_dashboard():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return redirect(url_for("admin_dashboard"))
     return render_template("user_dashboard.html")
 
@@ -2897,7 +2973,7 @@ def write_person_sheet(ws, user_doc, start, end, data=None):
     data  = data or compute_user_analysis(user_doc, start, end)
     rows  = build_person_rows(data)
     s     = data.get("summary", {})
-    uname = user_doc.get("username", "")
+    uname = display_name(user_doc)
     ncols = len(PERSON_COLUMNS)
     navy, paper = "0A1324", "F6F4EF"
 
@@ -3043,7 +3119,7 @@ def build_people_report_workbook(user_docs, start, end):
     wb.remove(wb.active)
     taken = set()
     for u in user_docs:
-        ws = wb.create_sheet(title=_safe_sheet_name(u.get("username"), taken))
+        ws = wb.create_sheet(title=_safe_sheet_name(display_name(u), taken))
         write_person_sheet(ws, u, start, end)
 
     if not wb.sheetnames:
@@ -3093,7 +3169,7 @@ def build_person_docx(user_doc, start, end, data=None):
     data  = data or compute_user_analysis(user_doc, start, end)
     rows  = build_person_rows(data)
     s     = data.get("summary", {})
-    uname = user_doc.get("username", "")
+    uname = display_name(user_doc)
     target = float(data.get("target_hours") or 0)
 
     doc = Document()
@@ -3508,6 +3584,7 @@ def shared_user_calendar(token, user_id):
     start, end = _resolve_user_range()
     data = compute_user_analysis(user_doc, start, end)
     data.update({"user_id": user_id, "username": user_doc.get("username", ""),
+                 "name": display_name(user_doc),
                  "start": start.isoformat(), "end": end.isoformat()})
     return jsonify(data)
 
@@ -3563,15 +3640,19 @@ def admin_create_user():
     if current_user.role != "admin":
         return redirect(url_for("user_dashboard"))
     username   = request.form.get("username").strip()
+    full_name  = (request.form.get("full_name") or "").strip()[:120]
     password   = request.form.get("password")
     role       = request.form.get("role", "intern")
+    if role not in ALL_ROLES:
+        role = "intern"
     email      = request.form.get("email", "")
     work_hours = float(request.form.get("work_hours", DEFAULT_WORK_HOURS))
     if mongo.db.users.find_one({"username": username}):
         flash("User exists", "danger"); return redirect(url_for("admin_dashboard"))
     hashed = bcrypt.generate_password_hash(password).decode("utf-8")
     mongo.db.users.insert_one({
-        "username": username, "password": hashed, "role": role,
+        "username": username, "full_name": full_name or username,
+        "password": hashed, "role": role,
         "email": email, "work_hours": work_hours,
         "created_at": datetime.utcnow(),
         "face_registered": False,

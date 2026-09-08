@@ -622,6 +622,15 @@
 }
 .cal-note-empty { font-size: .78rem; color: var(--t3); }
 
+/* ── Name & role editor on a person's card ───────────────────────────── */
+.ad-profile-row { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
+.ad-profile-row .oa-input { font-size: .78rem; padding: 7px 9px; }
+.ad-profile-row select.oa-input { width: auto; }
+@media (max-width: 560px) {
+  .ad-profile-row { grid-template-columns: 1fr; }
+  .ad-profile-row select.oa-input { width: 100%; }
+}
+
 /* ── Notices: compose + list ─────────────────────────────────────────── */
 .nt-aud { display: flex; gap: 18px; flex-wrap: wrap; }
 .nt-radio { display: inline-flex; align-items: center; gap: 7px; font-size: .8rem; color: var(--t1); cursor: pointer; }
