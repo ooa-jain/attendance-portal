@@ -657,6 +657,7 @@
         <label class="cal-fld">From <input type="date" id="calFrom" class="oa-input"></label>
         <label class="cal-fld">To <input type="date" id="calTo" class="oa-input"></label>
         <button class="oa-btn oa-btn-primary oa-btn-sm" onclick="loadCalendar()"><i class="fas fa-magnifying-glass-chart"></i> Analyse</button>
+        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
         <span class="spacer"></span>
         <span class="oa-tag" id="calDaysCount">0 days</span>
       </div>
@@ -674,6 +675,10 @@
         <span><span class="cal-key optional"></span> Sat (optional)</span>
         <span><span class="cal-key holiday"></span> Sun (holiday)</span>
       </div>
+
+      <!-- Day by day: the same rows the Excel export carries -->
+      <div class="oa-card-head" style="margin-top:18px"><h2 style="font-size:1rem">Day by day</h2></div>
+      <div id="calTable"></div>
     </div>
   </div>
 </div>

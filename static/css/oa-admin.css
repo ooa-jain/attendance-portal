@@ -622,6 +622,24 @@
 }
 .cal-note-empty { font-size: .78rem; color: var(--t3); }
 
+/* ── Day-by-day table under the per-person calendar ──────────────────── */
+.cal-tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.cal-tbl { width: 100%; border-collapse: collapse; font-size: .76rem; }
+.cal-tbl th {
+  background: var(--ink-800); color: #fff; text-align: left; white-space: nowrap;
+  padding: 8px 10px; font-size: .62rem; font-weight: 800;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.cal-tbl td { padding: 7px 10px; border-top: 1px solid var(--line); color: var(--t1); vertical-align: top; }
+.cal-tbl td:nth-child(-n+6) { white-space: nowrap; }
+.cal-tbl tr.met      { background: #E8F5EC; } .cal-tbl tr.met td      { color: #1E7D46; }
+.cal-tbl tr.part     { background: #FCF3E2; } .cal-tbl tr.part td     { color: #B0740A; }
+.cal-tbl tr.absent   { background: #FCEBEA; } .cal-tbl tr.absent td   { color: #B7302A; font-weight: 700; }
+.cal-tbl tr.leave    { background: #EEF0F3; } .cal-tbl tr.leave td    { color: #6B7480; }
+.cal-tbl tr.holiday,
+.cal-tbl tr.optional { background: #FCF7EA; }
+.cal-tbl tr.holiday td, .cal-tbl tr.optional td { color: #A98A2E; }
+
 /* ── Attendance calendar tab: one day's roster ───────────────────────── */
 .ac-day-item {
   padding: 12px 14px; margin-bottom: 8px;

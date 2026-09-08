@@ -686,6 +686,46 @@
         document.getElementById('calendarModal').classList.remove('active');
     }
 
+    // The same range the calendar is showing, downloaded as a formatted workbook.
+    function downloadUserExcel() {
+        let from = document.getElementById('calFrom').value;
+        let to   = document.getElementById('calTo').value;
+        if (!calUserId || !from || !to) { showAlert('Pick a From and To date', 'danger'); return; }
+        if (from > to) [from, to] = [to, from];
+        window.location.href = `/api/admin/user-excel/${calUserId}?from=${from}&to=${to}`;
+    }
+
+    const CAL_STATUS_LABEL = {
+        present: 'Present', absent: 'Absent', leave: 'On leave',
+        holiday: 'Sunday · holiday', optional: 'Saturday · off',
+    };
+
+    // Day-by-day table under the calendar — mirrors the Excel export exactly.
+    function calDayTable(data) {
+        const body = (data.timeline || []).map(t => {
+            const cls  = t.status === 'present' ? (t.met ? 'met' : 'part') : t.status;
+            const note = (t.comments || []).map(c => escapeHtml(c.text)).join(' | ');
+            return `<tr class="${cls}">
+                <td>${t.date}</td>
+                <td>${t.weekday}</td>
+                <td>${CAL_STATUS_LABEL[t.status] || t.status}</td>
+                <td>${t.login_time || '—'}</td>
+                <td>${t.logout_time || '—'}</td>
+                <td>${t.status === 'present' ? t.hours + 'h' : '—'}</td>
+                <td>${escapeHtml(t.login_address || '—')}</td>
+                <td>${escapeHtml(t.logout_address || '—')}</td>
+                <td>${note || '—'}</td>
+            </tr>`;
+        }).join('');
+        return `<div class="cal-tbl-wrap"><table class="cal-tbl">
+            <thead><tr>
+              <th>Date</th><th>Day</th><th>Status</th><th>Login</th><th>Logout</th>
+              <th>Hours</th><th>Login location</th><th>Logout location</th><th>Work note</th>
+            </tr></thead>
+            <tbody>${body || '<tr><td colspan="9" style="text-align:center;color:var(--t3)">No days in this range.</td></tr>'}</tbody>
+        </table></div>`;
+    }
+
     async function loadCalendar() {
         let from = document.getElementById('calFrom').value;
         let to   = document.getElementById('calTo').value;
@@ -786,6 +826,8 @@
         const n = data.days_logged;
         document.getElementById('calDaysCount').textContent =
             `${n} day${n !== 1 ? 's' : ''} · ${data.total_hours}h`;
+
+        document.getElementById('calTable').innerHTML = calDayTable(data);
     }
 
     // ── Attendance calendar tab: everyone, one month at a time ────────────
