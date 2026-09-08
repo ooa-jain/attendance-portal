@@ -478,6 +478,39 @@
         </section>
       </div>
 
+      <!-- This month at a glance — pulled from the same analysis the office sees -->
+      <section class="oa-card">
+        <div class="oa-card-title"><i class="fas fa-calendar-check"></i> This month at a glance</div>
+        <div class="oa-statgrid">
+          <div class="oa-stat"><div class="v" id="mgWorked">0</div><div class="k">Days worked</div></div>
+          <div class="oa-stat"><div class="v" id="mgAbsent">0</div><div class="k">Absent</div></div>
+          <div class="oa-stat"><div class="v" id="mgLeave">0</div><div class="k">On leave</div></div>
+          <div class="oa-stat"><div class="v" id="mgRate">0%</div><div class="k">Attendance</div></div>
+          <div class="oa-stat"><div class="v" id="mgStreak">0</div><div class="k">Day streak</div></div>
+          <div class="oa-stat"><div class="v" id="mgHours">0</div><div class="k">Hours</div></div>
+        </div>
+        <div id="mgNote" style="font-size:.72rem;color:var(--t3);margin-top:8px"></div>
+      </section>
+
+      <!-- Download your own report -->
+      <section class="oa-card">
+        <div class="oa-card-title"><i class="fas fa-file-excel"></i> My attendance report</div>
+        <p style="font-size:.78rem;color:var(--t2);line-height:1.6;margin-bottom:12px">
+          Every day between two dates — where you signed in and out, your hours and the notes you
+          left, with absent days in red and Saturday/Sunday in yellow. Carries your name and the
+          JAIN mark, so it is ready to hand in.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+          <div class="oa-field"><label for="rpFrom">From</label><input type="date" id="rpFrom"></div>
+          <div class="oa-field"><label for="rpTo">To</label><input type="date" id="rpTo"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="oa-btn oa-btn-primary" onclick="downloadMyReport()"><i class="fas fa-download"></i> Download report</button>
+          <button class="oa-btn oa-btn-ghost" onclick="setReportRange('month')">This month</button>
+          <button class="oa-btn oa-btn-ghost" onclick="setReportRange('prev')">Last month</button>
+        </div>
+      </section>
+
       <div class="oa-rule"><span class="tick"></span><span class="lbl">Entries in this period</span></div>
       <div id="stHistory" class="oa-ledger">
         <div class="oa-empty"><i class="fas fa-chart-simple"></i><p>Pick a period above</p></div>
@@ -501,6 +534,9 @@
           <div><span style="background:var(--warn-bg)"></span>Leave</div>
           <div><span style="background:transparent;box-shadow:inset 0 0 0 2px var(--ink-800)"></span>Today</div>
         </div>
+        <p style="font-size:.72rem;color:var(--t3);text-align:center;margin-top:10px">
+          Tap any day to see where you signed in and the note you left.
+        </p>
       </div>
 
       <div class="oa-rule"><span class="tick"></span><span class="lbl">Holidays this week</span></div>
@@ -607,6 +643,19 @@
     <div class="oa-sheet-actions">
       <button class="oa-btn oa-btn-primary" onclick="submitLeave()">Submit application</button>
       <button class="oa-btn oa-btn-ghost" onclick="closeLeaveBD()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DAY DETAIL SHEET ═════════════════════════════════════════ -->
+<div class="oa-backdrop" id="dayBD">
+  <div class="oa-sheet">
+    <div class="oa-handle"></div>
+    <div class="oa-sheet-title" id="dayTitle">—</div>
+    <div class="oa-sheet-sub" id="daySub"></div>
+    <div class="oa-sheet-body" id="dayBody"></div>
+    <div class="oa-sheet-actions">
+      <button class="oa-btn oa-btn-ghost" onclick="closeDayBD()">Close</button>
     </div>
   </div>
 </div>

@@ -145,10 +145,26 @@
     <button class="ov-btn" onclick="ovSet('{{ today }}')">Today</button>
     <button class="ov-btn" onclick="ovSet('{{ yesterday }}')">Yesterday</button>
     <button class="ov-btn" onclick="ovTogglePicker()"><i class="fas fa-calendar-days"></i> Calendar</button>
-    <a class="ov-dl" id="ovDownload" href="{{ url_for('shared_analysis_excel', token=token) }}?date={{ today }}">
-      <i class="fas fa-file-excel"></i> Download Excel (this day)
-    </a>
+    <button class="ov-dl" onclick="ovToggleExport()"><i class="fas fa-file-excel"></i> Export Excel</button>
     <span class="ov-daylabel" id="ovDayLabel"></span>
+  </div>
+
+  <!-- Export: pick the range first, then download -->
+  <div class="ov-col" id="ovExport" style="display:none;margin-bottom:18px">
+    <div class="ov-col-head"><i class="fas fa-file-excel" style="color:#1E7D46"></i> Export to Excel</div>
+    <div class="ov-col-body" style="max-height:none">
+      <div class="ov-ctrl" style="margin-bottom:8px">
+        <label style="font-size:.72rem;color:var(--t2)">From <input type="date" id="ovExpFrom" class="oa-input" style="width:auto"></label>
+        <label style="font-size:.72rem;color:var(--t2)">To <input type="date" id="ovExpTo" class="oa-input" style="width:auto"></label>
+        <button class="ov-dl" onclick="ovDownloadRange()"><i class="fas fa-download"></i> Download report</button>
+        <a class="ov-btn" id="ovDownload" href="{{ url_for('shared_analysis_excel', token=token) }}?date={{ today }}">Just this day</a>
+      </div>
+      <div style="font-size:.72rem;color:var(--t2);line-height:1.6">
+        The report covers <strong>every day</strong> in the range — date, day, sign-in, sign-out,
+        hours, both locations and the work note — with absent days in red and Saturday/Sunday in
+        yellow, and a summary of days worked on top. One sheet per person.
+      </div>
+    </div>
   </div>
 
   <div class="ov-col" id="ovPicker" style="display:none;margin-bottom:18px">
@@ -235,6 +251,29 @@
   const CAL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
   function ovSet(d) { document.getElementById('ovDate').value = d; ovLoad(); }
+
+  // ── Export: ask for a From/To range, then download the report ──
+  function ovToggleExport() {
+    const el = document.getElementById('ovExport');
+    const show = el.style.display === 'none';
+    el.style.display = show ? 'block' : 'none';
+    if (show) {
+      const d = document.getElementById('ovDate').value || OV_TODAY;
+      // Default to the month being viewed, up to today.
+      if (!document.getElementById('ovExpFrom').value)
+        document.getElementById('ovExpFrom').value = d.slice(0, 8) + '01';
+      if (!document.getElementById('ovExpTo').value)
+        document.getElementById('ovExpTo').value = OV_TODAY;
+    }
+  }
+
+  function ovDownloadRange() {
+    let from = document.getElementById('ovExpFrom').value;
+    let to   = document.getElementById('ovExpTo').value;
+    if (!from || !to) { alert('Pick a From and To date.'); return; }
+    if (from > to) [from, to] = [to, from];
+    window.location.href = `/share/analysis/${OV_TOKEN}/excel?from=${from}&to=${to}`;
+  }
 
   // ── Calendar date-picker (quicker than typing a date) ──
   let ovPickMonth = OV_TODAY.slice(0, 7);

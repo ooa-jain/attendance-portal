@@ -622,6 +622,46 @@
 }
 .cal-note-empty { font-size: .78rem; color: var(--t3); }
 
+/* ── Security & integrity panel ──────────────────────────────────────── */
+.sec-tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px; margin: 14px 0 16px;
+}
+.sec-tile {
+  padding: 10px; text-align: center; background: #fff;
+  border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: var(--r-sm);
+}
+.sec-tile .n { font-family: var(--mono); font-size: 1.3rem; font-weight: 700; color: var(--t1); line-height: 1; }
+.sec-tile .l { font-size: .55rem; font-weight: 800; letter-spacing: .07em;
+               text-transform: uppercase; color: var(--t3); margin-top: 5px; }
+.sec-tile.bad { border-left-color: #C0362C; }
+.sec-tile.bad .n { color: #C0362C; }
+
+.sec-group {
+  border: 1px solid var(--line); border-left: 3px solid var(--line-2);
+  border-radius: var(--r-sm); padding: 12px 14px; margin-bottom: 10px; background: #fff;
+}
+.sec-group.bad  { border-left-color: #C0362C; background: #FEF7F6; }
+.sec-group.warn { border-left-color: #B0740A; background: #FFFCF5; }
+.sec-group.info { border-left-color: #8F98A6; }
+.sec-group-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .84rem; font-weight: 700; color: var(--t1); margin-bottom: 4px;
+}
+.sec-group.bad  .sec-group-head i { color: #C0362C; }
+.sec-group.warn .sec-group-head i { color: #B0740A; }
+.sec-group.info .sec-group-head i { color: #8F98A6; }
+.sec-count {
+  margin-left: auto; font-family: var(--mono); font-size: .72rem;
+  background: var(--paper); padding: 1px 9px; border-radius: 999px; color: var(--t2);
+}
+.sec-hint { font-size: .72rem; color: var(--t2); margin-bottom: 8px; line-height: 1.5; }
+.sec-items { display: flex; flex-direction: column; gap: 6px; }
+.sec-item { background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; }
+.sec-item-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .8rem; color: var(--t1); }
+.sec-item-sub { font-size: .72rem; color: var(--t2); margin-top: 3px; word-break: break-word; }
+.sec-mono { font-family: var(--mono); font-size: .7rem; color: var(--t2); }
+
 /* ── Day-by-day table under the per-person calendar ──────────────────── */
 .cal-tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .cal-tbl { width: 100%; border-collapse: collapse; font-size: .76rem; }

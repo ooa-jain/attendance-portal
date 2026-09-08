@@ -1307,6 +1307,101 @@ def purge_old_face_logs():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/security-insights")
+@login_required
+def admin_security_insights():
+    """Integrity signals for one day — things worth a second look, not verdicts.
+
+    The strong signal is a shared *device*: one phone/browser used by two
+    different people on the same day is what proxy attendance looks like.
+    A shared IP is much weaker (one office Wi-Fi gives everyone the same
+    address), so it is reported separately and labelled as such.
+    """
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        day  = request.args.get("date") or date.today().isoformat()
+        recs = list(mongo.db.attendance.find({"date": day}))
+
+        def _fingerprint(di):
+            ua = (di.get("user_agent") or "").strip()
+            if not ua:
+                return ""
+            parts = [_extract_device_name(ua), _extract_browser(ua), (di.get("screen") or "").strip()]
+            return " · ".join(p for p in parts if p)
+
+        by_device, by_ip = {}, {}
+        open_sessions, offsite, short_sessions = [], [], []
+
+        for r in recs:
+            uname = r.get("username") or ""
+            di    = r.get("device_info", {}) or {}
+            lt, lot = r.get("login_time"), r.get("logout_time")
+            hours   = round(r.get("hours", 0) or 0, 2)
+            ip      = (di.get("ip_address") or "").strip()
+
+            entry = {
+                "username":    uname,
+                "shift_name":  r.get("shift_name", "Normal"),
+                "login_time":  format_ist_time(lt) if lt else "N/A",
+                "logout_time": format_ist_time(lot) if lot else None,
+                "hours":       hours,
+                "address":     (r.get("login_location") or {}).get("address", ""),
+                "device":      di.get("device_name", ""),
+                "browser":     di.get("browser", ""),
+                "ip":          ip,
+            }
+
+            fp = _fingerprint(di)
+            if fp and uname:
+                by_device.setdefault(fp, set()).add(uname)
+            if ip and uname:
+                by_ip.setdefault(ip, set()).add(uname)
+
+            if not lot:
+                open_sessions.append(entry)
+            if not r.get("at_office"):
+                offsite.append(entry)
+            if lot and hours < 1:
+                short_sessions.append(entry)
+
+        shared_devices = sorted(({"key": k, "users": sorted(v)} for k, v in by_device.items() if len(v) > 1),
+                                key=lambda x: -len(x["users"]))
+        shared_ips     = sorted(({"key": k, "users": sorted(v)} for k, v in by_ip.items() if len(v) > 1),
+                                key=lambda x: -len(x["users"]))
+
+        face_fails = [{
+            "username":   f.get("username"),
+            "time":       f.get("timestamp_ist"),
+            "distance":   f.get("match_distance"),
+            "at_office":  f.get("at_office"),
+            "shift_name": f.get("shift_name", ""),
+        } for f in mongo.db.face_security_logs.find(
+            {"date": day, "match_result": False}, {"face_image_b64": 0, "face_thumb_b64": 0}
+        ).sort("timestamp", -1).limit(50)]
+
+        return jsonify({
+            "date":           day,
+            "shared_devices": shared_devices,
+            "shared_ips":     shared_ips,
+            "face_failures":  face_fails,
+            "open_sessions":  open_sessions,
+            "offsite":        offsite,
+            "short_sessions": short_sessions,
+            "counts": {
+                "shared_devices": len(shared_devices),
+                "shared_ips":     len(shared_ips),
+                "face_failures":  len(face_fails),
+                "open_sessions":  len(open_sessions),
+                "offsite":        len(offsite),
+                "short_sessions": len(short_sessions),
+                "sessions":       len(recs),
+            },
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/face/status")
 @login_required
 def face_status():
@@ -1460,7 +1555,8 @@ def get_dashboard_data():
             {"user_id": ObjectId(current_user.id), "date": {"$gte": cutoff}},
             {"login_time": 1, "logout_time": 1, "hours": 1, "date": 1,
              "shift_type": 1, "shift_name": 1, "login_type": 1,
-             "session_number": 1, "login_location": 1, "logout_location": 1, "at_office": 1}
+             "session_number": 1, "login_location": 1, "logout_location": 1, "at_office": 1,
+             "work_comment": 1}
         ).sort("date", -1).limit(200))
 
         total_hours = sum([r.get("hours", 0) or 0 for r in all_records])
@@ -1487,6 +1583,7 @@ def get_dashboard_data():
                 "logout_lat":     logout_loc.get("lat"),
                 "logout_lng":     logout_loc.get("lng"),
                 "at_office":      rec.get("at_office", False),
+                "work_comment":   rec.get("work_comment", ""),
             })
 
         leaves      = list(mongo.db.leave_applications.find(
@@ -2199,6 +2296,37 @@ def _resolve_user_range():
     return today.replace(day=1), today
 
 
+@app.route("/api/user/my-analysis")
+@login_required
+def my_analysis():
+    """The signed-in person's own attendance analysis over a range — the same
+    day-by-day timeline the admin sees, but only ever about themselves.
+    """
+    user_doc = mongo.db.users.find_one({"_id": ObjectId(current_user.id)})
+    if not user_doc:
+        return jsonify({"error": "User not found"}), 404
+    start, end = _resolve_user_range()
+    data = compute_user_analysis(user_doc, start, end)
+    data.update({"username": user_doc.get("username", ""),
+                 "start": start.isoformat(), "end": end.isoformat()})
+    return jsonify(data)
+
+
+@app.route("/api/user/my-excel")
+@login_required
+def my_excel():
+    """The signed-in person downloads their own report — same workbook the
+    admin gets, scoped to themselves so nobody can pull a colleague's."""
+    user_doc = mongo.db.users.find_one({"_id": ObjectId(current_user.id)})
+    if not user_doc:
+        return ("User not found", 404)
+    start, end = _resolve_user_range()
+    mem = build_person_workbook(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end),
+                     mimetype=XLSX_MIME)
+
+
 @app.route("/api/admin/user-excel/<user_id>")
 @login_required
 def admin_user_excel(user_id):
@@ -2567,10 +2695,30 @@ def build_person_rows(data):
     return rows
 
 
-def build_person_workbook(user_doc, start, end, data=None):
-    """A formatted .xlsx for ONE person over start..end: a summary block, then
-    every day colour-coded (absent red, Sat/Sun yellow, leave grey)."""
-    from openpyxl import Workbook
+def _stamp_logo(ws, anchor="A1"):
+    """Drop the JAIN mark into a sheet's title band.
+
+    Embedding needs Pillow; if it (or the file) is missing we skip the logo
+    rather than fail the download — the numbers matter more than the badge.
+    """
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        path = os.path.join(app.static_folder, "images", "jain.png")
+        if not os.path.exists(path):
+            return
+        img = XLImage(path)
+        if img.height:
+            img.width = int(img.width * (26 / img.height))
+        img.height = 26
+        ws.add_image(img, anchor)
+    except Exception:
+        pass
+
+
+def write_person_sheet(ws, user_doc, start, end, data=None):
+    """Lay one person's day-by-day report onto an existing worksheet: a summary
+    block, then every day colour-coded (absent red, Sat/Sun yellow, leave grey).
+    """
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
@@ -2599,10 +2747,6 @@ def build_person_workbook(user_doc, start, end, data=None):
         "short":    Font(color="B0740A"),
     }
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Attendance"
-
     thin   = Side(style="thin", color="D8D5CE")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
@@ -2611,8 +2755,9 @@ def build_person_workbook(user_doc, start, end, data=None):
     tcell = ws.cell(row=1, column=1, value=f"{uname} · attendance report")
     tcell.font = Font(bold=True, size=15, color="FFFFFF")
     tcell.fill = PatternFill("solid", fgColor=navy)
-    tcell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[1].height = 30
+    tcell.alignment = Alignment(horizontal="left", vertical="center", indent=5)
+    ws.row_dimensions[1].height = 34
+    _stamp_logo(ws, "A1")
 
     # Sub-band: the range and when this was generated
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=ncols)
@@ -2687,6 +2832,53 @@ def build_person_workbook(user_doc, start, end, data=None):
         ecell = ws.cell(row=hrow + 1, column=1, value="No days in the selected range.")
         ecell.alignment = Alignment(horizontal="center")
         ecell.font = Font(italic=True, color="888888")
+    return len(rows)
+
+
+def _safe_sheet_name(name, taken):
+    """Excel sheet titles: ≤31 chars, no []:*?/\\ , and unique in the book."""
+    base = re.sub(r"[\[\]:*?/\\]", " ", str(name or "Person")).strip()[:31] or "Person"
+    candidate, n = base, 2
+    while candidate.lower() in taken:
+        suffix = f" ({n})"
+        candidate = base[:31 - len(suffix)] + suffix
+        n += 1
+    taken.add(candidate.lower())
+    return candidate
+
+
+def build_person_workbook(user_doc, start, end, data=None):
+    """A formatted .xlsx for ONE person over start..end."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Attendance"
+    write_person_sheet(ws, user_doc, start, end, data)
+
+    mem = io.BytesIO()
+    wb.save(mem)
+    mem.seek(0)
+    return mem
+
+
+def build_people_report_workbook(user_docs, start, end):
+    """The same day-by-day report for several people — one sheet per person."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    taken = set()
+    for u in user_docs:
+        ws = wb.create_sheet(title=_safe_sheet_name(u.get("username"), taken))
+        write_person_sheet(ws, u, start, end)
+
+    if not wb.sheetnames:
+        ws = wb.create_sheet(title="Attendance")
+        cell = ws.cell(row=1, column=1, value="No people in this report.")
+        cell.font = Font(italic=True, color="888888")
+        cell.alignment = Alignment(horizontal="left")
 
     mem = io.BytesIO()
     wb.save(mem)
@@ -2927,6 +3119,20 @@ def shared_analysis_excel(token):
     users = share.get("users", [])
     title = share.get("title", "Sign-in analysis")
     if share.get("kind") == "overall":
+        # A From/To pair asks for the day-by-day report (one sheet per person,
+        # every day colour-coded); a bare `date` keeps the single-day roster.
+        rng = expand_range(request.args.get("from"), request.args.get("to"))
+        if rng:
+            start, end = date.fromisoformat(rng[0]), date.fromisoformat(rng[-1])
+            uq = {"role": {"$ne": "admin"}}
+            if users:
+                uq["username"] = {"$in": users}
+            docs = sorted(mongo.db.users.find(uq),
+                          key=lambda u: (u.get("username") or "").lower())
+            mem = build_people_report_workbook(docs, start, end)
+            name = (person_download_name(users[0], start, end) if len(users) == 1
+                    else f"{slugify_title(title)}_{start.isoformat()}_to_{end.isoformat()}.xlsx")
+            return send_file(mem, as_attachment=True, download_name=name, mimetype=XLSX_MIME)
         # Live share: Excel of whatever single day the viewer asks for (default today).
         day   = request.args.get("date") or date.today().isoformat()
         dates = parse_dates_arg(day) or [date.today().isoformat()]
