@@ -2567,10 +2567,10 @@ def build_person_rows(data):
     return rows
 
 
-def build_person_workbook(user_doc, start, end, data=None):
-    """A formatted .xlsx for ONE person over start..end: a summary block, then
-    every day colour-coded (absent red, Sat/Sun yellow, leave grey)."""
-    from openpyxl import Workbook
+def write_person_sheet(ws, user_doc, start, end, data=None):
+    """Lay one person's day-by-day report onto an existing worksheet: a summary
+    block, then every day colour-coded (absent red, Sat/Sun yellow, leave grey).
+    """
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
@@ -2598,10 +2598,6 @@ def build_person_workbook(user_doc, start, end, data=None):
         "met":      Font(color="1E7D46"),
         "short":    Font(color="B0740A"),
     }
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Attendance"
 
     thin   = Side(style="thin", color="D8D5CE")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -2687,6 +2683,53 @@ def build_person_workbook(user_doc, start, end, data=None):
         ecell = ws.cell(row=hrow + 1, column=1, value="No days in the selected range.")
         ecell.alignment = Alignment(horizontal="center")
         ecell.font = Font(italic=True, color="888888")
+    return len(rows)
+
+
+def _safe_sheet_name(name, taken):
+    """Excel sheet titles: ≤31 chars, no []:*?/\\ , and unique in the book."""
+    base = re.sub(r"[\[\]:*?/\\]", " ", str(name or "Person")).strip()[:31] or "Person"
+    candidate, n = base, 2
+    while candidate.lower() in taken:
+        suffix = f" ({n})"
+        candidate = base[:31 - len(suffix)] + suffix
+        n += 1
+    taken.add(candidate.lower())
+    return candidate
+
+
+def build_person_workbook(user_doc, start, end, data=None):
+    """A formatted .xlsx for ONE person over start..end."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Attendance"
+    write_person_sheet(ws, user_doc, start, end, data)
+
+    mem = io.BytesIO()
+    wb.save(mem)
+    mem.seek(0)
+    return mem
+
+
+def build_people_report_workbook(user_docs, start, end):
+    """The same day-by-day report for several people — one sheet per person."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    taken = set()
+    for u in user_docs:
+        ws = wb.create_sheet(title=_safe_sheet_name(u.get("username"), taken))
+        write_person_sheet(ws, u, start, end)
+
+    if not wb.sheetnames:
+        ws = wb.create_sheet(title="Attendance")
+        cell = ws.cell(row=1, column=1, value="No people in this report.")
+        cell.font = Font(italic=True, color="888888")
+        cell.alignment = Alignment(horizontal="left")
 
     mem = io.BytesIO()
     wb.save(mem)
@@ -2927,6 +2970,20 @@ def shared_analysis_excel(token):
     users = share.get("users", [])
     title = share.get("title", "Sign-in analysis")
     if share.get("kind") == "overall":
+        # A From/To pair asks for the day-by-day report (one sheet per person,
+        # every day colour-coded); a bare `date` keeps the single-day roster.
+        rng = expand_range(request.args.get("from"), request.args.get("to"))
+        if rng:
+            start, end = date.fromisoformat(rng[0]), date.fromisoformat(rng[-1])
+            uq = {"role": {"$ne": "admin"}}
+            if users:
+                uq["username"] = {"$in": users}
+            docs = sorted(mongo.db.users.find(uq),
+                          key=lambda u: (u.get("username") or "").lower())
+            mem = build_people_report_workbook(docs, start, end)
+            name = (person_download_name(users[0], start, end) if len(users) == 1
+                    else f"{slugify_title(title)}_{start.isoformat()}_to_{end.isoformat()}.xlsx")
+            return send_file(mem, as_attachment=True, download_name=name, mimetype=XLSX_MIME)
         # Live share: Excel of whatever single day the viewer asks for (default today).
         day   = request.args.get("date") or date.today().isoformat()
         dates = parse_dates_arg(day) or [date.today().isoformat()]
