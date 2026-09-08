@@ -30,6 +30,28 @@
     }
 
     // ── Notices: what people see when they open their dashboard ───────────
+
+    // A JSON call that says something useful when the reply isn't JSON —
+    // a 404 here almost always means the server is still running the old
+    // code (pulled, but not restarted), which is otherwise baffling to read.
+    async function ntFetchJson(url, options) {
+        const res  = await fetch(url, options);
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch {
+            if (res.status === 404) {
+                throw new Error('This feature is not on the server yet (404). '
+                              + 'Restart the app after pulling: sudo systemctl restart jain-intern');
+            }
+            if (res.status === 401 || res.status === 302 || /<form|<!DOCTYPE/i.test(text)) {
+                throw new Error('Your session has expired — sign in again.');
+            }
+            throw new Error(`Server returned ${res.status} (not JSON).`);
+        }
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        return data;
+    }
     const NT_PRESET = {
         title: 'New: download your attendance report in Excel and Word',
         body: 'Your dashboard can now hand you your own attendance report.\n\n'
@@ -86,12 +108,10 @@
         if (!payload.title || !payload.body) { showAlert('A notice needs a title and a message.', 'danger'); return; }
 
         try {
-            const res = await fetch('/api/admin/notices', {
+            await ntFetchJson('/api/admin/notices', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to save');
             showAlert(start ? 'Notice is now going out.' : 'Saved — start it whenever you like.', 'success');
             ['ntfTitle', 'ntfBody', 'ntfCta'].forEach(id => { document.getElementById(id).value = ''; });
             document.querySelectorAll('.nt-pick:checked').forEach(c => { c.checked = false; });
@@ -106,9 +126,7 @@
         if (!list) return;
         list.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
         try {
-            const res = await fetch('/api/admin/notices');
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to load');
+            const data = await ntFetchJson('/api/admin/notices');
             const items = data.notices || [];
             list.innerHTML = items.length ? items.map(n => `
                 <div class="nt-row ${n.active ? 'on' : ''}">
@@ -142,9 +160,7 @@
     async function ntAction(id, action) {
         if (action === 'delete' && !confirm('Delete this notice for good?')) return;
         try {
-            const res = await fetch(`/api/admin/notices/${id}/${action}`, { method: 'POST' });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed');
+            await ntFetchJson(`/api/admin/notices/${id}/${action}`, { method: 'POST' });
             showAlert({ start: 'Notice is now going out.', stop: 'Stopped — nobody new will see it.',
                         reset: 'It will show again to everyone.', delete: 'Notice deleted.' }[action] || 'Done', 'success');
             loadNotices();
