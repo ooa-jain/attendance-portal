@@ -25,6 +25,107 @@
         if (tab === 'face') loadFaceLogs(1);
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
         if (tab === 'calendar') loadCalendarOverview();
+        if (tab === 'face') loadSecurityInsights();
+    }
+
+    // ── Security & integrity: signals worth a second look, for one day ────
+    async function loadSecurityInsights() {
+        const dateEl = document.getElementById('secDate');
+        const day = dateEl ? dateEl.value : '';
+        const body = document.getElementById('secBody');
+        if (!body) return;
+        body.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Checking…</p></div>';
+        try {
+            const res = await fetch('/api/admin/security-insights?date=' + encodeURIComponent(day));
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load');
+            renderSecurityInsights(data);
+        } catch (err) {
+            body.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
+    }
+
+    function secGroup(title, icon, tone, hint, items, render) {
+        if (!items || !items.length) return '';
+        return `<div class="sec-group ${tone}">
+            <div class="sec-group-head"><i class="fas ${icon}"></i> ${title}
+              <span class="sec-count">${items.length}</span></div>
+            ${hint ? `<div class="sec-hint">${hint}</div>` : ''}
+            <div class="sec-items">${items.map(render).join('')}</div>
+        </div>`;
+    }
+
+    function secPerson(p) {
+        const where = p.address ? ` · ${escapeHtml(p.address)}` : '';
+        const dev   = [p.device, p.browser].filter(Boolean).map(escapeHtml).join(' · ');
+        return `<div class="sec-item">
+            <div class="sec-item-top"><strong>${escapeHtml(p.username || '—')}</strong>
+              <span class="oa-tag">${escapeHtml(p.shift_name || 'Normal')}</span>
+              <span class="spacer"></span>
+              <span class="sec-mono">${p.login_time || '—'}${p.logout_time ? ' → ' + p.logout_time : ''}${p.hours ? ' · ' + p.hours + 'h' : ''}</span>
+            </div>
+            <div class="sec-item-sub">${dev || 'Device not recorded'}${p.ip ? ' · ' + escapeHtml(p.ip) : ''}${where}</div>
+        </div>`;
+    }
+
+    function renderSecurityInsights(data) {
+        const c = data.counts || {};
+        document.getElementById('secTiles').innerHTML = [
+            { n: c.shared_devices || 0, l: 'Shared devices', bad: (c.shared_devices || 0) > 0 },
+            { n: c.face_failures  || 0, l: 'Face failures',  bad: (c.face_failures  || 0) > 0 },
+            { n: c.open_sessions  || 0, l: 'Never signed out', bad: (c.open_sessions || 0) > 0 },
+            { n: c.short_sessions || 0, l: 'Under 1 hour',   bad: false },
+            { n: c.offsite        || 0, l: 'Off campus',     bad: false },
+            { n: c.sessions       || 0, l: 'Sessions',       bad: false },
+        ].map(t => `<div class="sec-tile ${t.bad ? 'bad' : ''}">
+                      <div class="n">${t.n}</div><div class="l">${t.l}</div>
+                    </div>`).join('');
+
+        const groups = [
+            secGroup('Same device, different people', 'fa-mobile-screen', 'bad',
+                'One phone or browser signed in more than one person on this day. Worth confirming.',
+                data.shared_devices,
+                g => `<div class="sec-item">
+                        <div class="sec-item-top"><strong>${g.users.map(escapeHtml).join(' + ')}</strong>
+                          <span class="spacer"></span><span class="oa-tag warn">${g.users.length} people</span></div>
+                        <div class="sec-item-sub">${escapeHtml(g.key)}</div>
+                      </div>`),
+
+            secGroup('Face check failed', 'fa-user-xmark', 'bad',
+                'The photo taken at sign-in did not match the registered face.',
+                data.face_failures,
+                f => `<div class="sec-item">
+                        <div class="sec-item-top"><strong>${escapeHtml(f.username || '—')}</strong>
+                          <span class="oa-tag">${escapeHtml(f.shift_name || '')}</span>
+                          <span class="spacer"></span>
+                          <span class="sec-mono">${escapeHtml(f.time || '')}</span></div>
+                        <div class="sec-item-sub">${f.at_office ? 'On campus' : 'Off campus'}${
+                          f.distance != null ? ' · distance ' + f.distance : ''}</div>
+                      </div>`),
+
+            secGroup('Signed in, never signed out', 'fa-hourglass-half', 'warn',
+                'Still open — either they forgot, or they are on duty right now.',
+                data.open_sessions, secPerson),
+
+            secGroup('Under an hour', 'fa-stopwatch', 'warn', '',
+                data.short_sessions, secPerson),
+
+            secGroup('Signed in from off campus', 'fa-tower-broadcast', 'info', '',
+                data.offsite, secPerson),
+
+            secGroup('Same network, different people', 'fa-wifi', 'info',
+                'Normal on a shared office or hostel Wi-Fi — listed for completeness only.',
+                data.shared_ips,
+                g => `<div class="sec-item">
+                        <div class="sec-item-top"><strong>${g.users.map(escapeHtml).join(' + ')}</strong>
+                          <span class="spacer"></span><span class="oa-tag">${g.users.length} people</span></div>
+                        <div class="sec-item-sub">${escapeHtml(g.key)}</div>
+                      </div>`),
+        ].filter(Boolean).join('');
+
+        document.getElementById('secBody').innerHTML = groups ||
+            `<div class="oa-empty"><i class="fas fa-shield-heart" style="color:var(--ok)"></i>
+               <p>Nothing to flag for ${data.date}. Every sign-in looks ordinary.</p></div>`;
     }
 
     // ── Dashboard Stats ──────────────────────────────────────────────────

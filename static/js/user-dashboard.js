@@ -94,6 +94,7 @@ function goTab(t){
   const di = document.getElementById('di-'+t);
   if(di) di.classList.add('on');
   if(t==='calendar') renderCal();
+  if(t==='stats'){ loadMonthGlance(); if(!document.getElementById('rpFrom').value) setReportRange('month'); }
 }
 function toggleDrawer(){ document.getElementById('drawer').classList.contains('show')?closeDrawer():openDrawer(); }
 function openDrawer(){
@@ -1006,12 +1007,117 @@ function renderCal(){
   }
 }
 function moveCal(d){calDt.setMonth(calDt.getMonth()+d);renderCal();loadMonHols();}
+// ─ Day detail: where you signed in, and the note you left ─
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function prettyDate(ds){
+  const d=new Date(ds+'T00:00:00');
+  return isNaN(d)?ds:d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+}
+
 function calTap(ds){
-  if(holMap[ds])return toast('🎉 '+holMap[ds].name,'info');
-  if(lvMap[ds]?.status==='approved')return toast('📅 '+lvMap[ds].type+' – Approved','info');
-  const s=attMap[ds]||[];
-  if(s.length)toast(`✅ ${s.length} session · ${s[0].login_time}→${s[0].logout_time||'Active'} · ${s[0].hours}h`,'ok');
-  else openConf(`No attendance on ${ds}. Apply for leave?`,()=>openLeave(ds));
+  const sessions=attMap[ds]||[], hol=holMap[ds], lv=lvMap[ds];
+  document.getElementById('dayTitle').textContent=prettyDate(ds);
+
+  const bits=[];
+  if(hol) bits.push(`🎉 ${esc(hol.name)}`);
+  if(lv?.status==='approved') bits.push(`📅 ${esc(lv.type)} — approved`);
+  const total=sessions.reduce((s,h)=>s+(parseFloat(h.hours)||0),0);
+  if(sessions.length) bits.push(`${sessions.length} session${sessions.length>1?'s':''} · ${total.toFixed(1)}h`);
+  document.getElementById('daySub').textContent=bits.join('  ·  ')||'Nothing recorded on this day';
+
+  let html='';
+  if(sessions.length){
+    html=sessions.map(h=>{
+      const open=!h.logout_time||h.logout_time==='N/A';
+      const loc=a=>(a&&a!=='N/A'&&!a.startsWith('Location:')&&!a.startsWith('Lat:'))?esc(a):'Not recorded';
+      return `<div class="oa-entry" style="align-items:flex-start">
+        <div class="bd" style="width:100%">
+          <div class="kind">${esc(h.shift_name||'Normal duty')}
+            <span class="oa-tag ${h.at_office?'ok':''}" style="margin-left:6px">${h.at_office?'Head Office':'Off site'}</span>
+          </div>
+          <div class="times">${esc(h.login_time)} → ${open?'still on duty':esc(h.logout_time)}${h.hours&&h.hours!=='N/A'?` · ${esc(h.hours)}h`:''}</div>
+          <div style="font-size:.75rem;color:var(--t2);margin-top:5px">
+            <i class="fas fa-location-dot" style="color:var(--ok)"></i> <strong>Signed in:</strong> ${loc(h.login_address)}
+          </div>
+          ${open?'':`<div style="font-size:.75rem;color:var(--t2);margin-top:3px">
+            <i class="fas fa-location-dot" style="color:var(--bad)"></i> <strong>Signed out:</strong> ${loc(h.logout_address)}
+          </div>`}
+          ${h.work_comment?`<div style="font-size:.78rem;color:var(--t1);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line-2);white-space:pre-wrap">
+            <i class="fas fa-note-sticky" style="color:var(--gold-600)"></i> ${esc(h.work_comment)}
+          </div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  } else if(hol){
+    html='<div class="oa-empty"><i class="fas fa-mug-hot"></i><p>Holiday — no sign-in needed</p></div>';
+  } else if(lv?.status==='approved'){
+    html='<div class="oa-empty"><i class="fas fa-plane-departure"></i><p>You were on approved leave</p></div>';
+  } else {
+    const wd=new Date(ds+'T00:00:00').getDay();
+    html=`<div class="oa-empty"><i class="fas fa-calendar-xmark"></i><p>${wd===0?'Sunday — holiday':wd===6?'Saturday — optional':'No attendance recorded'}</p></div>`
+       + (wd!==0?`<div style="text-align:center;margin-top:10px"><button class="oa-btn oa-btn-ghost" onclick="closeDayBD();openLeave('${ds}')"><i class="fas fa-calendar-xmark"></i> Apply for leave on this day</button></div>`:'');
+  }
+  document.getElementById('dayBody').innerHTML=html;
+  document.getElementById('dayBD').classList.add('show');
+}
+function closeDayBD(){document.getElementById('dayBD').classList.remove('show');}
+
+// ─ My report: pick a range, download the workbook ─
+function pad2(n){return String(n).padStart(2,'0');}
+function isoOf(d){return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;}
+
+function setReportRange(which){
+  const t=new Date();
+  let from,to;
+  if(which==='prev'){
+    const first=new Date(t.getFullYear(),t.getMonth()-1,1);
+    from=isoOf(first); to=isoOf(new Date(t.getFullYear(),t.getMonth(),0));
+  } else {
+    from=isoOf(new Date(t.getFullYear(),t.getMonth(),1)); to=isoOf(t);
+  }
+  document.getElementById('rpFrom').value=from;
+  document.getElementById('rpTo').value=to;
+}
+
+function downloadMyReport(){
+  let from=document.getElementById('rpFrom').value, to=document.getElementById('rpTo').value;
+  if(!from||!to){toast('Pick a From and To date','warn');return;}
+  if(from>to)[from,to]=[to,from];
+  toast('Preparing your report…','info');
+  window.location.href=`/api/user/my-excel?from=${from}&to=${to}`;
+}
+
+// ─ This month at a glance (+ the streak you're on) ─
+async function loadMonthGlance(){
+  try{
+    const t=new Date();
+    const from=isoOf(new Date(t.getFullYear(),t.getMonth(),1)), to=isoOf(t);
+    const r=await fetch(`/api/user/my-analysis?from=${from}&to=${to}`);
+    const d=await r.json();
+    if(!r.ok) return;
+    const s=d.summary||{};
+    document.getElementById('mgWorked').textContent=s.present??0;
+    document.getElementById('mgAbsent').textContent=s.absent??0;
+    document.getElementById('mgLeave').textContent=s.leave??0;
+    document.getElementById('mgRate').textContent=(s.attendance_rate??0)+'%';
+    document.getElementById('mgHours').textContent=(s.total_hours??0);
+
+    // Streak = consecutive working days present, counting back from the latest
+    // judged day. Sundays/Saturdays-off don't break it; an absence does.
+    let streak=0;
+    for(let i=(d.timeline||[]).length-1;i>=0;i--){
+      const st=d.timeline[i].status;
+      if(st==='present'){streak++;continue;}
+      if(st==='holiday'||st==='optional'||st==='leave')continue;
+      break;
+    }
+    document.getElementById('mgStreak').textContent=streak;
+    document.getElementById('mgNote').textContent=
+      streak>1?`🔥 ${streak} working days in a row — keep it going.`
+      :(s.absent?`${s.absent} day${s.absent>1?'s':''} missed this month.`
+      :'A clean month so far.');
+  }catch{}
 }
 
 async function loadHols(){
@@ -1075,12 +1181,13 @@ function openConf(msg,cb){
 function closeConf(){document.getElementById('confBD').classList.remove('show');}
 
 // ─ Backdrop tap ─
-['faceBD','leaveBD','confBD','workBD'].forEach(id=>{
+['faceBD','leaveBD','confBD','workBD','dayBD'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{
     if(e.target.id===id){
       if(id==='faceBD')closeFace();
       else if(id==='leaveBD')closeLeaveBD();
       else if(id==='workBD')closeWorkBD();
+      else if(id==='dayBD')closeDayBD();
       else closeConf();
     }
   });
