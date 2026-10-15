@@ -157,12 +157,15 @@ a { color: var(--ink-600); text-decoration: none; }
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--rail);
-  background: var(--ink-800);
+  /* A touch of depth — the navy lifts toward the top so the mark sits in light. */
+  background:
+    radial-gradient(130% 55% at 0% 0%, rgba(238, 189, 27, .07) 0%, rgba(238, 189, 27, 0) 60%),
+    linear-gradient(180deg, #0D1830 0%, var(--ink-800) 46%, #080F1D 100%);
   color: var(--on-ink);
   display: none;
   flex-direction: column;
   z-index: 60;
-  border-right: 1px solid rgba(255, 255, 255, .06);
+  border-right: 1px solid rgba(255, 255, 255, .07);
 }
 
 .oa-rail-head {
@@ -172,7 +175,10 @@ a { color: var(--ink-600); text-decoration: none; }
   gap: 12px;
   align-items: center;
 }
-.oa-rail-head img { width: 38px; height: 38px; border-radius: 9px; flex: none; }
+.oa-rail-head img {
+  width: 38px; height: 38px; border-radius: 9px; flex: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .10), 0 6px 16px rgba(0, 0, 0, .35);
+}
 .oa-rail-head .org {
   font-size: .74rem;
   font-weight: 800;
@@ -185,36 +191,111 @@ a { color: var(--ink-600); text-decoration: none; }
   letter-spacing: .05em;
 }
 
-.oa-rail-nav { padding: 14px 12px; display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
+.oa-rail-nav {
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow-y: auto;
+  position: relative;          /* anchors the sliding highlight */
+}
 
-.oa-navitem {
+/* The highlight: one element that travels to whichever item is active,
+   rather than every item carrying its own background.
+   The fill is deliberately neutral — a gold wash behind gold text goes
+   muddy and costs legibility, so colour is spent on the edge and icon. */
+.oa-nav-highlight {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 0;
+  height: 0;
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, .045) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .09),
+    inset 0 0 0 1px rgba(255, 255, 255, .05);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform .34s cubic-bezier(.22, 1, .36, 1),
+    height    .34s cubic-bezier(.22, 1, .36, 1),
+    opacity   .18s ease;
+}
+.oa-nav-highlight::before {           /* the gold edge that reads as "you are here" */
+  content: "";
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 58%;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--gold-400), var(--gold-500));
+  box-shadow: 0 0 10px rgba(238, 189, 27, .45);
+}
+.oa-nav-highlight.is-on { opacity: 1; }
+/* Until it has been measured once, don't let it fly in from the corner. */
+.oa-nav-highlight.no-anim { transition: none; }
+
+.oa-rail-nav .oa-navitem, .oa-navitem {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
   padding: 11px 14px;
   border-radius: var(--r-sm);
-  color: var(--on-ink-dim);
+  color: #C2CCDC;
   font-size: .84rem;
   font-weight: 600;
   text-align: left;
-  transition: background .14s, color .14s;
   position: relative;
+  z-index: 1;                   /* sits above the highlight */
+  transition: color .16s ease, background .16s ease;
 }
-.oa-navitem i { width: 17px; font-size: .88rem; text-align: center; }
-.oa-navitem:hover { background: rgba(255, 255, 255, .06); color: var(--on-ink); }
-.oa-navitem.on { background: rgba(238, 189, 27, .12); color: var(--gold-400); }
-.oa-navitem.on::before {
-  content: "";
-  position: absolute;
-  left: -12px; top: 50%;
-  transform: translateY(-50%);
-  width: 3px; height: 22px;
-  background: var(--gold-500);
-  border-radius: 0 3px 3px 0;
+.oa-rail-nav .oa-navitem i, .oa-navitem i {
+  width: 17px;
+  font-size: .88rem;
+  text-align: center;
+  flex: none;
+  color: #8E9BB2;
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1), color .16s ease;
 }
-.oa-navitem.danger { color: #F2A9A4; }
-.oa-navitem.danger:hover { background: rgba(183, 48, 42, .18); color: #FFD3D0; }
+
+.oa-rail-nav .oa-navitem:hover, .oa-navitem:hover { background: rgba(255, 255, 255, .055); color: var(--on-ink); }
+.oa-rail-nav .oa-navitem:hover i, .oa-navitem:hover i { color: var(--on-ink); transform: translateX(1px) scale(1.06); }
+.oa-rail-nav .oa-navitem:focus-visible, .oa-navitem:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-500), 0 0 0 4px rgba(238, 189, 27, .22);
+}
+
+/* Active: the label goes white so it is the most readable thing in the rail;
+   the gold stays on the icon and the edge. */
+.oa-rail-nav .oa-navitem.on, .oa-navitem.on { background: transparent; color: #FFFFFF; font-weight: 700; }
+.oa-rail-nav .oa-navitem.on i, .oa-navitem.on i { color: var(--gold-400); }
+
+.oa-rail-nav .oa-navitem.danger, .oa-navitem.danger { color: #F2A9A4; }
+.oa-rail-nav .oa-navitem.danger i, .oa-navitem.danger i { color: #E08A84; }
+.oa-rail-nav .oa-navitem.danger:hover, .oa-navitem.danger:hover { background: rgba(183, 48, 42, .18); color: #FFD3D0; }
+.oa-rail-nav .oa-navitem.danger:hover i, .oa-navitem.danger:hover i { color: #FFD3D0; }
+
+/* Eyebrow labels that group the nav into sections. */
+.oa-nav-group {
+  font-size: .56rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .34);
+  padding: 14px 15px 6px;
+  user-select: none;
+}
+.oa-nav-group:first-child { padding-top: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-nav-highlight { transition: opacity .18s ease; }
+  .oa-navitem i { transition: color .16s ease; }
+  .oa-navitem:hover i { transform: none; }
+}
 
 .oa-rail-foot {
   padding: 14px 16px 18px;
@@ -362,15 +443,20 @@ a { color: var(--ink-600); text-decoration: none; }
   transition: color .14s;
   position: relative;
 }
-.oa-bnav i { font-size: 1.02rem; }
+.oa-bnav i { font-size: 1.02rem; transition: transform .2s cubic-bezier(.22, 1, .36, 1); }
 .oa-bnav.on { color: var(--ink-800); }
+.oa-bnav.on i { transform: translateY(-1px); }
 .oa-bnav.on::after {
   content: "";
   position: absolute;
   top: 6px;
   width: 20px; height: 3px;
-  background: var(--gold-500);
+  background: linear-gradient(90deg, var(--gold-400), var(--gold-500));
   border-radius: 2px;
+  box-shadow: 0 0 10px rgba(238, 189, 27, .5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .oa-bnav i, .oa-bnav.on i { transition: none; transform: none; }
 }
 
 /* ── Content area ── */

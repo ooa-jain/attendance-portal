@@ -16,8 +16,30 @@
   margin-bottom: 20px;
   border-bottom: 1px solid var(--line);
   scrollbar-width: none;
+  position: relative;           /* anchors the sliding underline */
 }
 .ad-tabs::-webkit-scrollbar { display: none; }
+
+/* One underline that travels between tabs, instead of a border per tab. */
+.ad-tab-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 0;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--gold-400), var(--gold-500));
+  box-shadow: 0 0 10px rgba(238, 189, 27, .45);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform .32s cubic-bezier(.22, 1, .36, 1),
+    width     .32s cubic-bezier(.22, 1, .36, 1),
+    opacity   .18s ease;
+}
+.ad-tab-underline.is-on { opacity: 1; }
+.ad-tab-underline.no-anim { transition: none; }
 
 .ad-tab {
   display: inline-flex;
@@ -30,11 +52,25 @@
   white-space: nowrap;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color .15s, border-color .15s;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  transition: color .15s, background .15s;
 }
-.ad-tab i { font-size: .8rem; }
-.ad-tab:hover { color: var(--ink-700); }
-.ad-tab.on { color: var(--ink-800); border-bottom-color: var(--gold-500); }
+.ad-tab i { font-size: .8rem; transition: transform .2s cubic-bezier(.22, 1, .36, 1); }
+.ad-tab:hover { color: var(--ink-700); background: rgba(10, 19, 36, .04); }
+.ad-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-500), 0 0 0 4px rgba(238, 189, 27, .2);
+}
+.ad-tab.on { color: var(--ink-800); }
+.ad-tab.on i { color: var(--gold-600); transform: translateY(-1px); }
+/* The travelling underline replaces the per-tab border, but if JS never runs
+   the tab still reads as selected. */
+.no-js-underline .ad-tab.on { border-bottom-color: var(--gold-500); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-tab-underline { transition: opacity .18s ease; }
+  .ad-tab i, .ad-tab.on i { transition: none; transform: none; }
+}
 
 .ad-panel { display: none; }
 .ad-panel.on { display: block; animation: adIn .2s ease-out; }

@@ -35,16 +35,21 @@
       </div>
     </div>
     <nav class="oa-rail-nav">
+      <div class="oa-nav-group">Today</div>
       <button class="oa-navitem on ad-tab" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations &amp; Map</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early sign-outs</button>
+
+      <div class="oa-nav-group">Records</div>
       <button class="oa-navitem ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
+
+      <div class="oa-nav-group">Manage</div>
       <button class="oa-navitem ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave requests</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations &amp; Map</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early sign-outs</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
       <div class="oa-dsep"></div>
       <button class="oa-navitem danger" onclick="logout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </nav>
@@ -76,17 +81,17 @@
     <div id="alertContainer"></div>
 
     <!-- Mobile tab strip (rail handles this on web) -->
-    <div class="ad-tabs oa-only-mobile">
+    <div class="ad-tabs oa-only-mobile no-js-underline">
       <button class="ad-tab on" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
+      <button class="ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations</button>
+      <button class="ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early outs</button>
       <button class="ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
       <button class="ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
+      <button class="ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
       <button class="ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
       <button class="ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave</button>
       <button class="ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
-      <button class="ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations</button>
-      <button class="ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early outs</button>
-      <button class="ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
     </div>
 
     <!-- ════════ OVERVIEW ════════ -->
@@ -845,6 +850,7 @@
   window.OA_MAPS_KEY = "{{ google_maps_api_key }}";
   window.OA_TODAY = "{{ today_date }}";
 </script>
+<script src="{{ url_for('static', filename='js/oa-nav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/admin-dashboard.js') }}"></script>
 </body>
 </html>

@@ -79,8 +79,10 @@
       </div>
     </div>
     <nav class="oa-rail-nav">
+      <div class="oa-nav-group">Attendance</div>
       <button class="oa-navitem on" data-tab="normal" onclick="goTab('normal')"><i class="fas fa-clock"></i> Today</button>
       <button class="oa-navitem" data-tab="shift" onclick="goTab('shift')" style="display:none"><i class="fas fa-layer-group"></i> Shifts</button>
+      <div class="oa-nav-group">My record</div>
       <button class="oa-navitem" data-tab="stats" onclick="goTab('stats')"><i class="fas fa-chart-simple"></i> Statistics</button>
       <button class="oa-navitem" data-tab="calendar" onclick="goTab('calendar')"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="oa-navitem" onclick="scrollToLocationCard()"><i class="fas fa-location-dot"></i> Your location</button>
@@ -712,6 +714,7 @@
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/oa-nav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/user-dashboard.js') }}"></script>
 <script>
   // Mirror the drawer's "Register face" visibility onto the web rail item
