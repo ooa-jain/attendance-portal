@@ -333,3 +333,34 @@ Then **hard-refresh once** (Ctrl/Cmd-Shift-R) or clear site data. The old
 service worker will be replaced by `ooa-attendance-v3`, which deletes stale
 caches on activate — but the first load needs to get past whatever the browser
 already holds.
+
+---
+
+## Admin sign-in codes (OTP)
+
+Every admin sign-in now has to be confirmed with a six-digit code mailed to one
+supervising mailbox. Staff (intern / employee) sign in exactly as before.
+
+Settings, all read from the environment:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ADMIN_OTP_ENABLED` | `1` | Set to `0` to turn the step off — the way back in if the mail account ever stops working. |
+| `ADMIN_OTP_RECIPIENT` | `santosh.ks@jainuniversity.ac.in` | Where the code is sent. |
+| `ADMIN_OTP_TTL_MIN` | `10` | How long a code stays valid. |
+
+How it behaves:
+
+* The admin is **not** signed in until the code is entered — the password step
+  only holds a pending id in the session.
+* Codes are stored bcrypt-hashed in `admin_otps`, so the database never holds a
+  usable code. They are single-use and retired once accepted.
+* Five wrong attempts voids the code and sends the person back to the start.
+* "Send another code" is rate-limited to once a minute and retires the previous
+  code, so only the newest one works.
+* If the mail cannot be sent, sign-in is **refused** rather than waved through.
+  Without working SMTP credentials, nobody can reach the admin console — set
+  `ADMIN_OTP_ENABLED=0` if you need to get in while mail is broken.
+* The sign-in form now answers "Incorrect username or password" for both an
+  unknown username and a wrong password, so it can no longer be used to find
+  out which usernames exist.

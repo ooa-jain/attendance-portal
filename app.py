@@ -37,6 +37,17 @@ app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME', 'info.loginp
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 ADMIN_EMAIL = 'admin@jainuniversity.ac.in'
 
+# ── Admin sign-in OTP ────────────────────────────────────────
+# Every admin sign-in has to be confirmed with a code mailed to one
+# supervising mailbox. Both the switch and the address are environment
+# driven: if the mail account ever stops working, ADMIN_OTP_ENABLED=0
+# is the way back in without editing code.
+ADMIN_OTP_ENABLED   = os.environ.get('ADMIN_OTP_ENABLED', '1').lower() not in ('0', 'false', 'no', 'off')
+ADMIN_OTP_RECIPIENT = os.environ.get('ADMIN_OTP_RECIPIENT', 'santosh.ks@jainuniversity.ac.in')
+ADMIN_OTP_TTL_MIN   = int(os.environ.get('ADMIN_OTP_TTL_MIN', '10'))
+ADMIN_OTP_MAX_TRIES = 5
+ADMIN_OTP_RESEND_SECONDS = 60
+
 mongo_uri = app.config.get("MONGO_URI", "")
 if mongo_uri and "connectTimeoutMS" not in mongo_uri:
     sep = "&" if "?" in mongo_uri else "?"
@@ -500,22 +511,182 @@ def register():
     return render_template("register.html")
 
 
+def _send_admin_otp(user_doc):
+    """Mint a one-time code for this admin and mail it to the supervising
+    mailbox. Returns (ok, message). The code is stored hashed, so a look at
+    the database never yields a live code.
+    """
+    code = f"{secrets.randbelow(1000000):06d}"
+    now  = datetime.utcnow()
+    doc = {
+        "user_id":    user_doc["_id"],
+        "username":   user_doc.get("username", ""),
+        "code_hash":  bcrypt.generate_password_hash(code).decode("utf-8"),
+        "created_at": now,
+        "expires_at": now + timedelta(minutes=ADMIN_OTP_TTL_MIN),
+        "attempts":   0,
+        "used":       False,
+        "ip":         request.remote_addr,
+    }
+    otp_id = mongo.db.admin_otps.insert_one(doc).inserted_id
+
+    who  = display_name(user_doc) or user_doc.get("username", "")
+    when = format_ist_time(now, "%d %b %Y, %I:%M %p")
+    body = (
+        f"A sign-in to the JAIN Attendance Portal admin console needs confirming.\n\n"
+        f"    Code: {code}\n\n"
+        f"Account : {who} ({user_doc.get('username','')})\n"
+        f"Time    : {when} IST\n"
+        f"From IP : {request.remote_addr or 'unknown'}\n\n"
+        f"The code lasts {ADMIN_OTP_TTL_MIN} minutes and can be used once.\n"
+        f"If you were not expecting this, do not share the code — the sign-in "
+        f"cannot complete without it, and you may want to change that account's password."
+    )
+    try:
+        msg = Message(
+            subject=f"Admin sign-in code {code} · Attendance Portal",
+            recipients=[ADMIN_OTP_RECIPIENT],
+            body=body,
+        )
+        mail.send(msg)
+    except Exception as e:
+        app.logger.error("Admin OTP mail failed for %s: %s", user_doc.get("username"), e)
+        mongo.db.admin_otps.update_one({"_id": otp_id}, {"$set": {"used": True, "send_failed": True}})
+        return False, "Could not send the sign-in code. Contact the Office of Academics."
+
+    session["otp_id"]   = str(otp_id)
+    session["otp_uid"]  = str(user_doc["_id"])
+    session["otp_sent"] = now.timestamp()
+    return True, ""
+
+
+def _masked_otp_recipient():
+    """santosh.ks@jainuniversity.ac.in -> s*******s@jainuniversity.ac.in"""
+    try:
+        local, domain = ADMIN_OTP_RECIPIENT.split("@", 1)
+    except ValueError:
+        return "the supervising mailbox"
+    if len(local) <= 2:
+        return f"{local[0]}***@{domain}"
+    return f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}@{domain}"
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
         user     = mongo.db.users.find_one({"username": username})
-        if not user:
-            flash("No such user", "danger")
+
+        # One message for both cases, so the form can't be used to find out
+        # which usernames exist.
+        if not user or not bcrypt.check_password_hash(user["password"], password):
+            flash("Incorrect username or password", "danger")
             return redirect(url_for("login"))
-        if bcrypt.check_password_hash(user["password"], password):
-            user_obj = User(user)
+
+        user_obj = User(user)
+
+        # Staff go straight in. An admin has to clear the mailed code first,
+        # and is NOT signed in until they do.
+        if is_staff(user_obj.role) or not ADMIN_OTP_ENABLED:
             login_user(user_obj)
             flash("Logged in", "success")
             return redirect(url_for("user_dashboard") if is_staff(user_obj.role) else url_for("admin_dashboard"))
-        flash("Invalid credentials", "danger")
+
+        session.pop("otp_id", None)
+        ok, err = _send_admin_otp(user)
+        if not ok:
+            flash(err, "danger")
+            return redirect(url_for("login"))
+        return redirect(url_for("login_verify"))
+
     return render_template("login.html")
+
+
+@app.route("/login/verify", methods=["GET", "POST"])
+def login_verify():
+    """Second step of an admin sign-in: the code mailed to the supervisor."""
+    otp_id, uid = session.get("otp_id"), session.get("otp_uid")
+    if not otp_id or not uid:
+        return redirect(url_for("login"))
+
+    def _abandon(message, category="danger"):
+        for k in ("otp_id", "otp_uid", "otp_sent"):
+            session.pop(k, None)
+        flash(message, category)
+        return redirect(url_for("login"))
+
+    try:
+        otp = mongo.db.admin_otps.find_one({"_id": ObjectId(otp_id)})
+    except Exception:
+        otp = None
+    if not otp or otp.get("used"):
+        return _abandon("That sign-in attempt has expired. Please start again.")
+    if datetime.utcnow() > otp.get("expires_at", datetime.utcnow()):
+        mongo.db.admin_otps.update_one({"_id": otp["_id"]}, {"$set": {"used": True}})
+        return _abandon("The code expired. Please sign in again.")
+
+    if request.method == "POST":
+        entered = re.sub(r"\D", "", request.form.get("code", ""))[:6]
+        attempts = otp.get("attempts", 0) + 1
+        mongo.db.admin_otps.update_one({"_id": otp["_id"]}, {"$set": {"attempts": attempts}})
+
+        if attempts > ADMIN_OTP_MAX_TRIES:
+            mongo.db.admin_otps.update_one({"_id": otp["_id"]}, {"$set": {"used": True}})
+            return _abandon("Too many incorrect codes. Please sign in again.")
+
+        if entered and bcrypt.check_password_hash(otp["code_hash"], entered):
+            user = mongo.db.users.find_one({"_id": ObjectId(uid)})
+            if not user:
+                return _abandon("That account no longer exists.")
+            mongo.db.admin_otps.update_one(
+                {"_id": otp["_id"]}, {"$set": {"used": True, "verified_at": datetime.utcnow()}})
+            for k in ("otp_id", "otp_uid", "otp_sent"):
+                session.pop(k, None)
+            login_user(User(user))
+            flash("Logged in", "success")
+            return redirect(url_for("admin_dashboard"))
+
+        left = max(ADMIN_OTP_MAX_TRIES - attempts, 0)
+        flash(f"That code is not right. {left} attempt{'s' if left != 1 else ''} left.", "danger")
+        return redirect(url_for("login_verify"))
+
+    return render_template(
+        "login_verify.html",
+        recipient=_masked_otp_recipient(),
+        minutes=ADMIN_OTP_TTL_MIN,
+        username=otp.get("username", ""),
+    )
+
+
+@app.route("/login/verify/resend", methods=["POST"])
+def login_verify_resend():
+    uid = session.get("otp_uid")
+    if not uid:
+        return redirect(url_for("login"))
+
+    last = session.get("otp_sent") or 0
+    wait = ADMIN_OTP_RESEND_SECONDS - (datetime.utcnow().timestamp() - last)
+    if wait > 0:
+        flash(f"Please wait {int(wait)} more seconds before asking for another code.", "warning")
+        return redirect(url_for("login_verify"))
+
+    user = mongo.db.users.find_one({"_id": ObjectId(uid)})
+    if not user:
+        return redirect(url_for("login"))
+
+    # Retire the outstanding code so only the newest one works.
+    if session.get("otp_id"):
+        try:
+            mongo.db.admin_otps.update_one(
+                {"_id": ObjectId(session["otp_id"])}, {"$set": {"used": True}})
+        except Exception:
+            pass
+
+    ok, err = _send_admin_otp(user)
+    flash("A new code is on its way." if ok else err, "success" if ok else "danger")
+    return redirect(url_for("login_verify") if ok else url_for("login"))
+
 
 
 @app.route("/logout")

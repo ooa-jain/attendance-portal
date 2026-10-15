@@ -54,7 +54,7 @@
       <button class="oa-navitem danger" onclick="logout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </nav>
     <div class="oa-rail-foot">
-      Signed in as <strong style="color:var(--gold-400)">{{ current_user.username }}</strong><br>
+      Signed in as <strong style="color:var(--ink-800)">{{ current_user.full_name or current_user.username }}</strong><br>
       Head Office, Bengaluru
       <div style="font-size:0.75rem;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:var(--t2)">
         <i class="fas fa-location-dot" style="color:#0071e3"></i> JAIN Campus (12.9248, 77.5702)
