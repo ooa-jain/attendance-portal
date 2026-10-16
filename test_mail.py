@@ -13,6 +13,14 @@ import socket
 import ssl
 import sys
 
+# The settings live in .env, which only config.py loads. Without this the
+# probe reads an empty environment and silently tests the wrong server.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 PROBES = [(587, "STARTTLS"), (465, "SSL"), (25, "plain")]
 
 
@@ -52,9 +60,19 @@ def main():
     pwd  = env("MAIL_PASSWORD", "SMTP_PASSWORD")
     want = int(env("MAIL_PORT", "SMTP_PORT", default="587"))
 
-    print(f"Server   : {host}")
-    print(f"Username : {user or '(not set in the environment — app.py falls back to its built-in account)'}")
-    print(f"Password : {'set, ' + str(len(pwd)) + ' chars' if pwd else '(not set — using the built-in fallback)'}")
+    def source(*names):
+        for n in names:
+            if os.environ.get(n):
+                return n
+        return "built-in fallback in app.py"
+
+    print(f"Server   : {host}   (from {source('MAIL_SERVER', 'SMTP_SERVER')})")
+    print(f"Port     : {want}   (from {source('MAIL_PORT', 'SMTP_PORT')})")
+    print(f"Username : {user or '(none)'}   (from {source('MAIL_USERNAME', 'SMTP_EMAIL', 'SMTP_USERNAME')})")
+    print(f"Password : {'set, ' + str(len(pwd)) + ' chars' if pwd else '(none)'}"
+          f"   (from {source('MAIL_PASSWORD', 'SMTP_PASSWORD')})")
+    if "gmail" in host and not os.environ.get("SMTP_SERVER") and not os.environ.get("MAIL_SERVER"):
+        print("\n  !! No mail server in the environment — is .env present in this directory?")
     print()
 
     print("Reachability")
