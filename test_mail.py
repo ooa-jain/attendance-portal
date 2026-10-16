@@ -40,9 +40,17 @@ def probe(host, port, kind, timeout=10):
 
 
 def main():
-    host = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
-    user = os.environ.get("MAIL_USERNAME", "")
-    pwd  = os.environ.get("MAIL_PASSWORD", "")
+    def env(*names, default=""):
+        for n in names:
+            v = os.environ.get(n)
+            if v:
+                return v
+        return default
+
+    host = env("MAIL_SERVER", "SMTP_SERVER", default="smtp.gmail.com")
+    user = env("MAIL_USERNAME", "SMTP_EMAIL", "SMTP_USERNAME")
+    pwd  = env("MAIL_PASSWORD", "SMTP_PASSWORD")
+    want = int(env("MAIL_PORT", "SMTP_PORT", default="587"))
 
     print(f"Server   : {host}")
     print(f"Username : {user or '(not set in the environment — app.py falls back to its built-in account)'}")
@@ -50,8 +58,9 @@ def main():
     print()
 
     print("Reachability")
+    order = sorted(PROBES, key=lambda pk: pk[0] != want)   # the configured port first
     reachable = []
-    for port, kind in PROBES:
+    for port, kind in order:
         ok, err = probe(host, port, kind)
         print(f"  {port:<5} {kind:<9} {'OK' if ok else 'FAILED — ' + err}")
         if ok:
@@ -89,7 +98,7 @@ def main():
             s.quit()
             print(f"  {port} ({kind}): SENT to {to}")
             print()
-            if port != int(os.environ.get("MAIL_PORT", "587")):
+            if port != want:
                 print(f"Put this in .env so the app uses the port that works:")
                 print(f"  MAIL_PORT={port}")
                 print(f"  MAIL_USE_SSL={'1' if kind == 'SSL' else '0'}")

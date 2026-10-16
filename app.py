@@ -27,27 +27,47 @@ app.config.from_object(Config)
 if not app.config.get("MONGO_URI"):
     raise RuntimeError("MONGO_URI not set in .env (see README)")
 
-app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
-# Port and encryption are environment driven: hosts that block 587 often
-# still allow 465, and swapping should not need a code change.
-app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', '587'))
-app.config['MAIL_USE_SSL'] = os.environ.get('MAIL_USE_SSL', '0').lower() in ('1', 'true', 'yes', 'on')
-app.config['MAIL_USE_TLS'] = not app.config['MAIL_USE_SSL']
-app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'info.loginpanel@gmail.com')
-app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD', 'wedbfepklgtwtugf')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_SENDER',
-                                    os.environ.get('MAIL_USERNAME', 'info.loginpanel@gmail.com'))
-app.config['MAIL_TIMEOUT'] = int(os.environ.get('MAIL_TIMEOUT', '20'))
+def _env(*names, default=None):
+    """First of these environment variables that is set.
+
+    The deployment's .env uses SMTP_* names, so both spellings are accepted
+    rather than making the file match the code.
+    """
+    for n in names:
+        v = os.environ.get(n)
+        if v not in (None, ""):
+            return v
+    return default
+
+
+_mail_port = int(_env('MAIL_PORT', 'SMTP_PORT', default='587'))
+# Port 465 is implicit SSL, 587 is STARTTLS. Follow the port unless told otherwise.
+_mail_ssl_env = _env('MAIL_USE_SSL', 'SMTP_USE_SSL')
+_mail_ssl = (_mail_ssl_env.lower() in ('1', 'true', 'yes', 'on')) if _mail_ssl_env else (_mail_port == 465)
+
+app.config['MAIL_SERVER'] = _env('MAIL_SERVER', 'SMTP_SERVER', default='smtp.gmail.com')
+app.config['MAIL_PORT'] = _mail_port
+app.config['MAIL_USE_SSL'] = _mail_ssl
+app.config['MAIL_USE_TLS'] = not _mail_ssl
+app.config['MAIL_USERNAME'] = _env('MAIL_USERNAME', 'SMTP_EMAIL', 'SMTP_USERNAME',
+                                   default='info.loginpanel@gmail.com')
+app.config['MAIL_PASSWORD'] = _env('MAIL_PASSWORD', 'SMTP_PASSWORD',
+                                   default='wedbfepklgtwtugf')
+app.config['MAIL_DEFAULT_SENDER'] = _env('MAIL_SENDER', 'SMTP_SENDER',
+                                         'MAIL_USERNAME', 'SMTP_EMAIL',
+                                         default='info.loginpanel@gmail.com')
+app.config['MAIL_TIMEOUT'] = int(_env('MAIL_TIMEOUT', default='20'))
 
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 ADMIN_EMAIL = 'admin@jainuniversity.ac.in'
 
 # ── Where the office copies go ───────────────────────────────
 # Leave applications as they come in, and the daily sign-in digest.
-REPORT_RECIPIENTS = [a.strip() for a in os.environ.get(
-    'REPORT_RECIPIENTS', 'ooa.connect@jainuniversity.ac.in').split(',') if a.strip()]
-LEAVE_MAIL_ENABLED = os.environ.get('LEAVE_MAIL_ENABLED', '1').lower() not in ('0', 'false', 'no', 'off')
-DAILY_DIGEST_ATTACH_EXCEL = os.environ.get('DAILY_DIGEST_ATTACH_EXCEL', '1').lower() not in ('0', 'false', 'no', 'off')
+REPORT_RECIPIENTS = [a.strip() for a in _env(
+    'REPORT_RECIPIENTS', default='ooa.connect@jainuniversity.ac.in').split(',') if a.strip()]
+LEAVE_MAIL_ENABLED = _env('LEAVE_MAIL_ENABLED', default='1').lower() not in ('0', 'false', 'no', 'off')
+DAILY_DIGEST_ATTACH_EXCEL = _env('DAILY_DIGEST_ATTACH_EXCEL', default='1').lower() not in ('0', 'false', 'no', 'off')
+
 
 
 # ── Admin sign-in OTP ────────────────────────────────────────

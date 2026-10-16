@@ -382,11 +382,16 @@ Two things now arrive by mail, both to `REPORT_RECIPIENTS`:
 | `REPORT_RECIPIENTS` | `ooa.connect@jainuniversity.ac.in` | Comma-separated list. |
 | `LEAVE_MAIL_ENABLED` | `1` | Set `0` to stop the per-application mails. |
 | `DAILY_DIGEST_ATTACH_EXCEL` | `1` | Set `0` to send the summary without the attachment. |
-| `MAIL_SERVER` | `smtp.gmail.com` | |
-| `MAIL_PORT` | `587` | Set `465` if the host blocks 587. |
-| `MAIL_USE_SSL` | `0` | Set `1` when using port 465. |
-| `MAIL_USERNAME` / `MAIL_PASSWORD` | built-in fallback | Set these; do not rely on the fallback. |
-| `MAIL_SENDER` | same as `MAIL_USERNAME` | The From address. |
+| `MAIL_SERVER` or `SMTP_SERVER` | `smtp.gmail.com` | |
+| `MAIL_PORT` or `SMTP_PORT` | `587` | `465` is assumed to mean implicit SSL. |
+| `MAIL_USE_SSL` | follows the port | Only needed to override that assumption. |
+| `MAIL_USERNAME` or `SMTP_EMAIL` | built-in fallback | Set this; do not rely on the fallback. |
+| `MAIL_PASSWORD` or `SMTP_PASSWORD` | built-in fallback | As above. |
+| `MAIL_SENDER` or `SMTP_SENDER` | the username | The From address. |
+
+Both spellings are read, `MAIL_*` first, because the deployment's `.env`
+already used `SMTP_*`. Setting the port to 465 switches to implicit SSL on its
+own; 587 uses STARTTLS.
 
 **Sending the summary on a schedule** — `send_digest.py` is built for cron:
 
