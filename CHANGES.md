@@ -364,3 +364,47 @@ How it behaves:
 * The sign-in form now answers "Incorrect username or password" for both an
   unknown username and a wrong password, so it can no longer be used to find
   out which usernames exist.
+
+---
+
+## Email: leave requests and the daily summary
+
+Two things now arrive by mail, both to `REPORT_RECIPIENTS`:
+
+* **Leave applications**, the moment someone applies — person, date, type,
+  reason. Best-effort: if the mail fails the application is still filed.
+* **A daily summary** — who signed in and out with times, hours and whether
+  they were on campus; who did not sign in; who was on leave; and every leave
+  request still awaiting a decision. The day's spreadsheet is attached.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `REPORT_RECIPIENTS` | `ooa.connect@jainuniversity.ac.in` | Comma-separated list. |
+| `LEAVE_MAIL_ENABLED` | `1` | Set `0` to stop the per-application mails. |
+| `DAILY_DIGEST_ATTACH_EXCEL` | `1` | Set `0` to send the summary without the attachment. |
+| `MAIL_SERVER` | `smtp.gmail.com` | |
+| `MAIL_PORT` | `587` | Set `465` if the host blocks 587. |
+| `MAIL_USE_SSL` | `0` | Set `1` when using port 465. |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | built-in fallback | Set these; do not rely on the fallback. |
+| `MAIL_SENDER` | same as `MAIL_USERNAME` | The From address. |
+
+**Sending the summary on a schedule** — `send_digest.py` is built for cron:
+
+```
+5 21 * * *  cd /var/www/jain-intern && venv/bin/python send_digest.py >> /var/log/jain-digest.log 2>&1
+```
+
+It takes `today` (default), `yesterday`, or a date, and exits non-zero on
+failure so cron reports it. Admin → Notices → **Email reports** shows what is
+configured and has a **Send it now** button for any date.
+
+**Diagnosing mail** — `test_mail.py` probes ports 587, 465 and 25, then tries a
+real authenticated send, and prints the actual SMTP error:
+
+```
+cd /var/www/jain-intern && venv/bin/python test_mail.py
+```
+
+A server closing the connection on every port means the host blocks outbound
+SMTP; the fix is to have them open it, or to send through an email API over
+HTTPS instead.

@@ -27,15 +27,28 @@ app.config.from_object(Config)
 if not app.config.get("MONGO_URI"):
     raise RuntimeError("MONGO_URI not set in .env (see README)")
 
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+# Port and encryption are environment driven: hosts that block 587 often
+# still allow 465, and swapping should not need a code change.
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', '587'))
+app.config['MAIL_USE_SSL'] = os.environ.get('MAIL_USE_SSL', '0').lower() in ('1', 'true', 'yes', 'on')
+app.config['MAIL_USE_TLS'] = not app.config['MAIL_USE_SSL']
 app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'info.loginpanel@gmail.com')
 app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD', 'wedbfepklgtwtugf')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME', 'info.loginpanel@gmail.com')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_SENDER',
+                                    os.environ.get('MAIL_USERNAME', 'info.loginpanel@gmail.com'))
+app.config['MAIL_TIMEOUT'] = int(os.environ.get('MAIL_TIMEOUT', '20'))
 
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 ADMIN_EMAIL = 'admin@jainuniversity.ac.in'
+
+# ── Where the office copies go ───────────────────────────────
+# Leave applications as they come in, and the daily sign-in digest.
+REPORT_RECIPIENTS = [a.strip() for a in os.environ.get(
+    'REPORT_RECIPIENTS', 'ooa.connect@jainuniversity.ac.in').split(',') if a.strip()]
+LEAVE_MAIL_ENABLED = os.environ.get('LEAVE_MAIL_ENABLED', '1').lower() not in ('0', 'false', 'no', 'off')
+DAILY_DIGEST_ATTACH_EXCEL = os.environ.get('DAILY_DIGEST_ATTACH_EXCEL', '1').lower() not in ('0', 'false', 'no', 'off')
+
 
 # ── Admin sign-in OTP ────────────────────────────────────────
 # Every admin sign-in has to be confirmed with a code mailed to one
@@ -509,6 +522,220 @@ def register():
         flash("Registered! Please login.", "success")
         return redirect(url_for("login"))
     return render_template("register.html")
+
+
+# ─────────────────────────────────────────────────────────────
+#  OFFICE MAIL  —  leave applications and the daily digest
+#
+#  Everything here is best-effort: a mail that cannot be sent is logged
+#  and the request carries on. The one exception is the admin sign-in
+#  code below, where failing to send has to block the sign-in.
+# ─────────────────────────────────────────────────────────────
+
+def send_mail(subject, recipients, body, html=None, attachments=()):
+    """Send one mail. Returns (ok, error). Never raises into a request."""
+    recipients = [r for r in (recipients or []) if r]
+    if not recipients:
+        return False, "No recipients configured"
+    try:
+        msg = Message(subject=subject, recipients=recipients, body=body)
+        if html:
+            msg.html = html
+        for filename, mimetype, data in attachments:
+            msg.attach(filename, mimetype, data)
+        mail.send(msg)
+        return True, ""
+    except Exception as e:
+        app.logger.error("Mail failed (%s -> %s): %s", subject, ", ".join(recipients), e)
+        return False, str(e)
+
+
+def _mail_shell(title, subtitle, inner):
+    """The house style for an office mail — plain tables, no webfonts."""
+    return f"""<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<div style="background:#F6F4EF;padding:22px 0;font-family:
+          -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr><td align="center">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="640"
+           style="max-width:640px;background:#fff;border:1px solid #E6E1D7;border-radius:12px;overflow:hidden">
+      <tr><td style="background:#0A1324;padding:18px 24px">
+        <div style="color:#EEBD1B;font-size:10px;font-weight:800;letter-spacing:2px">OFFICE OF ACADEMICS</div>
+        <div style="color:#fff;font-size:18px;font-weight:700;margin-top:3px">{title}</div>
+        <div style="color:#A9B4C7;font-size:12px;margin-top:3px">{subtitle}</div>
+      </td></tr>
+      <tr><td style="padding:22px 24px">{inner}</td></tr>
+      <tr><td style="padding:14px 24px;border-top:1px solid #EFEBE2;color:#8A8578;font-size:11px">
+        JAIN Attendance Portal · Head Office, Bengaluru. This mail was sent automatically.
+      </td></tr>
+    </table>
+  </td></tr></table>
+</div>"""
+
+
+def notify_leave_application(leave_doc, user_doc):
+    """Tell the office a leave application has come in."""
+    if not LEAVE_MAIL_ENABLED:
+        return
+    who = display_name(user_doc) or leave_doc.get("username", "")
+    try:
+        pretty = datetime.strptime(leave_doc["date"], "%Y-%m-%d").strftime("%A, %d %B %Y")
+    except Exception:
+        pretty = leave_doc.get("date", "")
+
+    rows = [("Person", who), ("Date", pretty), ("Type", leave_doc.get("type", "")),
+            ("Reason", leave_doc.get("comments") or "— none given —"),
+            ("Applied", format_ist_time(datetime.utcnow(), "%d %b %Y, %I:%M %p") + " IST")]
+    body = "A leave application is waiting for a decision.\n\n" + \
+           "\n".join(f"{k:9}: {v}" for k, v in rows) + \
+           "\n\nApprove or decline it under Leave requests in the admin console."
+    inner = ("<p style='margin:0 0 14px;color:#4A4A4A;font-size:14px'>"
+             "A leave application is waiting for a decision.</p>"
+             "<table cellpadding='0' cellspacing='0' width='100%' style='font-size:14px;color:#1A1A1A'>")
+    for k, v in rows:
+        inner += (f"<tr><td style='padding:7px 0;color:#8A8578;font-size:12px;width:92px;"
+                  f"vertical-align:top'>{k}</td>"
+                  f"<td style='padding:7px 0'>{_html_escape(str(v))}</td></tr>")
+    inner += ("</table><p style='margin:16px 0 0;color:#8A8578;font-size:12px'>"
+              "Approve or decline it under <strong>Leave requests</strong> in the admin console.</p>")
+
+    send_mail(f"Leave request · {who} · {leave_doc.get('date','')}",
+              REPORT_RECIPIENTS, body,
+              _mail_shell("Leave request", f"{who} · {pretty}", inner))
+
+
+def _html_escape(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def build_daily_digest(day=None):
+    """The day's sign-in summary as (subject, text, html, attachments)."""
+    day = day or date.today().isoformat()
+    data = compute_day_overview(day)
+    t, b = data.get("totals", {}), data.get("buckets", {})
+    try:
+        pretty = datetime.strptime(day, "%Y-%m-%d").strftime("%A, %d %B %Y")
+    except Exception:
+        pretty = day
+
+    signed_in = sorted([*b.get("complete", []), *b.get("active", []), *b.get("early", [])],
+                       key=lambda p: p.get("login_time") or "")
+    missing   = b.get("absent", [])
+    on_leave  = b.get("on_leave", [])
+
+    # ── plain text, for clients that want it ──
+    lines = [f"Attendance summary · {pretty}", "",
+             f"Signed in : {len(signed_in)} of {t.get('registered', 0)}   ({data.get('rate', 0)}% of those due in)",
+             f"Not in    : {len(missing)}",
+             f"On leave  : {len(on_leave)}", ""]
+    if signed_in:
+        lines.append("WHO SIGNED IN")
+        for p in signed_in:
+            out = p.get("logout_time") or "still on duty"
+            lines.append(f"  {p.get('name') or p.get('username')}: "
+                         f"{p.get('login_time') or '—'} -> {out} · {p.get('hours', 0)}h"
+                         f" · {'on campus' if p.get('at_office') else 'off campus'}")
+        lines.append("")
+    if missing:
+        lines.append("DID NOT SIGN IN")
+        lines += [f"  {p.get('name') or p.get('username')}" for p in missing]
+        lines.append("")
+    if on_leave:
+        lines.append("ON LEAVE")
+        lines += [f"  {p.get('name') or p.get('username')}" for p in on_leave]
+        lines.append("")
+
+    pending = list(mongo.db.leave_applications.find({"status": "pending"}).sort("applied_at", -1).limit(25))
+    if pending:
+        lines.append(f"LEAVE REQUESTS AWAITING A DECISION ({len(pending)})")
+        for l in pending:
+            lines.append(f"  {l.get('username')} · {l.get('date')} · {l.get('type')}"
+                         f" · {l.get('comments') or 'no reason given'}")
+
+    # ── html ──
+    def tile(n, label, colour):
+        return (f"<td align='center' style='padding:10px;border:1px solid #E6E1D7;border-radius:8px'>"
+                f"<div style='font-size:22px;font-weight:700;color:{colour}'>{n}</div>"
+                f"<div style='font-size:10px;letter-spacing:1px;color:#8A8578;"
+                f"text-transform:uppercase;margin-top:3px'>{label}</div></td>")
+
+    inner = ("<table cellpadding='0' cellspacing='6' width='100%'><tr>"
+             + tile(len(signed_in), "Signed in", "#1E7D46")
+             + tile(len(missing), "Not in", "#C0362C")
+             + tile(len(on_leave), "On leave", "#6B7480")
+             + tile(f"{data.get('rate', 0)}%", "Turnout", "#B0740A")
+             + "</tr></table>")
+
+    if signed_in:
+        inner += ("<div style='margin:20px 0 8px;font-size:12px;font-weight:700;letter-spacing:1px;"
+                  "color:#8A8578;text-transform:uppercase'>Who signed in</div>"
+                  "<table cellpadding='0' cellspacing='0' width='100%' style='font-size:13px;"
+                  "border-collapse:collapse'>"
+                  "<tr style='background:#0A1324;color:#fff'>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Person</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>In</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Out</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Hours</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Where</th></tr>")
+        cell = "padding:7px 9px;border-top:1px solid #EFEBE2"
+        on_duty = "<em style='color:#B0740A'>on duty</em>"
+        for i, p in enumerate(signed_in):
+            bg    = "#FBFAF7" if i % 2 else "#fff"
+            name  = _html_escape(p.get("name") or p.get("username"))
+            tin   = p.get("login_time") or "—"
+            tout  = p.get("logout_time") or on_duty
+            where = "On campus" if p.get("at_office") else "Off campus"
+            inner += (f"<tr style='background:{bg}'>"
+                      f"<td style='{cell}'>{name}</td>"
+                      f"<td style='{cell}'>{tin}</td>"
+                      f"<td style='{cell}'>{tout}</td>"
+                      f"<td style='{cell}'>{p.get('hours', 0)}h</td>"
+                      f"<td style='{cell};color:#6B7480'>{where}</td></tr>")
+        inner += "</table>"
+
+    def chips(title, people, colour, bg):
+        if not people:
+            return ""
+        out = (f"<div style='margin:20px 0 8px;font-size:12px;font-weight:700;letter-spacing:1px;"
+               f"color:#8A8578;text-transform:uppercase'>{title}</div><div>")
+        for p in people:
+            out += (f"<span style='display:inline-block;margin:0 5px 5px 0;padding:4px 10px;"
+                    f"border-radius:99px;background:{bg};color:{colour};font-size:12px'>"
+                    f"{_html_escape(p.get('name') or p.get('username'))}</span>")
+        return out + "</div>"
+
+    inner += chips("Did not sign in", missing, "#8A3833", "#FCEBEA")
+    inner += chips("On leave", on_leave, "#5D6470", "#EEF0F3")
+
+    if pending:
+        inner += ("<div style='margin:22px 0 8px;font-size:12px;font-weight:700;letter-spacing:1px;"
+                  "color:#8A8578;text-transform:uppercase'>Leave requests awaiting a decision</div>"
+                  "<table cellpadding='0' cellspacing='0' width='100%' style='font-size:13px;border-collapse:collapse'>")
+        for l in pending:
+            inner += (f"<tr><td style='padding:7px 9px;border-top:1px solid #EFEBE2'>"
+                      f"<strong>{_html_escape(l.get('username'))}</strong><br>"
+                      f"<span style='color:#8A8578;font-size:12px'>{_html_escape(l.get('date'))} · "
+                      f"{_html_escape(l.get('type'))} · {_html_escape(l.get('comments') or 'no reason given')}"
+                      f"</span></td></tr>")
+        inner += "</table>"
+
+    attachments = []
+    if DAILY_DIGEST_ATTACH_EXCEL:
+        try:
+            mem = build_analysis_workbook([day], title=f"Attendance {day}")
+            attachments.append((f"attendance_{day}.xlsx", XLSX_MIME, mem.getvalue()))
+        except Exception as e:
+            app.logger.error("Digest workbook failed for %s: %s", day, e)
+
+    subject = (f"Attendance {day} · {len(signed_in)} in, {len(missing)} not in"
+               + (f", {len(pending)} leave request{'s' if len(pending) != 1 else ''}" if pending else ""))
+    html = _mail_shell("Daily attendance summary", pretty, inner)
+    return subject, "\n".join(lines), html, attachments
+
+
+def send_daily_digest(day=None, recipients=None):
+    subject, text, html, attachments = build_daily_digest(day)
+    return send_mail(subject, recipients or REPORT_RECIPIENTS, text, html, attachments)
 
 
 def _send_admin_otp(user_doc):
@@ -1652,6 +1879,37 @@ def admin_notice_action(notice_id, action):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admin/mail-report", methods=["POST"])
+@login_required
+def admin_mail_report():
+    """Send the daily summary now — the button that proves mail works."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    body = request.get_json(silent=True) or {}
+    day  = body.get("date") or date.today().isoformat()
+    to   = parse_users_arg(body.get("to")) or REPORT_RECIPIENTS
+    ok, err = send_daily_digest(day, to)
+    if not ok:
+        return jsonify({"error": f"Could not send: {err}"}), 502
+    return jsonify({"ok": True, "sent_to": to, "date": day})
+
+
+@app.route("/api/admin/mail-settings")
+@login_required
+def admin_mail_settings():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    return jsonify({
+        "recipients":     REPORT_RECIPIENTS,
+        "leave_mail":     LEAVE_MAIL_ENABLED,
+        "attach_excel":   DAILY_DIGEST_ATTACH_EXCEL,
+        "server":         app.config.get("MAIL_SERVER"),
+        "port":           app.config.get("MAIL_PORT"),
+        "encryption":     "SSL" if app.config.get("MAIL_USE_SSL") else "STARTTLS",
+        "sender":         app.config.get("MAIL_DEFAULT_SENDER"),
+    })
+
+
 @app.route("/api/admin/security-insights")
 @login_required
 def admin_security_insights():
@@ -2048,12 +2306,19 @@ def apply_leave():
             return jsonify({"error": f"Already a holiday: {UNIVERSITY_HOLIDAYS_2026[leave_date]['name']}"}), 400
         if datetime.strptime(leave_date, "%Y-%m-%d").weekday() in [6]:
             return jsonify({"error": "Cannot apply for leave on Sundays"}), 400
-        result = mongo.db.leave_applications.insert_one({
+        leave_doc = {
             "user_id": ObjectId(current_user.id), "username": current_user.username,
             "user_email": current_user.email or "", "date": leave_date,
             "type": leave_type, "comments": comments, "status": "pending",
             "applied_at": datetime.utcnow(), "updated_at": datetime.utcnow(), "user_notified": False
-        })
+        }
+        result = mongo.db.leave_applications.insert_one(leave_doc)
+        # Copy the office in. Best-effort: a mail problem must not stop the
+        # application being filed.
+        try:
+            notify_leave_application(leave_doc, mongo.db.users.find_one({"_id": ObjectId(current_user.id)}))
+        except Exception as e:
+            app.logger.error("Leave notification failed: %s", e)
         return jsonify({"ok": True, "message": "Leave application submitted", "leave_id": str(result.inserted_id)})
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500

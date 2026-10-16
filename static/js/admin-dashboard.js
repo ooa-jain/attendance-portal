@@ -26,7 +26,51 @@
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
         if (tab === 'calendar') loadCalendarOverview();
         if (tab === 'face') loadSecurityInsights();
-        if (tab === 'notices') loadNotices();
+        if (tab === 'notices') { loadNotices(); loadMailSettings(); }
+    }
+
+    // ── Email reports: what goes out, and a way to prove it works ─────────
+    async function loadMailSettings() {
+        const box = document.getElementById('mailSettings');
+        const tag = document.getElementById('mailStatusTag');
+        if (!box) return;
+        try {
+            const d = await ntFetchJson('/api/admin/mail-settings');
+            const rows = [
+                ['Goes to', (d.recipients || []).join(', ') || 'nobody — set REPORT_RECIPIENTS'],
+                ['Leave applications', d.leave_mail ? 'Mailed as they arrive' : 'Off'],
+                ['Spreadsheet', d.attach_excel ? 'Attached to the summary' : 'Not attached'],
+                ['Sent from', d.sender || '—'],
+                ['Mail server', `${d.server}:${d.port} · ${d.encryption}`],
+            ];
+            box.innerHTML = rows.map(([k, v]) =>
+                `<div class="ml-row"><div class="ml-k">${escapeHtml(k)}</div>
+                 <div class="ml-v">${escapeHtml(v)}</div></div>`).join('');
+            if (tag) {
+                const none = !(d.recipients || []).length;
+                tag.textContent = none ? 'No recipients' : 'Configured';
+                tag.className = 'oa-tag ' + (none ? 'warn' : 'ok');
+            }
+        } catch (err) {
+            box.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>'
+                          + escapeHtml(err.message) + '</p></div>';
+            if (tag) { tag.textContent = 'Unavailable'; tag.className = 'oa-tag warn'; }
+        }
+    }
+
+    async function sendMailReport() {
+        const day = document.getElementById('mailDate').value || '';
+        showAlert('Sending…', 'success');
+        try {
+            const d = await ntFetchJson('/api/admin/mail-report', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: day })
+            });
+            showAlert(`Summary for ${d.date} sent to ${escapeHtml((d.sent_to || []).join(', '))}.`, 'success');
+        } catch (err) {
+            // The SMTP error comes straight through — that is the useful part.
+            showAlert(err.message, 'danger');
+        }
     }
 
     // ── A person's display name and role ──────────────────────────────────

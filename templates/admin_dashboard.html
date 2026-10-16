@@ -575,6 +575,39 @@
     <!-- ════════ FACE LOG ════════ -->
     <!-- ════════ NOTICES ════════ -->
     <div id="notices-tab" class="ad-panel">
+
+      <!-- ── What the office gets by email ── -->
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Email reports</h2>
+          <span class="spacer"></span>
+          <span class="oa-tag" id="mailStatusTag">Checking…</span>
+        </div>
+        <p class="ad-hint" style="margin-top:-4px">
+          Leave applications are mailed the moment someone applies. The daily summary —
+          who signed in and out, who didn't, and any requests waiting on you — goes out
+          on a schedule, with the day's spreadsheet attached.
+        </p>
+
+        <div class="ml-grid" id="mailSettings">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
+          <div class="oa-field" style="margin:0">
+            <label for="mailDate">Summary for</label>
+            <input type="date" id="mailDate" class="oa-input" style="width:auto" value="{{ today_date }}">
+          </div>
+          <button class="oa-btn oa-btn-primary" onclick="sendMailReport()">
+            <i class="fas fa-paper-plane"></i> Send it now
+          </button>
+        </div>
+        <p class="ad-hint" style="margin-top:10px">
+          Use <strong>Send it now</strong> to check mail is working before relying on the
+          nightly run. If it fails, the error it shows is the real SMTP error.
+        </p>
+      </section>
+
       <section class="oa-card">
         <div class="oa-card-head">
           <h2>Write a notice</h2>
