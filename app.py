@@ -758,10 +758,38 @@ def send_daily_digest(day=None, recipients=None):
     return send_mail(subject, recipients or REPORT_RECIPIENTS, text, html, attachments)
 
 
-def _send_admin_otp(user_doc):
-    """Mint a one-time code for this admin and mail it to the supervising
-    mailbox. Returns (ok, message). The code is stored hashed, so a look at
-    the database never yields a live code.
+def otp_recipients(active_only=True):
+    """The mailboxes an admin sign-in code may be sent to.
+
+    Kept in the database so they can be managed from the console. The
+    address in ADMIN_OTP_RECIPIENT seeds the list the first time, so an
+    existing deployment keeps working with nothing to set up.
+    """
+    q = {"active": True} if active_only else {}
+    docs = list(mongo.db.otp_recipients.find(q).sort("label", 1))
+    if not docs and active_only and ADMIN_OTP_RECIPIENT:
+        seed = {"email": ADMIN_OTP_RECIPIENT, "label": ADMIN_OTP_RECIPIENT.split("@")[0],
+                "active": True, "added_by": "system", "added_at": datetime.utcnow()}
+        mongo.db.otp_recipients.insert_one(seed)
+        docs = [seed]
+    return docs
+
+
+def mask_email(address):
+    """santosh.ks@jainuniversity.ac.in -> s********s@jainuniversity.ac.in"""
+    try:
+        local, domain = str(address).split("@", 1)
+    except ValueError:
+        return "the supervising mailbox"
+    if len(local) <= 2:
+        return f"{local[0]}***@{domain}"
+    return f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}@{domain}"
+
+
+def _send_admin_otp(user_doc, recipient):
+    """Mint a one-time code for this admin and mail it to `recipient`.
+    Returns (ok, message). The code is stored hashed, so a look at the
+    database never yields a live code.
     """
     code = f"{secrets.randbelow(1000000):06d}"
     now  = datetime.utcnow()
@@ -774,6 +802,7 @@ def _send_admin_otp(user_doc):
         "attempts":   0,
         "used":       False,
         "ip":         request.remote_addr,
+        "sent_to":    recipient,
     }
     otp_id = mongo.db.admin_otps.insert_one(doc).inserted_id
 
@@ -792,7 +821,7 @@ def _send_admin_otp(user_doc):
     try:
         msg = Message(
             subject=f"Admin sign-in code {code} · Attendance Portal",
-            recipients=[ADMIN_OTP_RECIPIENT],
+            recipients=[recipient],
             body=body,
         )
         mail.send(msg)
@@ -804,22 +833,21 @@ def _send_admin_otp(user_doc):
     session["otp_id"]   = str(otp_id)
     session["otp_uid"]  = str(user_doc["_id"])
     session["otp_sent"] = now.timestamp()
+    session["otp_to"]   = recipient
     return True, ""
 
 
-def _masked_otp_recipient():
-    """santosh.ks@jainuniversity.ac.in -> s*******s@jainuniversity.ac.in"""
-    try:
-        local, domain = ADMIN_OTP_RECIPIENT.split("@", 1)
-    except ValueError:
-        return "the supervising mailbox"
-    if len(local) <= 2:
-        return f"{local[0]}***@{domain}"
-    return f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}@{domain}"
+def _home_for(role):
+    return url_for("user_dashboard") if is_staff(role) else url_for("admin_dashboard")
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    # Already signed in? Send them where they belong rather than showing a
+    # form that looks like the sign-in failed.
+    if current_user.is_authenticated:
+        return redirect(_home_for(current_user.role))
+
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
@@ -840,25 +868,81 @@ def login():
             flash("Logged in", "success")
             return redirect(url_for("user_dashboard") if is_staff(user_obj.role) else url_for("admin_dashboard"))
 
-        session.pop("otp_id", None)
-        ok, err = _send_admin_otp(user)
+        # Password accepted. Hold them here and let them pick where the code
+        # should go; nothing is signed in until the code comes back.
+        for k in ("otp_id", "otp_sent", "otp_to"):
+            session.pop(k, None)
+        session["otp_uid"] = str(user["_id"])
+
+        people = otp_recipients()
+        if not people:
+            flash("No sign-in code address is configured. Contact the Office of Academics.", "danger")
+            return redirect(url_for("login"))
+        if len(people) == 1:
+            ok, err = _send_admin_otp(user, people[0]["email"])
+            if not ok:
+                flash(err, "danger")
+                return redirect(url_for("login"))
+            return redirect(url_for("login_verify"))
+        return redirect(url_for("login_choose"))
+
+    return render_template("login.html")
+
+
+@app.route("/login/choose", methods=["GET", "POST"])
+def login_choose():
+    """Between the password and the code: which mailbox should it go to?
+
+    Only addresses an admin put on the list can be picked, so the choice
+    cannot be used to send a code somewhere new.
+    """
+    if current_user.is_authenticated:
+        return redirect(_home_for(current_user.role))
+    uid = session.get("otp_uid")
+    if not uid:
+        return redirect(url_for("login"))
+
+    people = otp_recipients()
+    if not people:
+        session.pop("otp_uid", None)
+        flash("No sign-in code address is configured. Contact the Office of Academics.", "danger")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        # The form posts the record's id, never the address, so the page
+        # itself gives no mailbox away.
+        chosen = (request.form.get("recipient") or "").strip()
+        match = next((p for p in people if str(p.get("_id")) == chosen), None)
+        if not match:
+            flash("Pick one of the listed addresses.", "danger")
+            return redirect(url_for("login_choose"))
+        user = mongo.db.users.find_one({"_id": ObjectId(uid)})
+        if not user:
+            session.pop("otp_uid", None)
+            return redirect(url_for("login"))
+        ok, err = _send_admin_otp(user, match["email"])
         if not ok:
             flash(err, "danger")
             return redirect(url_for("login"))
         return redirect(url_for("login_verify"))
 
-    return render_template("login.html")
+    return render_template("login_choose.html",
+                           people=[{"id": str(p.get("_id")),
+                                    "label": p.get("label") or mask_email(p["email"]),
+                                    "masked": mask_email(p["email"])} for p in people])
 
 
 @app.route("/login/verify", methods=["GET", "POST"])
 def login_verify():
-    """Second step of an admin sign-in: the code mailed to the supervisor."""
+    """Last step of an admin sign-in: the code that was mailed out."""
+    if current_user.is_authenticated:
+        return redirect(_home_for(current_user.role))
     otp_id, uid = session.get("otp_id"), session.get("otp_uid")
     if not otp_id or not uid:
         return redirect(url_for("login"))
 
     def _abandon(message, category="danger"):
-        for k in ("otp_id", "otp_uid", "otp_sent"):
+        for k in ("otp_id", "otp_uid", "otp_sent", "otp_to"):
             session.pop(k, None)
         flash(message, category)
         return redirect(url_for("login"))
@@ -888,7 +972,7 @@ def login_verify():
                 return _abandon("That account no longer exists.")
             mongo.db.admin_otps.update_one(
                 {"_id": otp["_id"]}, {"$set": {"used": True, "verified_at": datetime.utcnow()}})
-            for k in ("otp_id", "otp_uid", "otp_sent"):
+            for k in ("otp_id", "otp_uid", "otp_sent", "otp_to"):
                 session.pop(k, None)
             login_user(User(user))
             flash("Logged in", "success")
@@ -900,7 +984,7 @@ def login_verify():
 
     return render_template(
         "login_verify.html",
-        recipient=_masked_otp_recipient(),
+        recipient=mask_email(session.get("otp_to") or otp.get("sent_to") or ""),
         minutes=ADMIN_OTP_TTL_MIN,
         username=otp.get("username", ""),
     )
@@ -930,7 +1014,7 @@ def login_verify_resend():
         except Exception:
             pass
 
-    ok, err = _send_admin_otp(user)
+    ok, err = _send_admin_otp(user, session.get("otp_to") or (otp_recipients() or [{}])[0].get("email"))
     flash("A new code is on its way." if ok else err, "success" if ok else "danger")
     return redirect(url_for("login_verify") if ok else url_for("login"))
 
@@ -1894,6 +1978,61 @@ def admin_notice_action(notice_id, action):
     elif action == "delete":
         mongo.db.notices.delete_one({"_id": oid})
         mongo.db.notice_views.delete_many({"notice_id": oid})
+    else:
+        return jsonify({"error": "Unknown action"}), 400
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/otp-recipients", methods=["GET", "POST"])
+@login_required
+def admin_otp_recipients():
+    """The mailboxes that may receive an admin sign-in code."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+
+    if request.method == "POST":
+        body  = request.get_json(silent=True) or {}
+        email = (body.get("email") or "").strip().lower()
+        label = (body.get("label") or "").strip()[:60]
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+            return jsonify({"error": "That does not look like an email address."}), 400
+        if mongo.db.otp_recipients.find_one({"email": email}):
+            return jsonify({"error": "That address is already on the list."}), 400
+        mongo.db.otp_recipients.insert_one({
+            "email": email, "label": label or email.split("@")[0],
+            "active": True, "added_by": current_user.username, "added_at": datetime.utcnow()})
+        return jsonify({"ok": True})
+
+    out = []
+    for r in mongo.db.otp_recipients.find().sort("label", 1):
+        out.append({"id": str(r["_id"]), "email": r.get("email", ""),
+                    "label": r.get("label") or r.get("email", ""),
+                    "masked": mask_email(r.get("email", "")),
+                    "active": bool(r.get("active")),
+                    "added_by": r.get("added_by", "")})
+    return jsonify({"recipients": out})
+
+
+@app.route("/api/admin/otp-recipients/<rid>/<action>", methods=["POST"])
+@login_required
+def admin_otp_recipient_action(rid, action):
+    """enable / disable / delete one address."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        oid = ObjectId(rid)
+    except Exception:
+        return jsonify({"error": "Unknown address"}), 404
+
+    if action in ("enable", "disable"):
+        if action == "disable" and mongo.db.otp_recipients.count_documents({"active": True}) <= 1:
+            return jsonify({"error": "Keep at least one address active, or nobody can sign in."}), 400
+        mongo.db.otp_recipients.update_one({"_id": oid}, {"$set": {"active": action == "enable"}})
+    elif action == "delete":
+        doc = mongo.db.otp_recipients.find_one({"_id": oid})
+        if doc and doc.get("active") and mongo.db.otp_recipients.count_documents({"active": True}) <= 1:
+            return jsonify({"error": "That is the last active address — add another first."}), 400
+        mongo.db.otp_recipients.delete_one({"_id": oid})
     else:
         return jsonify({"error": "Unknown action"}), 400
     return jsonify({"ok": True})

@@ -26,7 +26,73 @@
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
         if (tab === 'calendar') loadCalendarOverview();
         if (tab === 'face') loadSecurityInsights();
-        if (tab === 'notices') { loadNotices(); loadMailSettings(); }
+        if (tab === 'notices') { loadNotices(); loadMailSettings(); loadOtpRecipients(); }
+    }
+
+    // ── Mailboxes that may receive an admin sign-in code ──────────────────
+    async function loadOtpRecipients() {
+        const box = document.getElementById('otpRcptList');
+        const tag = document.getElementById('otpRcptTag');
+        if (!box) return;
+        try {
+            const d = await ntFetchJson('/api/admin/otp-recipients');
+            const list = d.recipients || [];
+            const live = list.filter(r => r.active).length;
+            if (tag) {
+                tag.textContent = live + (live === 1 ? ' address' : ' addresses');
+                tag.className = 'oa-tag ' + (live ? 'ok' : 'warn');
+            }
+            box.innerHTML = list.length ? list.map(r => `
+                <div class="nt-row ${r.active ? 'on' : ''}">
+                    <div class="nt-row-main">
+                        <div class="nt-row-title">
+                            <span class="nt-state ${r.active ? 'on' : ''}">${r.active ? 'Active' : 'Off'}</span>
+                            ${escapeHtml(r.label)}
+                        </div>
+                        <div class="nt-row-meta">${escapeHtml(r.email)}${
+                            r.added_by ? ' · added by ' + escapeHtml(r.added_by) : ''}</div>
+                    </div>
+                    <div class="nt-row-acts">
+                        ${r.active
+                            ? `<button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="otpRecipientAction('${r.id}','disable')"><i class="fas fa-ban"></i> Turn off</button>`
+                            : `<button class="oa-btn oa-btn-primary oa-btn-sm" onclick="otpRecipientAction('${r.id}','enable')"><i class="fas fa-check"></i> Turn on</button>`}
+                        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="otpRecipientAction('${r.id}','delete')"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>`).join('')
+                : '<div class="oa-empty"><i class="fas fa-envelope"></i><p>No addresses yet. Add one below.</p></div>';
+        } catch (err) {
+            box.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>'
+                          + escapeHtml(err.message) + '</p></div>';
+            if (tag) { tag.textContent = 'Unavailable'; tag.className = 'oa-tag warn'; }
+        }
+    }
+
+    async function addOtpRecipient() {
+        const label = document.getElementById('rcptLabel').value.trim();
+        const email = document.getElementById('rcptEmail').value.trim();
+        if (!email) { showAlert('Enter an email address.', 'danger'); return; }
+        try {
+            await ntFetchJson('/api/admin/otp-recipients', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ label, email })
+            });
+            document.getElementById('rcptLabel').value = '';
+            document.getElementById('rcptEmail').value = '';
+            showAlert(`${escapeHtml(email)} can now receive sign-in codes.`, 'success');
+            loadOtpRecipients();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
+    async function otpRecipientAction(id, action) {
+        if (action === 'delete' && !confirm('Remove this address from the list?')) return;
+        try {
+            await ntFetchJson(`/api/admin/otp-recipients/${id}/${action}`, { method: 'POST' });
+            loadOtpRecipients();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
     }
 
     // ── Email reports: what goes out, and a way to prove it works ─────────

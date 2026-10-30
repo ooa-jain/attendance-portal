@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Where should the code go? · Office of Academics</title>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="robots" content="noindex, nofollow">
+
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+<style>
+  body { background: var(--paper); }
+  .vf-wrap {
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 28px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+  }
+  .vf-card {
+    width: 100%; max-width: 430px;
+    background: #FFFFFF; border: 1px solid var(--line);
+    border-radius: var(--r-xl); box-shadow: var(--sh-2); overflow: hidden;
+  }
+  .vf-head { padding: 26px 28px 20px; border-bottom: 1px solid var(--line); text-align: center; }
+  .vf-head img { width: 44px; height: 44px; border-radius: 11px; margin-bottom: 14px; }
+  .vf-head .eyebrow {
+    font-size: .58rem; font-weight: 800; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--gold-600);
+  }
+  .vf-head h1 {
+    font-family: var(--display); font-size: 1.4rem; font-weight: 600;
+    color: var(--ink-800); letter-spacing: -.02em; margin-top: 6px;
+  }
+  .vf-body { padding: 22px 28px 26px; }
+  .vf-lede { font-size: .82rem; color: var(--t2); line-height: 1.65; text-align: center; margin-bottom: 18px; }
+
+  /* One tappable row per mailbox. The label is how you recognise it; the
+     address stays masked so the page gives nothing away. */
+  .pick { display: flex; flex-direction: column; gap: 8px; }
+  .pick-item { position: relative; }
+  .pick-item input { position: absolute; opacity: 0; pointer-events: none; }
+  .pick-item label {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 15px; cursor: pointer;
+    border: 1px solid var(--line-2); border-radius: var(--r-sm);
+    background: var(--paper); transition: border-color .15s, background .15s, box-shadow .15s;
+  }
+  .pick-item label:hover { border-color: var(--gold-500); background: #fff; }
+  .pick-item input:checked + label {
+    border-color: var(--gold-500); background: #fff;
+    box-shadow: 0 0 0 3px rgba(238, 189, 27, .18);
+  }
+  .pick-item input:focus-visible + label {
+    outline: none; box-shadow: 0 0 0 3px rgba(238, 189, 27, .35);
+  }
+  .pick-av {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
+    background: var(--ink-800); color: var(--gold-400);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: .85rem;
+  }
+  .pick-txt { min-width: 0; flex: 1; }
+  .pick-name { display: block; font-size: .85rem; font-weight: 700; color: var(--ink-800); }
+  .pick-mail {
+    display: block; font-family: var(--mono); font-size: .7rem; color: var(--t3);
+    margin-top: 3px; overflow-wrap: anywhere;
+  }
+  .pick-tick { margin-left: auto; color: var(--gold-600); opacity: 0; flex: none; }
+  .pick-item input:checked + label .pick-tick { opacity: 1; }
+
+  .vf-meta {
+    margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line-2);
+    font-size: .7rem; color: var(--t3); line-height: 1.6; text-align: center;
+  }
+  .vf-link {
+    background: none; border: none; padding: 4px 2px;
+    font-size: .74rem; font-weight: 700; color: var(--ink-700);
+    text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+  }
+  .vf-link:hover { color: var(--gold-600); }
+</style>
+</head>
+<body>
+
+<div class="vf-wrap">
+  <main class="vf-card">
+    <div class="vf-head">
+      <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="JAIN">
+      <div class="eyebrow">Admin sign-in</div>
+      <h1>Where should the code go?</h1>
+    </div>
+
+    <div class="vf-body">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="oa-flash {{ category }}" style="margin-bottom:16px">
+            <i class="fas fa-circle-info"></i><span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      {% endwith %}
+
+      <p class="vf-lede">
+        Your password was accepted. Pick the mailbox that should receive the
+        six-digit code.
+      </p>
+
+      <form method="POST" action="{{ url_for('login_choose') }}" id="pickForm">
+        <div class="pick">
+          {% for p in people %}
+          <div class="pick-item">
+            <input type="radio" name="recipient" id="r{{ loop.index }}"
+                   value="{{ p.id }}" {% if loop.first %}checked{% endif %} required>
+            <label for="r{{ loop.index }}">
+              <span class="pick-av">{{ p.label[0]|upper }}</span>
+              <span class="pick-txt">
+                <span class="pick-name">{{ p.label }}</span>
+                <span class="pick-mail">{{ p.masked }}</span>
+              </span>
+              <i class="fas fa-circle-check pick-tick"></i>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+
+        <button type="submit" class="oa-btn oa-btn-primary oa-btn-block" id="pickSend" style="margin-top:18px">
+          <i class="fas fa-paper-plane"></i> Send the code
+        </button>
+      </form>
+
+      <div class="vf-meta">
+        Addresses are set by an administrator under Notices → Admin sign-in codes.
+        <div style="margin-top:8px"><a class="vf-link" href="{{ url_for('login') }}">Start over</a></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  // One send per click — a second submit would mint a second code and
+  // retire the first.
+  (function () {
+    var f = document.getElementById('pickForm'), b = document.getElementById('pickSend');
+    if (!f || !b) return;
+    f.addEventListener('submit', function () {
+      b.disabled = true;
+      b.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Sending…';
+    });
+  })();
+</script>
+</body>
+</html>

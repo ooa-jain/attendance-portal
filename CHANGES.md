@@ -413,3 +413,24 @@ cd /var/www/jain-intern && venv/bin/python test_mail.py
 A server closing the connection on every port means the host blocks outbound
 SMTP; the fix is to have them open it, or to send through an email API over
 HTTPS instead.
+
+### Choosing where the sign-in code goes
+
+Admin sign-in is now: password → pick a mailbox → enter the code. The
+mailboxes live in `otp_recipients` and are managed under Notices → **Admin
+sign-in codes** (add, turn off, remove). `ADMIN_OTP_RECIPIENT` seeds the list
+the first time, so an existing deployment carries on unchanged, and with only
+one address on the list the chooser is skipped.
+
+Only a listed address can be chosen, and the chooser posts the record's id
+rather than the address, so the page never contains a mailbox. The last active
+address cannot be turned off or removed — that would lock everyone out.
+
+Two bugs fixed at the same time:
+
+* Entering the sixth digit auto-submitted the form, so an auto-submit plus a
+  click sent the code twice. The first succeeded; the second hit the
+  now-used code and redirected to `/login`, which looked like the sign-in had
+  failed. Both pages now submit once.
+* `/login` rendered the sign-in form even when already signed in. It, and
+  both code pages, now send an authenticated user to their dashboard.

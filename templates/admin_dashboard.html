@@ -576,6 +576,39 @@
     <!-- ════════ NOTICES ════════ -->
     <div id="notices-tab" class="ad-panel">
 
+      <!-- ── Who can receive an admin sign-in code ── -->
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Admin sign-in codes</h2>
+          <span class="spacer"></span>
+          <span class="oa-tag" id="otpRcptTag">—</span>
+        </div>
+        <p class="ad-hint" style="margin-top:-4px">
+          When someone signs in to this console, they enter the admin password and then
+          pick one of these mailboxes to send the six-digit code to. Only addresses on
+          this list can be chosen, so add just the people who should be able to approve
+          a sign-in.
+        </p>
+
+        <div id="otpRcptList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+
+        <div class="oa-formgrid" style="margin-top:14px">
+          <div class="oa-field">
+            <label for="rcptLabel">Name</label>
+            <input type="text" id="rcptLabel" maxlength="60" placeholder="e.g. Santosh">
+          </div>
+          <div class="oa-field">
+            <label for="rcptEmail">Email address</label>
+            <input type="email" id="rcptEmail" placeholder="name@jainuniversity.ac.in" autocapitalize="none">
+          </div>
+        </div>
+        <button class="oa-btn oa-btn-primary" onclick="addOtpRecipient()">
+          <i class="fas fa-plus"></i> Add address
+        </button>
+      </section>
+
       <!-- ── What the office gets by email ── -->
       <section class="oa-card">
         <div class="oa-card-head">
