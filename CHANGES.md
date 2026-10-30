@@ -474,3 +474,16 @@ caught in both places it can land:
   red banner, disabling the field.
 
 A code whose send failed is never accepted either way.
+
+### Sign-in codes removed
+
+Admin sign-in is a password again. The code step, the mailbox chooser, the
+`/login/verify` pages and the admin card that managed the addresses are all
+gone, along with the `ADMIN_OTP_*` settings — those lines can come out of
+`.env`, though leaving them does no harm.
+
+What stays: leave applications and the daily summary still go out by email,
+and the sign-in form still answers "Incorrect username or password" for both
+an unknown user and a wrong password.
+
+The code is in git history if it is ever wanted back.
