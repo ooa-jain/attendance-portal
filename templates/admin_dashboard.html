@@ -31,7 +31,7 @@
   try {
     if (localStorage.getItem('oaTheme') === 'dark')
       document.documentElement.setAttribute('data-theme', 'dark');
-    if (localStorage.getItem('oaSkin') === 'packet')
+    if (localStorage.getItem('oaSkin') !== 'luno')
       document.documentElement.setAttribute('data-skin', 'packet');
   } catch (e) {}
 </script>

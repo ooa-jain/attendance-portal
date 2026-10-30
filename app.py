@@ -25,6 +25,29 @@ from config import Config
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# ── Static files: cache hard, but bust on change ──────────────────────
+# Until now every stylesheet and script was served from a plain
+# /static/... URL with Flask's default 12-hour cache. After a deploy the
+# browser kept serving the old CSS and JS for up to half a day, so changes
+# looked like they had not landed — and a stale script running against a
+# fresh template is its own class of bug.
+#
+# url_defaults fires for every url_for('static', ...) in every template,
+# so this versions the lot without touching one of them. The value is the
+# file's modification time: it changes exactly when the file does.
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000      # a year; the ?v= handles freshness
+
+
+@app.url_defaults
+def _static_cache_bust(endpoint, values):
+    if endpoint != 'static' or 'filename' not in values:
+        return
+    try:
+        values['v'] = int(os.stat(os.path.join(app.static_folder,
+                                               values['filename'])).st_mtime)
+    except OSError:
+        pass                                            # missing file: let Flask 404 it
+
 if not app.config.get("MONGO_URI"):
     raise RuntimeError("MONGO_URI not set in .env (see README)")
 

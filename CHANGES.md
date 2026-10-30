@@ -601,3 +601,50 @@ you want it carried all the way through.
 - `Sign out` lost its red. The flat rail colour and the base `.danger` rule
   have equal specificity, so the later one won; the skin rule is now
   `:not(.danger)`.
+
+---
+
+## Why changes looked like they never landed
+
+You pulled, restarted, and saw nothing different. Two separate reasons, both
+now fixed.
+
+### 1. Static files were cached for 12 hours with no way to bust them
+
+Every stylesheet and script was served from a plain URL:
+
+```
+/static/css/oa-admin.css
+```
+
+Flask caches static files for **12 hours** by default, and nothing in that URL
+changes when the file does. So after a deploy your browser kept serving the
+**old** CSS and JS for up to half a day. This affected every change made to
+this app, not just the recent ones — and a stale script running against a
+fresh template is its own class of bug, which may well be behind the blank
+admin console.
+
+`app.py` now versions every static URL by the file's modification time:
+
+```
+/static/css/oa-admin.css?v=1793360519
+```
+
+It is a `url_defaults` hook, so it applies to every `url_for('static', ...)`
+in every template without any of them being touched. The version changes
+exactly when the file changes, and never otherwise. Caching is now set to a
+year, which also makes repeat visits faster — the `?v=` is what keeps them
+correct.
+
+Verified: URLs come out versioned, the version moves when the file is
+touched, and a missing file still 404s rather than crashing.
+
+**After this deploy you should not need to hard-refresh again.** For this one
+deploy you still might, because the fix itself is in the file being cached.
+
+### 2. The Packet skin was off by default
+
+It shipped as opt-in behind the rail switch, so loading the console showed
+the Luno skin — which you already had. You asked to *use* that style, so
+**Packet is now the default**. The rail switch still flips to Luno and the
+choice sticks across reloads.
