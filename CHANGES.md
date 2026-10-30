@@ -455,3 +455,22 @@ Three things, all on the path you hit after entering the sign-in code — the
 
 The same projection now applies to the day overview, which runs on the Analysis
 tab and in the nightly digest.
+
+### The two-second sign-in
+
+Sending the code was done inside the request, so the password step waited on a
+full SMTP round trip — about two seconds of the wait, with the rest of the app
+answering in milliseconds. The send now runs in a background thread and the
+page comes back at once.
+
+Losing the "mail failed, so refuse the sign-in" guarantee would have left
+someone staring at a code page for a code that never left, so the outcome is
+tracked instead. The code record carries a `send_state`, and a failure is
+caught in both places it can land:
+
+* **before the page loads** — `/login/verify` refuses outright and returns to
+  sign-in saying the code could not be sent;
+* **after the page loads** — the page polls `/login/verify/status` and shows a
+  red banner, disabling the field.
+
+A code whose send failed is never accepted either way.

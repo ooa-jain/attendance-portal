@@ -841,6 +841,7 @@ def _send_admin_otp(user_doc, recipient):
         "used":       False,
         "ip":         request.remote_addr,
         "sent_to":    recipient,
+        "send_state": "sending",
     }
     otp_id = mongo.db.admin_otps.insert_one(doc).inserted_id
 
@@ -856,17 +857,26 @@ def _send_admin_otp(user_doc, recipient):
         f"If you were not expecting this, do not share the code — the sign-in "
         f"cannot complete without it, and you may want to change that account's password."
     )
-    try:
-        msg = Message(
-            subject=f"Admin sign-in code {code} · Attendance Portal",
-            recipients=[recipient],
-            body=body,
-        )
-        mail.send(msg)
-    except Exception as e:
-        app.logger.error("Admin OTP mail failed for %s: %s", user_doc.get("username"), e)
-        mongo.db.admin_otps.update_one({"_id": otp_id}, {"$set": {"used": True, "send_failed": True}})
-        return False, "Could not send the sign-in code. Contact the Office of Academics."
+    # The SMTP round trip costs about two seconds, which is the whole of the
+    # wait on the password step. Hand it to a thread and let the code page
+    # report the outcome, rather than making every sign-in pay for it.
+    subject = f"Admin sign-in code {code} · Attendance Portal"
+    uname   = user_doc.get("username", "")
+
+    def deliver():
+        with app.app_context():
+            try:
+                mail.send(Message(subject=subject, recipients=[recipient], body=body))
+                mongo.db.admin_otps.update_one({"_id": otp_id}, {"$set": {"send_state": "sent"}})
+            except Exception as e:
+                app.logger.error("Admin OTP mail failed for %s: %s", uname, e)
+                # Not marked used: that would race the redirect and read as
+                # "expired". login_verify refuses a failed send outright.
+                mongo.db.admin_otps.update_one(
+                    {"_id": otp_id},
+                    {"$set": {"send_state": "failed", "send_error": str(e)[:300]}})
+
+    threading.Thread(target=deliver, daemon=True).start()
 
     session["otp_id"]   = str(otp_id)
     session["otp_uid"]  = str(user_doc["_id"])
@@ -991,6 +1001,9 @@ def login_verify():
         otp = None
     if not otp or otp.get("used"):
         return _abandon("That sign-in attempt has expired. Please start again.")
+    if otp.get("send_state") == "failed":
+        return _abandon("That code could not be sent. Please try again, or contact "
+                        "the Office of Academics.")
     if datetime.utcnow() > otp.get("expires_at", datetime.utcnow()):
         mongo.db.admin_otps.update_one({"_id": otp["_id"]}, {"$set": {"used": True}})
         return _abandon("The code expired. Please sign in again.")
@@ -1026,6 +1039,19 @@ def login_verify():
         minutes=ADMIN_OTP_TTL_MIN,
         username=otp.get("username", ""),
     )
+
+
+@app.route("/login/verify/status")
+def login_verify_status():
+    """Did the code actually go out? The page asks while you wait for it."""
+    otp_id = session.get("otp_id")
+    if not otp_id:
+        return jsonify({"state": "none"})
+    try:
+        otp = mongo.db.admin_otps.find_one({"_id": ObjectId(otp_id)}, {"send_state": 1})
+    except Exception:
+        otp = None
+    return jsonify({"state": (otp or {}).get("send_state", "sending")})
 
 
 @app.route("/login/verify/resend", methods=["POST"])

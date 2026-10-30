@@ -110,6 +110,12 @@
         {% endfor %}
       {% endwith %}
 
+      <div class="oa-flash danger" id="sendFailed" style="display:none;margin-bottom:16px">
+        <i class="fas fa-triangle-exclamation"></i>
+        <span>That code could not be sent. Use <strong>Send another code</strong>, or
+        contact the Office of Academics.</span>
+      </div>
+
       <p class="vf-lede">
         A six-digit code was sent to <strong>{{ recipient }}</strong>.
         Enter it below to finish signing in{% if username %} as <strong>{{ username }}</strong>{% endif %}.
@@ -170,6 +176,26 @@
       f.value = before.replace(/\D/g, '').slice(0, 6);
       if (f.value.length === 6 && before.length <= 6) send();
     });
+
+    // The mail goes out in the background, so ask whether it made it rather
+    // than leaving someone waiting for a code that was never sent.
+    var tries = 0;
+    var poll = setInterval(function () {
+      if (sent || ++tries > 12) { clearInterval(poll); return; }
+      fetch('/login/verify/status', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.state === 'sent' || d.state === 'none') { clearInterval(poll); return; }
+          if (d.state === 'failed') {
+            clearInterval(poll);
+            var box = document.getElementById('sendFailed');
+            if (box) box.style.display = '';
+            f.disabled = true;
+            if (btn) btn.disabled = true;
+          }
+        })
+        .catch(function () { /* a blip here should not break the page */ });
+    }, 1500);
   })();
 </script>
 </body>
