@@ -2,6 +2,108 @@
 
     function logout() { window.location.href = '/logout'; }
 
+    // Dark mode for the console. One attribute on <html>; the stylesheet does
+    // the rest, and the choice is remembered per browser.
+    function toggleTheme() {
+        const root = document.documentElement;
+        const dark = root.getAttribute('data-theme') === 'dark';
+        if (dark) root.removeAttribute('data-theme');
+        else root.setAttribute('data-theme', 'dark');
+        try { localStorage.setItem('oaTheme', dark ? 'light' : 'dark'); } catch (e) {}
+    }
+
+    /* ══ Luno dashboard chrome ═══════════════════════════════════════════
+       The top bar and the greeting row are plain markup; these are the
+       few behaviours behind them.                                        */
+
+    // Section names as they read in the breadcrumb and the search hints.
+    const LUNO_TABS = {
+        dashboard: 'Dashboard',   locations: 'Locations & Map',
+        early:     'Early sign-outs', analysis: 'Analysis',
+        calendar:  'Calendar',    export:    'Export',
+        users:     'People',      leaves:    'Leave requests',
+        notices:   'Notices',     face:      'Security',
+    };
+
+    // Go to a section from somewhere other than the rail — the top-bar
+    // icons, the breadcrumb, the quick actions. Clicking the rail button
+    // rather than calling switchTab directly keeps the moving highlight
+    // and the active state in step.
+    function goTab(tab) {
+        const btn = document.querySelector(
+            `.oa-rail-nav .ad-tab[onclick*="'${tab}'"]`);
+        if (btn) { btn.click(); return; }
+        switchTab(tab);                       // mobile, where there is no rail
+        lunoAfterTab(tab);
+    }
+
+    function lunoAfterTab(tab) {
+        const crumb = document.getElementById('lunoCrumb');
+        if (crumb) crumb.textContent = LUNO_TABS[tab] || 'Dashboard';
+    }
+
+    function lunoFullscreen() {
+        const d = document;
+        if (d.fullscreenElement) { d.exitFullscreen?.(); return; }
+        d.documentElement.requestFullscreen?.().catch(() => {});
+    }
+
+    // Search filters the rows of whichever section is open, and dims the
+    // rail items that do not match, so typing "leave" points at the right
+    // place even when you are looking at something else.
+    function lunoSearch(raw) {
+        const q = (raw || '').trim().toLowerCase();
+
+        document.querySelectorAll('.oa-rail-nav .ad-tab').forEach(b => {
+            b.style.opacity = (!q || b.textContent.toLowerCase().includes(q)) ? '' : '.35';
+        });
+
+        const panel = document.querySelector('.ad-panel.on');
+        if (!panel) return;
+        panel.querySelectorAll('table tbody tr').forEach(tr => {
+            if (tr.children.length === 1 && tr.children[0].colSpan > 1) return;  // "Loading…"
+            tr.hidden = !!q && !tr.textContent.toLowerCase().includes(q);
+        });
+    }
+
+    // The bar across the bottom of each tile: the figure as a share of a
+    // ceiling that means something for that tile.
+    function lunoPaintStats() {
+        const n = id => {
+            const el = document.getElementById(id);
+            return el ? (parseInt(el.textContent, 10) || 0) : 0;
+        };
+        const cards  = document.querySelectorAll('#lunoStats .stat-card');
+        if (!cards.length) return;
+        const people = parseInt(cards[0].querySelector('.value')?.textContent, 10) || 0;
+        const checks = n('faceLogs24h');
+        const share  = (v, of) => of > 0 ? Math.max(0, Math.min(100, (v / of) * 100)) : (v > 0 ? 100 : 0);
+
+        const pcts = [
+            people ? 100 : 0,
+            share(n('todayAttendance'), people),
+            share(n('pendingLeaves'),   people),
+            share(n('earlyLogouts'),    people),
+            checks ? 100 : 0,
+            share(n('faceFailures'),    checks),
+        ];
+        cards.forEach((c, i) => c.style.setProperty('--pct', pcts[i].toFixed(1) + '%'));
+
+        const dot = (id, on) => {
+            const el = document.getElementById(id);
+            if (el) el.hidden = !on;
+        };
+        dot('lunoLeaveDot',  n('pendingLeaves') > 0);
+    }
+
+    function lunoInit() {
+        const d = new Date();
+        const el = document.getElementById('lunoToday');
+        if (el) el.textContent = d.toLocaleDateString('en-GB',
+            { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    document.addEventListener('DOMContentLoaded', lunoInit);
+
     function showAlert(msg, type) {
         const c = document.getElementById('alertContainer');
         const el = document.createElement('div');
@@ -27,6 +129,7 @@
         if (tab === 'calendar') loadCalendarOverview();
         if (tab === 'face') loadSecurityInsights();
         if (tab === 'notices') { loadNotices(); loadMailSettings(); }
+        lunoAfterTab(tab);
     }
 
     // ── Email reports: what goes out, and a way to prove it works ─────────
@@ -331,6 +434,7 @@
             const failRes = await fetch(`/api/admin/face-logs?match=false&date=${today}&per_page=1`);
             const failData = await failRes.json();
             document.getElementById('faceFailures').textContent = failData.total || 0;
+            lunoPaintStats();
 
             const allLoc = await fetch(`/api/admin/user-locations/${today}`);
             const allLocData = await allLoc.json();

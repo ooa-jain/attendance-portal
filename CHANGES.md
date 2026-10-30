@@ -487,3 +487,55 @@ and the sign-in form still answers "Incorrect username or password" for both
 an unknown user and a wrong password.
 
 The code is in git history if it is ever wanted back.
+
+---
+
+## Admin console: Luno-style dashboard chrome
+
+You sent the Luno admin template and asked for the **admin page only** to look
+like it. Everything here is confined to `admin_dashboard.html` and a stylesheet
+only that page links, so the intern dashboard, the login page and the public
+share links are untouched.
+
+**New files**
+
+| File | What it does |
+|---|---|
+| `static/css/oa-admin-luno.css` | The dashboard chrome: top bar, breadcrumb, greeting row, stat tiles |
+| `static/css/oa-admin-dark.css` | Dark theme for the console, toggled from the rail or the top bar |
+
+**What is different**
+
+- **Top bar is white**, not navy, and now carries a search field, quick-action
+  icons (full screen, notices, leave requests, theme) and an avatar with your
+  initials. The rail already carries the brand; a second dark band above it
+  boxed the page in.
+- **Breadcrumb** — `Home / <section>` above the content, tracking whichever
+  section is open.
+- **Greeting row** — "Welcome back, <name>!" with today's date and four
+  shortcuts (mail, export, calendar, share) in the dark cluster Luno uses.
+- **Stat tiles rebuilt** to Luno's reading order: label, then figure, then the
+  caption, with a tinted icon in the corner and a progress bar across the
+  bottom. The bar is the figure as a share of something real — present today
+  against the headcount, face failures against face checks — not decoration.
+  Six tiles now sit three across instead of wrapping four-then-two.
+- **Cooler canvas and squarer corners** (8px) to match the template.
+
+The brand accent stays JAIN gold and navy rather than Luno's teal, so the
+console still matches the logo and the rest of the portal.
+
+**Search** filters the rows of whichever section is open and dims the rail
+items that do not match, so typing "leave" points at Leave requests.
+
+### Bugs found while building this
+
+- The search input was given `id="lunoSearch"` inside a `<form>`. A form
+  exposes its controls by name to handlers nested in it, so `lunoSearch(...)`
+  in the inline `oninput` resolved to the input element rather than the
+  function, and every keystroke threw. The form became a `<div>` and the id
+  became `lunoQ`.
+- The greeting took the **last** word of the full name, so "Santosh K S" was
+  greeted as "S". It now takes the first real name, stepping over an honorific
+  so "Dr. Madhavi R" is greeted as Madhavi.
+- Jinja's `truncate()` has a five-character leeway, so `truncate(2)` let the
+  three-letter initials "SKS" through whole. Replaced with a slice.

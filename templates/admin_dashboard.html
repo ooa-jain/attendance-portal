@@ -20,6 +20,17 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin.css') }}">
+<!-- Luno-style dashboard chrome. Must sit between oa-admin and the dark
+     theme: it overrides the former, the latter overrides it. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-luno.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-dark.css') }}">
+<script>
+  // Set before the first paint, so a reload in dark mode never flashes white.
+  try {
+    if (localStorage.getItem('oaTheme') === 'dark')
+      document.documentElement.setAttribute('data-theme', 'dark');
+  } catch (e) {}
+</script>
 </head>
 <body>
 
@@ -51,6 +62,11 @@
       <button class="oa-navitem ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <div class="oa-dsep"></div>
+      <button type="button" class="oa-themeswitch" onclick="toggleTheme()">
+        <i class="fas fa-circle-half-stroke"></i>
+        <span class="lbl-light">Dark mode</span>
+        <span class="lbl-dark">Light mode</span>
+      </button>
       <button class="oa-navitem danger" onclick="logout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </nav>
     <div class="oa-rail-foot">
@@ -69,16 +85,38 @@
       <div class="org">ADMIN CONSOLE</div>
       <div class="sub">Office of Academics · Head Office</div>
     </div>
-    <div class="oa-pill" style="background:rgba(238,189,27,.14)">
-      <i class="fas fa-user-shield"></i> {{ current_user.username }}
+    <div class="lu-search">
+      <i class="fas fa-magnifying-glass"></i>
+      <input id="lunoQ" type="search" autocomplete="off"
+             placeholder="Search people, notes or a section…"
+             oninput="lunoSearch(this.value)">
     </div>
-    <button class="oa-btn oa-btn-sm oa-only-mobile" style="background:rgba(255,255,255,.1);color:var(--on-ink)" onclick="logout()">
+    <div class="lu-actions">
+      <button type="button" class="lu-ico lu-opt" title="Full screen" onclick="lunoFullscreen()">
+        <i class="fas fa-expand"></i></button>
+      <button type="button" class="lu-ico" title="Notices" onclick="goTab('notices')">
+        <i class="fas fa-bell"></i><span class="lu-dot" id="lunoNoticeDot" hidden></span></button>
+      <button type="button" class="lu-ico" title="Leave requests" onclick="goTab('leaves')">
+        <i class="fas fa-envelope"></i><span class="lu-dot" id="lunoLeaveDot" hidden></span></button>
+      <button type="button" class="lu-ico" title="Switch theme" onclick="toggleTheme()">
+        <i class="fas fa-circle-half-stroke"></i></button>
+    </div>
+    <div class="lu-avatar" title="{{ current_user.full_name or current_user.username }}">
+      {{ ((current_user.full_name or current_user.username).split()|map('first')|join|upper)[:2] }}
+    </div>
+    <button class="oa-btn oa-btn-sm oa-only-mobile" style="background:var(--paper-2);color:var(--t1)" onclick="logout()">
       <i class="fas fa-arrow-right-from-bracket"></i>
     </button>
   </header>
 
   <main class="oa-main">
     <div id="alertContainer"></div>
+
+    <div class="lu-crumbs">
+      <button type="button" onclick="goTab('dashboard')">Home</button>
+      <span class="sep">/</span>
+      <span class="here" id="lunoCrumb">Dashboard</span>
+    </div>
 
     <!-- Mobile tab strip (rail handles this on web) -->
     <div class="ad-tabs oa-only-mobile no-js-underline">
@@ -96,19 +134,63 @@
 
     <!-- ════════ OVERVIEW ════════ -->
     <div id="dashboard-tab" class="ad-panel on">
-      <div class="oa-masthead">
-        <div class="greet">Today at a glance</div>
-        <div class="who" style="font-size:1.45rem">Attendance Portal</div>
-        <div class="lede">Office of Academics · Head Office, Bengaluru</div>
+      <div class="lu-greet">
+        <div>
+          <h1>Welcome back, {% set _parts = (current_user.full_name or current_user.username).split() %}{% set _first = _parts|reject('in', ['Dr.','Dr','Mr.','Mr','Ms.','Ms','Mrs.','Mrs','Prof.','Prof'])|list %}{{ (_first or _parts)[0] }}!</h1>
+          <div class="lede" id="lunoLede">Office of Academics · Head Office, Bengaluru</div>
+        </div>
+        <div class="lu-greet-right">
+          <div class="lu-daterange"><i class="fas fa-calendar-day"></i><span id="lunoToday">—</span></div>
+          <div class="lu-quick">
+            <button type="button" title="Mail today's summary" onclick="goTab('notices')">
+              <i class="fas fa-envelope"></i></button>
+            <button type="button" title="Export a report" onclick="goTab('export')">
+              <i class="fas fa-download"></i></button>
+            <button type="button" title="Open the calendar" onclick="goTab('calendar')">
+              <i class="fas fa-calendar-days"></i></button>
+            <button type="button" title="Share a read-only link" onclick="goTab('analysis')">
+              <i class="fas fa-share-nodes"></i></button>
+          </div>
+        </div>
       </div>
 
-      <div class="stats-grid" style="margin-bottom:16px">
-        <div class="stat-card"><div class="value">{{ users|length }}</div><div class="label">People</div></div>
-        <div class="stat-card"><div class="value" id="todayAttendance">0</div><div class="label">Present today</div></div>
-        <div class="stat-card"><div class="value" id="pendingLeaves">0</div><div class="label">Leave pending</div></div>
-        <div class="stat-card"><div class="value" id="earlyLogouts">0</div><div class="label">Early sign-outs</div></div>
-        <div class="stat-card"><div class="value" id="faceLogs24h">0</div><div class="label">Face checks</div></div>
-        <div class="stat-card"><div class="value" id="faceFailures">0</div><div class="label">Face failures</div></div>
+      <div class="stats-grid" id="lunoStats" style="margin-bottom:18px">
+        <div class="stat-card acc-info">
+          <div class="label">People</div>
+          <div class="lu-tico"><i class="fas fa-users"></i></div>
+          <div class="value">{{ users|length }}</div>
+          <div class="lu-note">On the rolls</div>
+        </div>
+        <div class="stat-card acc-ok">
+          <div class="label">Present today</div>
+          <div class="lu-tico"><i class="fas fa-user-check"></i></div>
+          <div class="value" id="todayAttendance">0</div>
+          <div class="lu-note">Signed in so far</div>
+        </div>
+        <div class="stat-card acc-warn">
+          <div class="label">Leave pending</div>
+          <div class="lu-tico"><i class="fas fa-calendar-xmark"></i></div>
+          <div class="value" id="pendingLeaves">0</div>
+          <div class="lu-note">Awaiting a decision</div>
+        </div>
+        <div class="stat-card acc-bad">
+          <div class="label">Early sign-outs</div>
+          <div class="lu-tico"><i class="fas fa-triangle-exclamation"></i></div>
+          <div class="value" id="earlyLogouts">0</div>
+          <div class="lu-note">Left before the full day</div>
+        </div>
+        <div class="stat-card acc-gold">
+          <div class="label">Face checks</div>
+          <div class="lu-tico"><i class="fas fa-shield-halved"></i></div>
+          <div class="value" id="faceLogs24h">0</div>
+          <div class="lu-note">Last 24 hours</div>
+        </div>
+        <div class="stat-card acc-bad">
+          <div class="label">Face failures</div>
+          <div class="lu-tico"><i class="fas fa-user-xmark"></i></div>
+          <div class="value" id="faceFailures">0</div>
+          <div class="lu-note">Last 24 hours</div>
+        </div>
       </div>
 
       <section class="oa-card flush">

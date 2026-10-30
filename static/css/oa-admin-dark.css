@@ -1,0 +1,312 @@
+/* ══════════════════════════════════════════════════════════════
+   OFFICE OF ACADEMICS · ADMIN CONSOLE — dark theme
+   oa-admin-dark.css
+
+   Loaded after the other sheets and only active under
+   <html data-theme="dark">, so the light console is untouched and the
+   toggle is a one-attribute change.
+
+   Nearly all of it is token overrides — the design is already driven by
+   custom properties. The rest patches the places that hardcode a light
+   value (#fff panels, the status tints) because those cannot follow a
+   token. Gold stays the accent: this is the same institution at night,
+   not a different product.
+   ══════════════════════════════════════════════════════════════ */
+
+:root[data-theme="dark"] {
+  /* Canvas and raised surfaces. The gap between them is what gives the
+     dashboard its depth, so keep it small but real. */
+  --paper:    #0B0F17;
+  --paper-2:  #121824;
+  --card:     #141A26;
+  --line:     #222B3B;
+  --line-2:   #2E394C;
+
+  /* Text, in descending emphasis. */
+  --t1: #EEF2F8;
+  --t2: #A3AFC2;
+  --t3: #6D7A8E;
+
+  /* The ink family doubles as surface colour in dark mode, so it has to
+     invert: anything that was "dark ink on paper" becomes light on panel. */
+  --ink-900: #FFFFFF;
+  --ink-850: #F2F5FA;
+  --ink-800: #E8EDF5;
+  --ink-700: #C7D1E0;
+  --ink-600: #9FADC2;
+  --ink-500: #7D8CA4;
+  --ink-400: #5E6B82;
+
+  /* Gold lifts slightly: the same hue reads dimmer on a dark field. */
+  --gold-600: #F0C63C;
+  --gold-500: #F3CE55;
+  --gold-400: #F7DC86;
+  --gold-100: #2A2616;
+  --gold-050: #1C1A12;
+
+  --on-ink:     #0B0F17;   /* text that sits on a gold or light chip */
+  --on-ink-dim: #39414F;
+
+  /* Functional colours: lighter foreground, deep translucent backing. */
+  --ok:    #4ADE80;
+  --ok-bg: #11291C;
+  --warn:    #FBBF4A;
+  --warn-bg: #2A2112;
+  --bad:    #F87171;
+  --bad-bg: #2E1618;
+  --info:    #7DB0F5;
+  --info-bg: #141F33;
+
+  --sh-1: 0 1px 2px rgba(0, 0, 0, .5);
+  --sh-2: 0 10px 30px rgba(0, 0, 0, .55);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] body { background: var(--paper); color: var(--t1); }
+
+/* ── Shell ─────────────────────────────────────────────────── */
+:root[data-theme="dark"] .oa-rail {
+  background: #0E131D;
+  border-right-color: var(--line);
+}
+:root[data-theme="dark"] .oa-rail-head,
+:root[data-theme="dark"] .oa-rail-foot { border-color: var(--line); }
+:root[data-theme="dark"] .oa-rail-head img {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .08), 0 4px 12px rgba(0, 0, 0, .5);
+}
+:root[data-theme="dark"] .oa-topbar {
+  background: #0E131D;
+  border-bottom: 1px solid var(--line);
+  /* The bar stays dark, so its text must not follow --on-ink, which in this
+     theme means "text sitting on a light chip". */
+  color: #EEF2F8;
+}
+:root[data-theme="dark"] .oa-topbar .titles .org { color: #EEF2F8; }
+:root[data-theme="dark"] .oa-topbar .titles .sub { color: var(--t2); }
+:root[data-theme="dark"] .oa-topbar .oa-pill { color: var(--gold-400); }
+:root[data-theme="dark"] .oa-rail-head .org { color: #EEF2F8; }
+:root[data-theme="dark"] .oa-rail-foot { color: var(--t3); }
+:root[data-theme="dark"] .oa-rail-foot strong { color: #EEF2F8; }
+:root[data-theme="dark"] .oa-drawer { background: #0E131D; border-left-color: var(--line); }
+
+/* The travelling nav highlight: a lifted panel rather than a gold wash,
+   which goes muddy on a dark field. */
+:root[data-theme="dark"] .oa-nav-highlight {
+  background: linear-gradient(90deg, rgba(255, 255, 255, .08) 0%, rgba(255, 255, 255, .03) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07);
+}
+:root[data-theme="dark"] .oa-rail-nav .oa-navitem:hover,
+:root[data-theme="dark"] .oa-navitem:hover { background: rgba(255, 255, 255, .05); }
+:root[data-theme="dark"] .oa-rail-nav .oa-navitem.on,
+:root[data-theme="dark"] .oa-navitem.on { color: #FFFFFF; }
+
+/* ── Panels and cards ──────────────────────────────────────── */
+:root[data-theme="dark"] .oa-card,
+:root[data-theme="dark"] .stat-card,
+:root[data-theme="dark"] .ad-user,
+:root[data-theme="dark"] .ad-saved-item,
+:root[data-theme="dark"] .cal-stat,
+:root[data-theme="dark"] .sec-tile,
+:root[data-theme="dark"] .sec-group,
+:root[data-theme="dark"] .sec-item,
+:root[data-theme="dark"] .nt-row,
+:root[data-theme="dark"] .ac-day-item,
+:root[data-theme="dark"] .ml-row,
+:root[data-theme="dark"] .nt-person,
+:root[data-theme="dark"] .an-name,
+:root[data-theme="dark"] .cal-tbl-wrap,
+:root[data-theme="dark"] .cal-note-panel {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--t1);
+}
+:root[data-theme="dark"] .ml-grid,
+:root[data-theme="dark"] .nt-people { background: var(--line); border-color: var(--line); }
+:root[data-theme="dark"] .nt-people { background: var(--paper-2); }
+
+:root[data-theme="dark"] .oa-card-head { border-color: var(--line); }
+:root[data-theme="dark"] .oa-card-head h2 { color: var(--t1); }
+
+/* ── Inputs ────────────────────────────────────────────────── */
+:root[data-theme="dark"] .oa-input,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background: var(--paper-2);
+  border-color: var(--line-2);
+  color: var(--t1);
+}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder { color: var(--t3); }
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] textarea:focus {
+  border-color: var(--gold-500);
+  box-shadow: 0 0 0 3px rgba(243, 206, 85, .16);
+}
+/* Native date pickers and dropdown arrows render black-on-black otherwise. */
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(.7); }
+
+/* ── Tables ────────────────────────────────────────────────── */
+:root[data-theme="dark"] .oa-table th,
+:root[data-theme="dark"] .cal-tbl th {
+  background: var(--paper-2);
+  color: var(--t2);
+  border-color: var(--line);
+}
+:root[data-theme="dark"] .oa-table td,
+:root[data-theme="dark"] .cal-tbl td { border-color: var(--line); color: var(--t1); }
+:root[data-theme="dark"] .oa-table tr:hover td { background: rgba(255, 255, 255, .03); }
+
+/* Status tints: the light pastels become deep washes that keep their hue. */
+:root[data-theme="dark"] .cal-tbl tr.met,
+:root[data-theme="dark"] .cal-cell.met     { background: #10291C; border-color: #1F4733; }
+:root[data-theme="dark"] .cal-tbl tr.part,
+:root[data-theme="dark"] .cal-cell.part    { background: #2A2112; border-color: #4A3C1C; }
+:root[data-theme="dark"] .cal-tbl tr.absent,
+:root[data-theme="dark"] .cal-cell.absent  { background: #2E1618; border-color: #512528; }
+:root[data-theme="dark"] .cal-tbl tr.leave,
+:root[data-theme="dark"] .cal-cell.leave   { background: #1A2130; border-color: #2B3647; }
+:root[data-theme="dark"] .cal-tbl tr.holiday,
+:root[data-theme="dark"] .cal-tbl tr.optional,
+:root[data-theme="dark"] .cal-cell.optional { background: #251F10; border-color: #433814; }
+:root[data-theme="dark"] .cal-cell.holiday {
+  background: repeating-linear-gradient(45deg, #151A24, #151A24 4px, #1B2130 4px, #1B2130 8px);
+  border-color: #28313F;
+}
+:root[data-theme="dark"] .cal-tbl tr.met td      { color: #6EE7A0; }
+:root[data-theme="dark"] .cal-tbl tr.part td     { color: #FBBF4A; }
+:root[data-theme="dark"] .cal-tbl tr.absent td   { color: #F89C9C; }
+:root[data-theme="dark"] .cal-tbl tr.leave td    { color: #9FADC2; }
+:root[data-theme="dark"] .cal-tbl tr.holiday td,
+:root[data-theme="dark"] .cal-tbl tr.optional td { color: #D9BE6A; }
+:root[data-theme="dark"] .cal-cell { background: var(--paper-2); border-color: var(--line); }
+:root[data-theme="dark"] .cal-cell.off { background: transparent; border-color: transparent; }
+:root[data-theme="dark"] .cal-num { color: var(--t2); }
+:root[data-theme="dark"] .cal-key.met  { background: #10291C; border-color: #1F4733; }
+:root[data-theme="dark"] .cal-key.part { background: #2A2112; border-color: #4A3C1C; }
+:root[data-theme="dark"] .cal-key.absent { background: #2E1618; border-color: #512528; }
+:root[data-theme="dark"] .cal-key.leave  { background: #1A2130; border-color: #2B3647; }
+:root[data-theme="dark"] .cal-key.optional { background: #251F10; border-color: #433814; }
+
+/* Security panel keeps its severity reading. */
+:root[data-theme="dark"] .sec-group.bad  { background: #201416; border-left-color: #F87171; }
+:root[data-theme="dark"] .sec-group.warn { background: #211B10; border-left-color: #FBBF4A; }
+:root[data-theme="dark"] .sec-tile.bad .n { color: #F87171; }
+:root[data-theme="dark"] .nt-row.on { background: #10211A; border-left-color: #4ADE80; }
+:root[data-theme="dark"] .nt-state.on { background: #10291C; color: #6EE7A0; }
+:root[data-theme="dark"] .nt-state { background: var(--paper-2); color: var(--t3); }
+
+/* ── Buttons and chips ─────────────────────────────────────── */
+:root[data-theme="dark"] .oa-btn-primary {
+  background: var(--gold-500); color: #10131A; border-color: var(--gold-500);
+}
+:root[data-theme="dark"] .oa-btn-primary:hover { background: var(--gold-400); }
+:root[data-theme="dark"] .oa-btn-ghost,
+:root[data-theme="dark"] .oa-btn-quiet,
+:root[data-theme="dark"] .oa-btn-secondary {
+  background: var(--paper-2); color: var(--t1); border-color: var(--line-2);
+}
+:root[data-theme="dark"] .oa-btn-ghost:hover,
+:root[data-theme="dark"] .oa-btn-quiet:hover,
+:root[data-theme="dark"] .oa-btn-secondary:hover { border-color: var(--gold-500); color: #fff; }
+:root[data-theme="dark"] .oa-tag { background: var(--paper-2); color: var(--t2); }
+:root[data-theme="dark"] .oa-tag.ok   { background: var(--ok-bg);   color: var(--ok); }
+:root[data-theme="dark"] .oa-tag.warn { background: var(--warn-bg); color: var(--warn); }
+:root[data-theme="dark"] .oa-tag.gold { background: #2A2616; color: var(--gold-400); }
+
+/* ── Masthead and empty states ─────────────────────────────── */
+:root[data-theme="dark"] .oa-masthead {
+  background: linear-gradient(135deg, #141A26 0%, #0E131D 100%);
+  border: 1px solid var(--line);
+}
+:root[data-theme="dark"] .oa-masthead .greet { color: var(--gold-400); }
+:root[data-theme="dark"] .oa-masthead .who,
+:root[data-theme="dark"] .oa-masthead .lede { color: var(--t1); }
+:root[data-theme="dark"] .oa-masthead .lede { color: var(--t2); }
+:root[data-theme="dark"] .oa-empty { color: var(--t3); }
+:root[data-theme="dark"] .ad-hint { color: var(--t2); }
+:root[data-theme="dark"] .ad-notice { background: var(--paper-2); border-color: var(--line); }
+:root[data-theme="dark"] .ad-bulk { background: #141A26; border: 1px solid var(--line); }
+
+/* ── The theme switch itself ───────────────────────────────── */
+.oa-themeswitch {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 9px 14px; margin-top: 2px;
+  border-radius: var(--r-sm);
+  color: var(--t2); font-size: .78rem; font-weight: 600;
+  background: transparent; border: 1px solid transparent;
+  cursor: pointer; transition: background .16s, color .16s, border-color .16s;
+}
+.oa-themeswitch:hover { background: rgba(10, 19, 36, .05); color: var(--ink-800); }
+:root[data-theme="dark"] .oa-themeswitch:hover { background: rgba(255, 255, 255, .05); color: #fff; }
+.oa-themeswitch i { width: 17px; text-align: center; color: var(--gold-600); }
+:root[data-theme="dark"] .oa-themeswitch i { color: var(--gold-400); }
+.oa-themeswitch .lbl-dark { display: none; }
+:root[data-theme="dark"] .oa-themeswitch .lbl-light { display: none; }
+:root[data-theme="dark"] .oa-themeswitch .lbl-dark { display: inline; }
+
+/* ══════════════════════════════════════════════════════════════
+   Luno chrome in the dark theme
+   oa-admin-luno.css paints the top bar and the tiles for a light
+   canvas; these put them back on a dark one.
+   ══════════════════════════════════════════════════════════════ */
+
+:root[data-theme="dark"] {
+  --lu-canvas: #0B0F17;
+  --lu-line:   #222A38;
+  --lu-ico-bg: #1B2331;
+}
+:root[data-theme="dark"] body { background: var(--lu-canvas); }
+
+:root[data-theme="dark"] .lu-search input {
+  background: #121926;
+  border-color: var(--lu-line);
+  color: #EEF2F8;
+}
+:root[data-theme="dark"] .lu-search input::placeholder { color: var(--t3); }
+:root[data-theme="dark"] .lu-ico { color: var(--t2); }
+:root[data-theme="dark"] .lu-ico:hover { background: var(--lu-ico-bg); color: #EEF2F8; }
+:root[data-theme="dark"] .lu-ico .lu-dot { border-color: #0E131D; }
+:root[data-theme="dark"] .lu-avatar {
+  background: var(--gold-500);
+  color: #0A1324;
+  box-shadow: 0 0 0 2px #0E131D, 0 0 0 3.5px rgba(238, 189, 27, .45);
+}
+
+:root[data-theme="dark"] .lu-crumbs .here { color: var(--t2); }
+:root[data-theme="dark"] .lu-crumbs a,
+:root[data-theme="dark"] .lu-crumbs button { color: var(--gold-400); }
+:root[data-theme="dark"] .lu-greet h1 { color: #EEF2F8; }
+
+:root[data-theme="dark"] .lu-daterange {
+  background: #141A26;
+  border-color: var(--lu-line);
+  color: #EEF2F8;
+}
+/* The quick-action cluster is already dark; on a dark canvas it needs a
+   border to separate from the page rather than a fill to stand out. */
+:root[data-theme="dark"] .lu-quick button {
+  background: #1B2331;
+  color: #EEF2F8;
+  border-left-color: rgba(255, 255, 255, .07);
+}
+:root[data-theme="dark"] .lu-quick button:hover { background: #26303F; }
+
+:root[data-theme="dark"] .stat-card {
+  background: var(--card);
+  border-color: var(--lu-line);
+  box-shadow: none;
+}
+:root[data-theme="dark"] .stat-card .label { color: var(--t2); }
+:root[data-theme="dark"] .stat-card .value { color: #EEF2F8; }
+:root[data-theme="dark"] .stat-card::before { background: rgba(255, 255, 255, .06); }
+:root[data-theme="dark"] .stat-card .lu-tico { background: var(--lu-ico-bg); color: var(--t2); }
+:root[data-theme="dark"] .stat-card.acc-ok   .lu-tico { background: rgba(43, 190, 122, .14); color: #4ED98F; }
+:root[data-theme="dark"] .stat-card.acc-warn .lu-tico { background: rgba(240, 173, 59, .14); color: #F0AD3B; }
+:root[data-theme="dark"] .stat-card.acc-bad  .lu-tico { background: rgba(240, 95, 88, .14);  color: #F4736C; }
+:root[data-theme="dark"] .stat-card.acc-info .lu-tico { background: rgba(93, 150, 232, .14); color: #7FB0F2; }
+:root[data-theme="dark"] .stat-card.acc-gold .lu-tico { background: rgba(238, 189, 27, .14); color: var(--gold-400); }
+
+:root[data-theme="dark"] .oa-card { border-color: var(--lu-line); }
