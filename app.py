@@ -104,6 +104,23 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 mail = Mail(app)
 
+# Almost every query filters attendance by date, or by person and date, and
+# the leave list by status. Without these Mongo scans the whole collection,
+# which is what makes the console feel slow once there is real history.
+# create_index is idempotent, so this is safe on every start.
+if os.environ.get("SKIP_INDEXES", "").lower() not in ("1", "true", "yes"):
+    try:
+        mongo.db.attendance.create_index("date")
+        mongo.db.attendance.create_index([("user_id", 1), ("date", 1)])
+        mongo.db.attendance.create_index([("username", 1), ("date", 1)])
+        mongo.db.leave_applications.create_index([("status", 1), ("applied_at", -1)])
+        mongo.db.leave_applications.create_index([("user_id", 1), ("date", 1)])
+        mongo.db.face_security_logs.create_index([("date", 1), ("match_result", 1)])
+        mongo.db.users.create_index("username")
+    except Exception as e:
+        print(f"[MONGO WARNING] Could not ensure indexes: {e}")
+
+
 # ─────────────────────────────────────────────────────────────
 #  PRIMARY DUTY STATION
 #  Every "where are you" label in the product comes from here.
@@ -341,6 +358,12 @@ def display_name(doc):
     if not doc:
         return ""
     return (doc.get("full_name") or "").strip() or (doc.get("username") or "").strip()
+
+
+# Face data (embeddings and base64 thumbnails) makes a user document large.
+# Pages that only list people must not drag it across the wire, nor the
+# password hash. face_thumb — the single small preview — is kept.
+USER_LIST_FIELDS = {"face_features": 0, "face_thumbs": 0, "password": 0}
 
 
 def name_map():
@@ -2823,7 +2846,7 @@ def compute_day_overview(day, usernames=None):
     user_query = {"role": {"$ne": "admin"}}
     if usernames:
         user_query["username"] = {"$in": list(usernames)}
-    users = list(mongo.db.users.find(user_query))
+    users = list(mongo.db.users.find(user_query, USER_LIST_FIELDS))
 
     if True:
         # This day's sessions, grouped by user.
@@ -3230,13 +3253,12 @@ def user_dashboard():
 def admin_dashboard():
     if current_user.role != "admin":
         return redirect(url_for("user_dashboard"))
-    users_raw = list(mongo.db.users.find())
+    users_raw = list(mongo.db.users.find({}, USER_LIST_FIELDS))
     users     = [{**u, '_id': str(u['_id'])} for u in users_raw]
-    recent    = list(mongo.db.attendance.find().sort("date", -1).limit(100))
     cutoff    = (date.today() - timedelta(days=90)).isoformat()
     leaves    = list(mongo.db.leave_applications.find({"date": {"$gte": cutoff}}).sort("applied_at", -1))
     leaves_data = [{"id":str(l["_id"]),"username":l.get("username"),"user_email":l.get("user_email"),"date":l.get("date"),"type":l.get("type"),"comments":l.get("comments",""),"status":l.get("status","pending"),"admin_comments":l.get("admin_comments",""),"applied_at":l.get("applied_at"),"updated_at":l.get("updated_at")} for l in leaves]
-    return render_template("admin_dashboard.html", users=users, recent=recent, leaves=leaves_data, shifts=SHIFT_TIMINGS, today_date=date.today().isoformat(), google_maps_api_key=GOOGLE_MAPS_API_KEY)
+    return render_template("admin_dashboard.html", users=users, leaves=leaves_data, shifts=SHIFT_TIMINGS, today_date=date.today().isoformat(), google_maps_api_key=GOOGLE_MAPS_API_KEY)
 
 
 @app.route("/admin/export", methods=["GET"])
@@ -3995,7 +4017,7 @@ def shared_analysis_view(token):
         expected_users = sorted(set(users), key=lambda x: x.lower())
     else:
         expected_users = sorted(
-            (u.get("username", "") for u in mongo.db.users.find({"role": {"$ne": "admin"}})),
+            (u.get("username", "") for u in mongo.db.users.find({"role": {"$ne": "admin"}}, {"username": 1})),
             key=lambda x: x.lower())
     expected_set = set(expected_users)
 
@@ -4098,7 +4120,7 @@ def shared_analysis_excel(token):
             uq = {"role": {"$ne": "admin"}}
             if users:
                 uq["username"] = {"$in": users}
-            docs = sorted(mongo.db.users.find(uq),
+            docs = sorted(mongo.db.users.find(uq, USER_LIST_FIELDS),
                           key=lambda u: (u.get("username") or "").lower())
             mem = build_people_report_workbook(docs, start, end)
             name = (person_download_name(users[0], start, end) if len(users) == 1

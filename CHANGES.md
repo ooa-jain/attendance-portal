@@ -434,3 +434,24 @@ Two bugs fixed at the same time:
   failed. Both pages now submit once.
 * `/login` rendered the sign-in form even when already signed in. It, and
   both code pages, now send an authenticated user to their dashboard.
+
+### Why the console was slow
+
+Three things, all on the path you hit after entering the sign-in code — the
+"Checking…" button stays up until the dashboard that follows has rendered.
+
+* **The admin dashboard loaded every user in full**, including `face_features`
+  (the recognition embeddings) and `face_thumbs` (a list of base64 JPEGs), plus
+  the password hash. The page only needs the single small `face_thumb`. Those
+  fields are now left in the database.
+* **It also ran `attendance.find().sort("date", -1).limit(100)` whose result was
+  never used** — the Recent activity table is filled by JavaScript. An unindexed
+  sort makes Mongo order the whole collection to produce rows nobody reads. The
+  query is gone.
+* **There were no indexes.** `date`, `user_id + date` and `username + date` on
+  attendance, status and user on leave applications, date on the face log, and
+  username on users are now created at start-up (idempotent; set `SKIP_INDEXES=1`
+  to skip). Nearly every query in the app filters on one of these.
+
+The same projection now applies to the day overview, which runs on the Analysis
+tab and in the nightly digest.
