@@ -14,6 +14,7 @@ import re
 import random
 import secrets
 import json
+import threading
 import requests
 import base64
 import numpy as np
@@ -575,6 +576,20 @@ def register():
 #  code below, where failing to send has to block the sign-in.
 # ─────────────────────────────────────────────────────────────
 
+def send_mail_async(subject, recipients, body, html=None, attachments=()):
+    """Hand a mail off to a background thread and return at once.
+
+    For mail nobody is waiting on. An SMTP round trip costs a couple of
+    seconds, which has no business sitting inside someone's request — but it
+    also means the outcome is only visible in the log, so anything whose
+    success the caller must know (the sign-in code) still uses send_mail.
+    """
+    def run():
+        with app.app_context():
+            send_mail(subject, recipients, body, html, attachments)
+    threading.Thread(target=run, daemon=True).start()
+
+
 def send_mail(subject, recipients, body, html=None, attachments=()):
     """Send one mail. Returns (ok, error). Never raises into a request."""
     recipients = [r for r in (recipients or []) if r]
@@ -641,9 +656,9 @@ def notify_leave_application(leave_doc, user_doc):
     inner += ("</table><p style='margin:16px 0 0;color:#8A8578;font-size:12px'>"
               "Approve or decline it under <strong>Leave requests</strong> in the admin console.</p>")
 
-    send_mail(f"Leave request · {who} · {leave_doc.get('date','')}",
-              REPORT_RECIPIENTS, body,
-              _mail_shell("Leave request", f"{who} · {pretty}", inner))
+    send_mail_async(f"Leave request · {who} · {leave_doc.get('date','')}",
+                    REPORT_RECIPIENTS, body,
+                    _mail_shell("Leave request", f"{who} · {pretty}", inner))
 
 
 def _html_escape(s):
