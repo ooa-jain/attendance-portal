@@ -247,6 +247,14 @@
 :root[data-theme="dark"] .oa-themeswitch .lbl-light { display: none; }
 :root[data-theme="dark"] .oa-themeswitch .lbl-dark { display: inline; }
 
+/* The skin switch reuses .oa-themeswitch; same label swap, keyed on the
+   skin instead of the theme. */
+.oa-themeswitch .lbl-packet { display: none; }
+:root[data-skin="packet"] .oa-themeswitch .lbl-luno { display: none; }
+:root[data-skin="packet"] .oa-themeswitch .lbl-packet { display: inline; }
+:root[data-skin="packet"] .oa-themeswitch i { color: var(--pk-bar); }
+:root[data-skin="packet"] .oa-themeswitch:hover { background: var(--pk-cell); }
+
 /* ══════════════════════════════════════════════════════════════
    Luno chrome in the dark theme
    oa-admin-luno.css paints the top bar and the tiles for a light
@@ -310,3 +318,93 @@
 :root[data-theme="dark"] .stat-card.acc-gold .lu-tico { background: rgba(238, 189, 27, .14); color: var(--gold-400); }
 
 :root[data-theme="dark"] .oa-card { border-color: var(--lu-line); }
+
+/* ══════════════════════════════════════════════════════════════
+   Packet skin in the dark theme
+
+   This sheet loads after oa-admin-packet.css, so without these rules
+   it wins every overlap — which left the welcome band white with
+   white text on it, the icon cells wearing the dark theme's accent
+   tints, and the masthead dark instead of crimson.
+
+   Mostly it is enough to re-point the --pk-* tokens at dark values,
+   since the skin reads them for everything; the rest re-asserts the
+   few places this sheet sets a colour outright.
+   ══════════════════════════════════════════════════════════════ */
+
+:root[data-theme="dark"][data-skin="packet"] {
+  --pk-canvas:  #0B0F17;
+  --pk-card:    #141A26;
+  --pk-line:    #222A38;
+  --pk-cell:    #1B2331;
+  --pk-t1:      #EEF2F8;
+  --pk-t2:      #A8B2C1;
+  --pk-t3:      #7A8595;
+  --pk-up-bg:   rgba(92, 184, 92, .14);
+  --pk-down-bg: rgba(217, 83, 79, .14);
+}
+
+/* The masthead is what makes the skin recognisable; keep it. */
+:root[data-theme="dark"][data-skin="packet"] .oa-topbar {
+  background: var(--pk-bar);
+  border-bottom: 0;
+}
+
+:root[data-theme="dark"][data-skin="packet"] .lu-greet {
+  background: var(--pk-card);
+  border-color: var(--pk-line);
+}
+:root[data-theme="dark"][data-skin="packet"] .lu-greet h1 { color: var(--pk-t1); }
+:root[data-theme="dark"][data-skin="packet"] .lu-greet .lede { color: var(--pk-t2); }
+:root[data-theme="dark"][data-skin="packet"] .lu-daterange {
+  background: var(--pk-card);
+  border-color: var(--pk-line);
+  color: var(--pk-t2);
+}
+:root[data-theme="dark"][data-skin="packet"] .lu-quick button { background: var(--pk-bar); }
+
+:root[data-theme="dark"][data-skin="packet"] .stats-grid {
+  background: var(--pk-line);
+  border-color: var(--pk-line);
+}
+:root[data-theme="dark"][data-skin="packet"] .stat-card {
+  background: var(--pk-card);
+  border: 0;
+}
+:root[data-theme="dark"][data-skin="packet"] .stat-card .label,
+:root[data-theme="dark"][data-skin="packet"] .stat-card .value { color: var(--pk-t1); }
+:root[data-theme="dark"][data-skin="packet"] .stat-card .lu-note { color: var(--pk-t3); }
+/* Packet's icon cells are one neutral colour, not per-metric tints. */
+:root[data-theme="dark"][data-skin="packet"] .stat-card .lu-tico,
+:root[data-theme="dark"][data-skin="packet"] .stat-card.acc-ok   .lu-tico,
+:root[data-theme="dark"][data-skin="packet"] .stat-card.acc-warn .lu-tico,
+:root[data-theme="dark"][data-skin="packet"] .stat-card.acc-bad  .lu-tico,
+:root[data-theme="dark"][data-skin="packet"] .stat-card.acc-info .lu-tico,
+:root[data-theme="dark"][data-skin="packet"] .stat-card.acc-gold .lu-tico {
+  background: var(--pk-cell);
+  color: var(--pk-t2);
+  border-right: 1px solid var(--pk-line);
+}
+
+:root[data-theme="dark"][data-skin="packet"] .oa-rail {
+  background: #0E131D;
+  border-right: 1px solid var(--pk-line);
+}
+:root[data-theme="dark"][data-skin="packet"] .oa-card {
+  background: var(--pk-card);
+  border-color: var(--pk-line);
+}
+:root[data-theme="dark"][data-skin="packet"] .oa-table th {
+  background: var(--pk-cell);
+  color: var(--pk-t2);
+}
+:root[data-theme="dark"][data-skin="packet"] .lu-avatar {
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+  border-radius: var(--pk-r);
+  box-shadow: none;
+}
+:root[data-theme="dark"][data-skin="packet"] .lu-crumbs a,
+:root[data-theme="dark"][data-skin="packet"] .lu-crumbs button { color: var(--pk-bar); }
+:root[data-theme="dark"][data-skin="packet"] .oa-rail-nav .oa-navitem.on,
+:root[data-theme="dark"][data-skin="packet"] .oa-navitem.on { color: var(--pk-bar); }

@@ -12,6 +12,27 @@
         try { localStorage.setItem('oaTheme', dark ? 'light' : 'dark'); } catch (e) {}
     }
 
+    // Skins. Luno is the default; Packet is a flat, square alternative.
+    // Its two faces are fetched only when it is switched on, so the Luno
+    // skin pays nothing for them.
+    function lunoLoadPacketFonts() {
+        if (document.getElementById('pkFonts')) return;
+        const l = document.createElement('link');
+        l.id = 'pkFonts';
+        l.rel = 'stylesheet';
+        l.href = 'https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700'
+               + '&family=Raleway:wght@400;600;700&display=swap';
+        document.head.appendChild(l);
+    }
+
+    function toggleSkin() {
+        const root = document.documentElement;
+        const packet = root.getAttribute('data-skin') === 'packet';
+        if (packet) root.removeAttribute('data-skin');
+        else { root.setAttribute('data-skin', 'packet'); lunoLoadPacketFonts(); }
+        try { localStorage.setItem('oaSkin', packet ? 'luno' : 'packet'); } catch (e) {}
+    }
+
     /* ══ Luno dashboard chrome ═══════════════════════════════════════════
        The top bar and the greeting row are plain markup; these are the
        few behaviours behind them.                                        */
@@ -97,6 +118,8 @@
     }
 
     function lunoInit() {
+        if (document.documentElement.getAttribute('data-skin') === 'packet')
+            lunoLoadPacketFonts();
         const d = new Date();
         const el = document.getElementById('lunoToday');
         if (el) el.textContent = d.toLocaleDateString('en-GB',

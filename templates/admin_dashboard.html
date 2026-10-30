@@ -23,12 +23,16 @@
 <!-- Luno-style dashboard chrome. Must sit between oa-admin and the dark
      theme: it overrides the former, the latter overrides it. -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-luno.css') }}">
+<!-- The Packet skin. Inert unless data-skin="packet" is on <html>. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-packet.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-dark.css') }}">
 <script>
   // Set before the first paint, so a reload in dark mode never flashes white.
   try {
     if (localStorage.getItem('oaTheme') === 'dark')
       document.documentElement.setAttribute('data-theme', 'dark');
+    if (localStorage.getItem('oaSkin') === 'packet')
+      document.documentElement.setAttribute('data-skin', 'packet');
   } catch (e) {}
 </script>
 </head>
@@ -62,6 +66,11 @@
       <button class="oa-navitem ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <div class="oa-dsep"></div>
+      <button type="button" class="oa-themeswitch" onclick="toggleSkin()">
+        <i class="fas fa-palette"></i>
+        <span class="lbl-luno">Packet skin</span>
+        <span class="lbl-packet">Luno skin</span>
+      </button>
       <button type="button" class="oa-themeswitch" onclick="toggleTheme()">
         <i class="fas fa-circle-half-stroke"></i>
         <span class="lbl-light">Dark mode</span>

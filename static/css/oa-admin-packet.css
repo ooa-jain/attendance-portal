@@ -1,0 +1,261 @@
+/* ══════════════════════════════════════════════════════════════
+   oa-admin-packet.css — the "Packet" skin for the admin console
+
+   A second skin alongside the Luno one, selected with
+   data-skin="packet" on <html>. Everything is scoped to that
+   attribute, so with the skin off this file costs nothing.
+
+   Packet's language, read off the demo:
+     · flat — no shadows, ~2px corners
+     · a solid colour masthead with a lowercase wordmark
+     · a title band: large light heading, small grey lowercase sub
+     · stat rows laid out sideways — icon cell, label, figure, delta
+     · pale, desaturated chart colours
+
+   Load order: oa-admin → oa-admin-luno → THIS → oa-admin-dark.
+   ══════════════════════════════════════════════════════════════ */
+
+:root[data-skin="packet"] {
+  /* The masthead colour is the one knob worth having. Packet's own
+     crimson by default; set this to var(--ink-800) for JAIN navy. */
+  --pk-bar:      #C0392B;
+  --pk-bar-ink:  #FFFFFF;
+
+  --pk-canvas:  #F5F5F5;
+  --pk-card:    #FFFFFF;
+  --pk-line:    #E8E8E8;
+  --pk-cell:    #F7F7F7;
+  --pk-t1:      #333333;
+  --pk-t2:      #777777;
+  --pk-t3:      #9A9A9A;
+  --pk-up:      #5CB85C;
+  --pk-down:    #D9534F;
+  --pk-up-bg:   #EAF5EA;
+  --pk-down-bg: #FBECEB;
+  --pk-chart:   #B98AB0;
+
+  --pk-r: 2px;              /* Packet is square; this is the whole radius */
+  --pk-head: 'Raleway', 'Plus Jakarta Sans', sans-serif;
+  --pk-body: 'Lato', 'Plus Jakarta Sans', sans-serif;
+}
+
+:root[data-skin="packet"] body {
+  background: var(--pk-canvas);
+  font-family: var(--pk-body);
+  color: var(--pk-t1);
+}
+
+/* ── Masthead ─────────────────────────────────────────────── */
+:root[data-skin="packet"] .oa-topbar {
+  height: 64px;
+  background: var(--pk-bar);
+  color: var(--pk-bar-ink);
+  border-bottom: 0;
+  box-shadow: none;
+}
+:root[data-skin="packet"] .oa-topbar .org {
+  font-family: var(--pk-head);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-transform: lowercase;
+  color: var(--pk-bar-ink);
+}
+/* The dot after the wordmark, as in the demo. */
+:root[data-skin="packet"] .oa-topbar .org::after {
+  content: " \00B7";
+  color: rgba(255, 255, 255, .55);
+}
+:root[data-skin="packet"] .oa-topbar .sub { display: none; }
+
+:root[data-skin="packet"] .lu-search input {
+  background: rgba(255, 255, 255, .14);
+  border: 0;
+  border-radius: var(--pk-r);
+  color: var(--pk-bar-ink);
+}
+:root[data-skin="packet"] .lu-search input::placeholder { color: rgba(255, 255, 255, .7); }
+:root[data-skin="packet"] .lu-search input:focus {
+  background: rgba(255, 255, 255, .22);
+  box-shadow: none;
+}
+:root[data-skin="packet"] .lu-search > i { color: rgba(255, 255, 255, .75); }
+
+:root[data-skin="packet"] .lu-ico { color: rgba(255, 255, 255, .85); }
+:root[data-skin="packet"] .lu-ico:hover {
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+}
+:root[data-skin="packet"] .lu-ico .lu-dot { border-color: var(--pk-bar); }
+:root[data-skin="packet"] .lu-avatar {
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+  border-radius: var(--pk-r);
+  box-shadow: none;
+}
+
+/* ── Rail: flattened, light, square ──────────────────────── */
+:root[data-skin="packet"] .oa-rail { background: var(--pk-card); border-right: 1px solid var(--pk-line); }
+:root[data-skin="packet"] .oa-rail-head { border-bottom: 1px solid var(--pk-line); }
+:root[data-skin="packet"] .oa-rail-head .org { font-family: var(--pk-head); color: var(--pk-t1); }
+/* :not(.danger) so Sign out keeps its red — the plain colour here is the
+   same specificity as the base rule and would otherwise win on load order. */
+:root[data-skin="packet"] .oa-navitem:not(.danger) { border-radius: 0; color: var(--pk-t2); }
+:root[data-skin="packet"] .oa-rail-nav .oa-navitem.on,
+:root[data-skin="packet"] .oa-navitem.on { color: var(--pk-bar); font-weight: 700; }
+:root[data-skin="packet"] .oa-rail-nav .oa-navitem.on i,
+:root[data-skin="packet"] .oa-navitem.on i { color: var(--pk-bar); }
+:root[data-skin="packet"] .oa-nav-highlight {
+  background: var(--pk-cell);
+  border-radius: 0;
+  box-shadow: none;
+  left: 0; right: 0;
+}
+/* The travelling edge is gold in the base theme; Packet's is the bar colour,
+   full height and square. */
+:root[data-skin="packet"] .oa-nav-highlight::before {
+  height: 100%;
+  border-radius: 0;
+  background: var(--pk-bar);
+}
+:root[data-skin="packet"] .oa-nav-group { color: var(--pk-t3); }
+
+/* ── Title band ───────────────────────────────────────────
+   Packet gives the page title its own white band above the
+   content rather than a card. The Luno greeting row becomes it. */
+:root[data-skin="packet"] .lu-crumbs { color: var(--pk-t3); }
+:root[data-skin="packet"] .lu-crumbs a,
+:root[data-skin="packet"] .lu-crumbs button { color: var(--pk-bar); }
+
+:root[data-skin="packet"] .lu-greet {
+  background: var(--pk-card);
+  border: 1px solid var(--pk-line);
+  border-radius: var(--pk-r);
+  padding: 20px 22px;
+  align-items: center;
+}
+:root[data-skin="packet"] .lu-greet h1 {
+  font-family: var(--pk-head);
+  font-size: 1.5rem;
+  font-weight: 400;          /* Packet's titles are light, not bold */
+  letter-spacing: 0;
+  color: var(--pk-t1);
+  margin-bottom: 2px;
+}
+:root[data-skin="packet"] .lu-greet .lede {
+  font-size: .82rem;
+  color: var(--pk-t2);
+  text-transform: lowercase;
+}
+:root[data-skin="packet"] .lu-daterange {
+  border-radius: var(--pk-r);
+  border-color: var(--pk-line);
+  color: var(--pk-t2);
+}
+:root[data-skin="packet"] .lu-quick button { background: var(--pk-bar); border-left-color: rgba(255,255,255,.22); }
+:root[data-skin="packet"] .lu-quick button:hover { filter: brightness(1.1); }
+:root[data-skin="packet"] .lu-quick button:last-child { border-radius: 0 var(--pk-r) var(--pk-r) 0; }
+
+/* ── Stat rows ─────────────────────────────────────────────
+   Packet reads a figure sideways: what it is on the left, how many
+   on the right, which way it moved at the end. Same markup as the
+   Luno tiles, laid out along the other axis.                     */
+:root[data-skin="packet"] .stats-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;                       /* rows butt together, hairline between */
+  background: var(--pk-line);
+  border: 1px solid var(--pk-line);
+  border-radius: var(--pk-r);
+  overflow: hidden;
+}
+@media (min-width: 1150px) {
+  :root[data-skin="packet"] .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+:root[data-skin="packet"] .stat-card {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  grid-template-areas: "icon label value";
+  align-items: center;
+  gap: 0 14px;
+  padding: 0 18px 0 0;
+  min-height: 62px;
+  background: var(--pk-card);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+/* The bar along the bottom is Luno's idea, not Packet's. */
+:root[data-skin="packet"] .stat-card::before,
+:root[data-skin="packet"] .stat-card::after { display: none; }
+
+:root[data-skin="packet"] .stat-card .lu-tico {
+  position: static;
+  grid-area: icon;
+  width: 100%; height: 62px;
+  border-radius: 0;
+  background: var(--pk-cell);
+  color: var(--pk-t2);
+  font-size: 1rem;
+  border-right: 1px solid var(--pk-line);
+}
+:root[data-skin="packet"] .stat-card.acc-ok   .lu-tico,
+:root[data-skin="packet"] .stat-card.acc-warn .lu-tico,
+:root[data-skin="packet"] .stat-card.acc-bad  .lu-tico,
+:root[data-skin="packet"] .stat-card.acc-info .lu-tico,
+:root[data-skin="packet"] .stat-card.acc-gold .lu-tico {
+  background: var(--pk-cell);
+  color: var(--pk-t2);
+}
+
+:root[data-skin="packet"] .stat-card .label {
+  grid-area: label;
+  order: 0;
+  margin: 0;
+  padding: 0;
+  font-family: var(--pk-body);
+  font-size: .86rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pk-t1);
+}
+:root[data-skin="packet"] .stat-card .lu-note {
+  grid-area: label;
+  align-self: end;
+  margin: 0;
+  padding-top: 26px;             /* sits under the label in the same cell */
+  font-size: .68rem;
+  color: var(--pk-t3);
+}
+:root[data-skin="packet"] .stat-card .value {
+  grid-area: value;
+  font-family: var(--pk-body);
+  font-size: 1.25rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--pk-t1);
+}
+
+/* ── Cards, tables, buttons: flattened ───────────────────── */
+:root[data-skin="packet"] .oa-card {
+  border-radius: var(--pk-r);
+  border-color: var(--pk-line);
+  box-shadow: none;
+}
+:root[data-skin="packet"] .oa-card-head h2 {
+  font-family: var(--pk-head);
+  font-weight: 600;
+  color: var(--pk-t1);
+}
+:root[data-skin="packet"] .oa-table th {
+  background: var(--pk-cell);
+  color: var(--pk-t2);
+  font-weight: 700;
+}
+:root[data-skin="packet"] .oa-btn,
+:root[data-skin="packet"] input,
+:root[data-skin="packet"] select,
+:root[data-skin="packet"] textarea { border-radius: var(--pk-r); }
+:root[data-skin="packet"] .oa-tag,
+:root[data-skin="packet"] .oa-pill { border-radius: var(--pk-r); }

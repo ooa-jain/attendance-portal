@@ -539,3 +539,65 @@ items that do not match, so typing "leave" points at Leave requests.
   so "Dr. Madhavi R" is greeted as Madhavi.
 - Jinja's `truncate()` has a five-character leeway, so `truncate(2)` let the
   three-letter initials "SKS" through whole. Replaced with a slice.
+
+---
+
+## Admin console: a second skin, "Packet"
+
+You sent the Packet demo and asked to try that style. The console now has
+**two skins**, switched from the rail (above Dark mode) and remembered per
+browser:
+
+| Skin | Look |
+|---|---|
+| **Luno** (default) | soft cards, rounded corners, navy/gold, vertical stat tiles |
+| **Packet** | flat, square (2px), crimson masthead, sideways stat rows |
+
+Both work in light and dark. The skin and the theme are independent, so
+there are four combinations and all four were checked.
+
+**What Packet changes** (`static/css/oa-admin-packet.css`, scoped entirely to
+`data-skin="packet"` so it costs nothing when off):
+
+- **Solid crimson masthead** with a lowercase `admin console ·` wordmark,
+  the search dropped into it as a translucent field.
+- **Flat everything** — shadows removed, corners down to 2px.
+- **Title band** — the greeting becomes Packet's light, large heading over a
+  small lowercase subtitle.
+- **Stat rows read sideways**: tinted icon cell │ label and caption │ figure,
+  butted together with hairlines, instead of Luno's vertical tiles. Same
+  markup, laid out on the other axis.
+- **Rail flattened**, with a full-height crimson edge on the active item.
+
+**The masthead colour is one token.** In `oa-admin-packet.css`:
+
+```css
+--pk-bar: #C0392B;          /* Packet's crimson */
+--pk-bar: var(--ink-800);   /* JAIN navy instead */
+```
+
+Both are rendered in the screenshots — crimson is closer to the demo, navy
+keeps the console matching the logo.
+
+**Fonts.** Packet uses Lato and Raleway. They are fetched only when the skin
+is switched on, so the Luno skin carries no extra requests — worth having
+given the load-time complaints.
+
+### Scope, honestly
+
+The skin covers the console **chrome**: masthead, rail, title band, stat
+rows, cards and tables. Deeper components — the gold "Enable for everyone"
+button, the amber advisory panels, section rules — still wear JAIN gold under
+Packet. Restyling every one of those is a much larger job; say the word if
+you want it carried all the way through.
+
+### Bugs found while building it
+
+- The dark theme loads after the skin, so it won **every** overlap: the
+  welcome band came out white with white text on it, the icon cells wore the
+  dark theme's per-metric tints, and the crimson masthead went dark. Fixed by
+  giving the dark sheet a `[data-theme="dark"][data-skin="packet"]` section
+  that re-points the skin's tokens rather than fighting rule by rule.
+- `Sign out` lost its red. The flat rail colour and the base `.danger` rule
+  have equal specificity, so the later one won; the skin rule is now
+  `:not(.danger)`.
