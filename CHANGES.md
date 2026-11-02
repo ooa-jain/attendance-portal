@@ -648,3 +648,65 @@ It shipped as opt-in behind the rail switch, so loading the console showed
 the Luno skin — which you already had. You asked to *use* that style, so
 **Packet is now the default**. The rail switch still flips to Luno and the
 choice sticks across reloads.
+
+---
+
+## Prototype: password gate, shareable link, object detection
+
+The face prototype is now reachable from the server, behind a password, and
+can be shared with people who have no account.
+
+### Getting in
+
+| | |
+|---|---|
+| Sign in | `https://your-domain/admin/prototype/login` |
+| Password | `12345678s` |
+| The page | `/admin/prototype` |
+| Share a link | button on the page → `/share/prototype/<token>` |
+
+The password is read from `PROTOTYPE_PASSWORD` in `.env` and falls back to
+the one above. **Because that fallback sits in the repository, treat it as
+public** — anyone who can read the code can read the password. Set
+`PROTOTYPE_PASSWORD` in `.env` to something else before this is on a public
+domain for long.
+
+### It cannot reach the admin console
+
+Passing this password sets one session flag that unlocks this page and
+nothing else. It is not a Flask-Login session, carries no role, and reaches
+no attendance data. Tested: a client holding the prototype session, and a
+stranger holding only a share link, both get bounced to `/login` when they
+try `/admin/dashboard`.
+
+The page also moved from `static/` to `templates/`. Left in `static/`, Flask
+would have served it at `/static/face-prototype.html` to anyone who guessed
+the name, and the password would have been decoration.
+
+### Object detection
+
+The prototype now runs **CenterNet** alongside the face pipeline — 80 COCO
+classes. Hold up a book and the Scene panel reads **book**; a phone reads
+**cell phone**. People are detected as **person** whether or not they face
+the camera, which the face detector alone cannot do. Strongest detection is
+listed first.
+
+It runs on a one-second timer rather than every frame, because the model is
+heavy and a scene does not change thirty times a second.
+
+On "most powerful": CenterNet is the strongest detector this library ships
+and it runs in the browser with no server. A YOLO model served from Python
+would beat it on accuracy, at the cost of sending every frame to the server.
+For a demo that runs on someone's phone from a link, this is the right side
+of that trade.
+
+### Tested
+
+Routes driven end to end against the real `app.py` with Mongo and OpenCV
+stubbed: the gate rejects a wrong password (401), redirects when unlocked,
+mints a working share link, refuses an invented token (404), hides the share
+button on a shared view, and blocks both session types from the admin
+console.
+
+Not tested: the camera and the models themselves. This session has no camera
+and the model CDN is blocked here.

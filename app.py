@@ -13,6 +13,7 @@ import os
 import re
 import random
 import secrets
+import hmac
 import json
 import threading
 import requests
@@ -4040,6 +4041,83 @@ def admin_delete_user(user_id):
         return jsonify({"ok": True, "message": f"User {user['username']} deleted."})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  FACE / OBJECT PROTOTYPE — password-gated, separately shareable
+#
+#  Deliberately kept apart from Flask-Login. Passing this password gives a
+#  session flag that unlocks this one page and nothing else: it is not an
+#  admin session, grants no role, and cannot reach attendance data. The
+#  template lives under templates/ rather than static/ so the only way in is
+#  through these routes.
+# ══════════════════════════════════════════════════════════════════════
+
+# Override with PROTOTYPE_PASSWORD in .env. The fallback is the one asked
+# for; because it sits in the repository, treat it as public.
+PROTOTYPE_PASSWORD = os.environ.get("PROTOTYPE_PASSWORD", "12345678s")
+PROTOTYPE_SESSION_KEY = "proto_ok"
+
+
+def _prototype_unlocked():
+    return bool(session.get(PROTOTYPE_SESSION_KEY))
+
+
+@app.route("/admin/prototype/login", methods=["GET", "POST"])
+def prototype_login():
+    if request.method == "POST":
+        supplied = request.form.get("password", "")
+        # compare_digest keeps the check constant-time.
+        if hmac.compare_digest(supplied, PROTOTYPE_PASSWORD):
+            session[PROTOTYPE_SESSION_KEY] = True
+            return redirect(url_for("prototype_view"))
+        return render_template("prototype_login.html",
+                               error="That password is not right."), 401
+    if _prototype_unlocked():
+        return redirect(url_for("prototype_view"))
+    return render_template("prototype_login.html", error=None)
+
+
+@app.route("/admin/prototype/logout")
+def prototype_logout():
+    session.pop(PROTOTYPE_SESSION_KEY, None)
+    return redirect(url_for("prototype_login"))
+
+
+@app.route("/admin/prototype")
+def prototype_view():
+    if not _prototype_unlocked():
+        return redirect(url_for("prototype_login"))
+    return render_template("prototype.html", shared=False)
+
+
+@app.route("/api/admin/prototype/share", methods=["POST"])
+def prototype_create_share():
+    """Mint a no-login link to the prototype.
+
+    Open to whoever already holds the password, which is the point: the page
+    demonstrates a camera pipeline and carries no attendance data.
+    """
+    if not _prototype_unlocked():
+        return jsonify({"error": "Sign in to the prototype first."}), 403
+    token = secrets.token_urlsafe(24)
+    mongo.db.prototype_shares.insert_one({
+        "token":      token,
+        "created_by": current_user.username if current_user.is_authenticated else "prototype",
+        "created_at": datetime.utcnow(),
+        "revoked":    False,
+    })
+    return jsonify({"ok": True, "token": token,
+                    "url": url_for("shared_prototype_view", token=token, _external=True)})
+
+
+@app.route("/share/prototype/<token>")
+def shared_prototype_view(token):
+    share = mongo.db.prototype_shares.find_one({"token": token, "revoked": {"$ne": True}})
+    if not share:
+        return render_template("prototype_login.html",
+                               error="That share link is not valid any more."), 404
+    return render_template("prototype.html", shared=True)
 
 
 @app.route("/health")

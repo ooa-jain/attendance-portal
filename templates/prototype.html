@@ -59,6 +59,24 @@
           color:var(--t2); border:1px solid var(--line); }
   .pill.on { background:var(--ok-bg); color:var(--ok); border-color:#BFE0CF; }
   #boot { font-size:.82rem; color:var(--t2); font-family:var(--mono); }
+  .objlist { display:flex; flex-wrap:wrap; gap:8px; min-height:34px; align-items:flex-start; }
+  .objempty { color:var(--t3); font-size:.84rem; }
+  .obj {
+    display:inline-flex; align-items:baseline; gap:7px; padding:6px 11px;
+    border:1px solid var(--line); border-radius:7px; background:var(--paper); font-size:.84rem;
+  }
+  .obj b { font-weight:700; }
+  .obj span { font-family:var(--mono); font-size:.74rem; color:var(--t2); }
+  .obj.person { background:var(--ok-bg); border-color:#BFE0CF; }
+  .obj.person b { color:var(--ok); }
+  #shareOut {
+    font-size:.82rem; padding:11px 13px; border:1px solid var(--line);
+    border-radius:8px; background:var(--card);
+  }
+  #shareOut input {
+    width:100%; margin-top:7px; font-family:var(--mono); font-size:.76rem;
+    padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--paper);
+  }
 </style>
 </head>
 <body>
@@ -66,9 +84,19 @@
   <header>
     <h1>Face check v2 — prototype</h1>
     <div class="sub">
-      Detection, a 1024-dimension identity embedding, and two anti-spoofing models —
-      all in the browser. Nothing leaves this page.
+      Face identity, two anti-spoofing models and 80-class object detection —
+      all in the browser. No frame is uploaded anywhere.
     </div>
+    <div class="row" style="margin-top:10px">
+      {% if shared %}
+        <span class="pill on">shared link</span>
+        <span class="pill">read-only session</span>
+      {% else %}
+        <button id="btnShare">Create shareable link</button>
+        <a href="{{ url_for('prototype_logout') }}" style="text-decoration:none"><button>Sign out</button></a>
+      {% endif %}
+    </div>
+    <div id="shareOut" hidden style="margin-top:10px"></div>
   </header>
 
   <div class="grid">
@@ -136,6 +164,16 @@
         current portal has no equivalent of.
       </div>
     </div>
+
+    <div class="card" style="grid-column:1/-1">
+      <h2>Scene — what else is in frame</h2>
+      <div class="sub" style="font-size:.8rem;margin:-6px 0 12px">
+        80 COCO classes. Hold a book up and it reads <b>book</b>; a phone reads
+        <b>cell phone</b>. People are detected as <b>person</b> whether or not
+        they are facing the camera, which the face detector alone cannot do.
+      </div>
+      <div id="objects" class="objlist"><span class="objempty">Nothing detected yet.</span></div>
+    </div>
   </div>
 </div>
 
@@ -166,8 +204,11 @@
       iris:        { enabled: false },
       emotion:     { enabled: false },
     },
-    body: { enabled: false }, hand: { enabled: false },
-    object: { enabled: false }, gesture: { enabled: false },
+    // 80 COCO classes — person, book, cell phone, laptop and the rest.
+    // It runs on a timer rather than every frame; the model is heavy and a
+    // scene does not change 30 times a second.
+    object: { enabled: true, minConfidence: 0.25, maxDetected: 10, skipTime: 1000 },
+    body: { enabled: false }, hand: { enabled: false }, gesture: { enabled: false },
   });
 
   const $ = id => document.getElementById(id);
@@ -263,6 +304,7 @@
       meter('m-face', 0, false); meter('m-real', 0, null); meter('m-live', 0, null);
     }
     $('kMs').textContent = (performance.now() - t0).toFixed(0) + ' ms';
+    paintObjects(result.object || []);
 
     requestAnimationFrame(loop);
   }
@@ -322,6 +364,58 @@
           ' threshold. Either a different person, or the enrolment needs redoing ' +
           'in this lighting.');
     }
+  }
+
+  // Strongest first, so whatever you are holding up leads the list.
+  function paintObjects(objects) {
+    const box = $('objects');
+    if (!objects.length) {
+      box.innerHTML = '';
+      const e = document.createElement('span');
+      e.className = 'objempty';
+      e.textContent = 'Nothing detected yet.';
+      box.appendChild(e);
+      return;
+    }
+    const sorted = objects.slice().sort((a, b) => b.score - a.score);
+    box.innerHTML = '';
+    for (const o of sorted) {
+      const el = document.createElement('div');
+      el.className = 'obj' + (o.label === 'person' ? ' person' : '');
+      const b = document.createElement('b');
+      b.textContent = o.label;
+      const sc = document.createElement('span');
+      sc.textContent = o.score.toFixed(2);
+      el.appendChild(b); el.appendChild(sc);
+      box.appendChild(el);
+    }
+  }
+
+  // ── sharing ────────────────────────────────────────────────────────────
+  const btnShare = $('btnShare');
+  if (btnShare) {
+    btnShare.addEventListener('click', async () => {
+      btnShare.disabled = true;
+      const out = $('shareOut');
+      try {
+        const r = await fetch('/api/admin/prototype/share', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok || !d.url) throw new Error(d.error || ('HTTP ' + r.status));
+        out.hidden = false;
+        out.innerHTML = '';
+        const p = document.createElement('div');
+        p.textContent = 'Anyone with this link can open the prototype. No sign-in, no password.';
+        const i = document.createElement('input');
+        i.readOnly = true; i.value = d.url;
+        i.addEventListener('focus', () => i.select());
+        out.appendChild(p); out.appendChild(i);
+        i.focus();
+      } catch (err) {
+        out.hidden = false;
+        out.textContent = 'Could not create a link: ' + err.message;
+      }
+      btnShare.disabled = false;
+    });
   }
 
   btnStart.addEventListener('click', start);
