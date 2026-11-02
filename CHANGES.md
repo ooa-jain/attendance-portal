@@ -710,3 +710,29 @@ console.
 
 Not tested: the camera and the models themselves. This session has no camera
 and the model CDN is blocked here.
+
+### Front and back camera
+
+A **Front / Back** switch sits next to Start camera. Pick one before
+starting, or switch while it is running — the old stream is stopped and a new
+one opened, so the camera light goes out on the one you left.
+
+The back camera is the useful one for the Scene panel: hold the phone over a
+book or a desk rather than turning the book around to face a laptop.
+
+Two details that matter:
+
+- **Only the front view is mirrored.** An unmirrored selfie view is
+  disorienting, but flipping the whole canvas in CSS would mirror Human's
+  labels too and print them backwards. Instead `filter.flip` tells Human to
+  analyse a flipped frame, and the page draws `result.canvas` — the frame
+  Human actually worked on. The boxes land in the right place and the text
+  reads the right way round. The back camera is never mirrored, which is
+  correct for reading anything with writing on it.
+- **Resolution is requested at 1280×720** rather than 640×480. A phone's
+  back camera has it to give, and small text on a book needs it.
+
+If the device reports only one camera, the Back button is disabled with a
+note rather than failing when pressed. On a desktop asking for the back
+camera usually just returns the only camera there is, which is why the count
+is checked instead of trusting the request.

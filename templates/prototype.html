@@ -59,6 +59,14 @@
           color:var(--t2); border:1px solid var(--line); }
   .pill.on { background:var(--ok-bg); color:var(--ok); border-color:#BFE0CF; }
   #boot { font-size:.82rem; color:var(--t2); font-family:var(--mono); }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button {
+    border:0; border-radius:0; padding:9px 15px; font-size:.82rem; font-weight:600;
+    background:var(--card); color:var(--t2); cursor:pointer;
+  }
+  .seg button + button { border-left:1px solid var(--line); }
+  .seg button.on { background:var(--ink); color:#fff; }
+  .seg button:disabled { opacity:.4; cursor:not-allowed; }
   .objlist { display:flex; flex-wrap:wrap; gap:8px; min-height:34px; align-items:flex-start; }
   .objempty { color:var(--t3); font-size:.84rem; }
   .obj {
@@ -107,6 +115,10 @@
         <canvas id="overlay"></canvas>
       </div>
       <div class="row">
+        <div class="seg" id="camSeg">
+          <button type="button" class="on" data-mode="user">Front</button>
+          <button type="button" data-mode="environment">Back</button>
+        </div>
         <button id="btnStart" class="primary">Start camera</button>
         <button id="btnEnrol" class="gold" disabled>Enrol this face (3 shots)</button>
         <button id="btnVerify" disabled>Verify</button>
@@ -214,7 +226,7 @@
   const $ = id => document.getElementById(id);
   const video = $('video'), overlay = $('overlay'), boot = $('boot');
   const btnStart = $('btnStart'), btnEnrol = $('btnEnrol'),
-        btnVerify = $('btnVerify'), btnClear = $('btnClear');
+        btnVerify = $('btnVerify'), btnClear = $('btnClear'), camSeg = $('camSeg');
 
   let running = false, lastFace = null, enrolled = [];
 
@@ -249,6 +261,52 @@
     v.appendChild(document.createTextNode(body));
   }
 
+  // 'user' is the selfie camera, 'environment' the one on the back of a phone.
+  let facing = 'user';
+  let stream = null;
+
+  function stopStream() {
+    if (!stream) return;
+    for (const t of stream.getTracks()) t.stop();
+    stream = null;
+  }
+
+  async function openCamera(mode) {
+    stopStream();
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await video.play();
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+
+    facing = mode;
+    // Mirror the selfie view only. Human flips the frame it analyses, so the
+    // boxes land on the right place and the labels stay the right way round —
+    // which a CSS flip of the whole canvas would not do.
+    human.config.filter.flip = (mode === 'user');
+
+    const track = stream.getVideoTracks()[0];
+    const settings = track ? track.getSettings() : {};
+    boot.textContent = 'Running — ' + (mode === 'user' ? 'front' : 'back') + ' camera, '
+                     + (settings.width || overlay.width) + '×' + (settings.height || overlay.height);
+  }
+
+  // Labels only appear after permission is granted, so this runs post-start.
+  async function countCameras() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      if (cams.length < 2) {
+        const back = camSeg.querySelector('[data-mode="environment"]');
+        back.disabled = true;
+        back.title = 'This device reports only one camera.';
+      }
+    } catch (e) { /* enumeration is optional */ }
+  }
+
   async function start() {
     btnStart.disabled = true;
     try {
@@ -258,19 +316,12 @@
       await human.warmup();
 
       boot.textContent = 'Opening camera…';
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 640, height: 480 }, audio: false,
-      });
-      video.srcObject = stream;
-      await video.play();
-
-      overlay.width = video.videoWidth || 640;
-      overlay.height = video.videoHeight || 480;
+      await openCamera(facing);
 
       running = true;
       btnEnrol.disabled = false;
       persist();
-      boot.textContent = 'Running — ' + human.version;
+      countCameras();
       loop();
     } catch (err) {
       btnStart.disabled = false;
@@ -286,7 +337,10 @@
     const t0 = performance.now();
     const result = await human.detect(video);
     const interp = human.next(result);
-    human.draw.canvas(video, overlay);
+    // result.canvas is the frame Human worked on — already flipped when the
+    // front camera is in use. Drawing the raw video instead would put the
+    // boxes on the wrong side of the picture.
+    human.draw.canvas(result.canvas || video, overlay);
     await human.draw.all(overlay, interp);
 
     const face = (result.face && result.face[0]) || null;
@@ -417,6 +471,22 @@
       btnShare.disabled = false;
     });
   }
+
+  camSeg.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-mode]');
+    if (!btn || btn.disabled || btn.classList.contains('on')) return;
+    const mode = btn.dataset.mode;
+    camSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+    if (!running) { facing = mode; return; }     // chosen before starting
+    try {
+      await openCamera(mode);
+    } catch (err) {
+      boot.textContent = 'Could not switch camera: ' + err.message;
+      // Put the highlight back where it was.
+      camSeg.querySelectorAll('button').forEach(
+        b => b.classList.toggle('on', b.dataset.mode === facing));
+    }
+  });
 
   btnStart.addEventListener('click', start);
   btnEnrol.addEventListener('click', enrol);
