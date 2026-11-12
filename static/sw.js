@@ -12,7 +12,7 @@
      · /api/*       → never cached
    ══════════════════════════════════════════════════════════════ */
 
-const CACHE = 'ooa-attendance-v3';
+const CACHE = 'ooa-attendance-v4';
 
 const PRECACHE = [
   '/static/css/oa-core.css',

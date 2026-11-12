@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>{% block title %}Attendance{% endblock %} · Office of Academics</title>
-<meta name="theme-color" content="#0A1324">
+<meta name="theme-color" content="#0B1730">
 
 <!-- ── App logo as favicon (all surfaces) ── -->
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
@@ -15,10 +15,14 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+<script>
+  // Set before the first paint, so a reload in dark mode never flashes white.
+  try { if (localStorage.getItem('oaTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+</script>
 {% block head %}{% endblock %}
 </head>
 <body>
@@ -50,8 +54,8 @@
       {% endblock %}
     </nav>
     <div class="oa-rail-foot">
-      Head Office · Bengaluru<br>
-      <span style="opacity:.65">Attendance Portal</span>
+      <strong>Head Office</strong><br>
+      Bengaluru · Attendance Portal
     </div>
   </aside>
 
@@ -80,6 +84,7 @@
   </main>
 </div>
 
+<script src="{{ url_for('static', filename='js/oa-nav.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

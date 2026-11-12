@@ -7,6 +7,16 @@
  *  single highlight to whatever is active. Nothing here needs to know
  *  what a tab is, so neither page's logic had to change.
  * ────────────────────────────────────────────────────────────── */
+// Light / dark. One attribute on <html>; the tokens in oa-core.css do the
+// rest, and the choice is remembered per browser. Shared by every page.
+function toggleTheme() {
+  var root = document.documentElement;
+  var dark = root.getAttribute('data-theme') === 'dark';
+  if (dark) root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', 'dark');
+  try { localStorage.setItem('oaTheme', dark ? 'light' : 'dark'); } catch (e) {}
+}
+
 (function () {
   'use strict';
 

@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>{{ title }} · Office of Academics</title>
-<meta name="theme-color" content="#0A1324">
+<meta name="theme-color" content="#0B1730">
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
@@ -20,7 +20,7 @@
              display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .ov-mast img { width: 44px; height: 44px; border-radius: 12px; }
   .ov-mast .org { font-size: .62rem; font-weight: 800; letter-spacing: .16em; color: var(--gold-400); text-transform: uppercase; }
-  .ov-mast h1 { font-family: "Playfair Display", serif; font-size: 1.4rem; margin: 2px 0 0; color: #fff; }
+  .ov-mast h1 { font-family: var(--display); font-size: 1.4rem; margin: 2px 0 0; color: #fff; }
   .ov-mast .spacer { flex: 1; }
   .ov-live { font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
              background: rgba(238,189,27,.16); color: var(--gold-400); padding: 5px 11px; border-radius: 999px; }
@@ -82,7 +82,7 @@
   .ov-modal.on { display: flex; }
   .ov-modal-box { background: #fff; border-radius: var(--r-xl); width: 100%; max-width: 680px; max-height: 88vh; overflow-y: auto; }
   .ov-modal-head { position: sticky; top: 0; background: #fff; display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
-  .ov-modal-head h3 { font-family: "Playfair Display", serif; font-size: 1.1rem; flex: 1; color: var(--ink-800); }
+  .ov-modal-head h3 { font-family: var(--display); font-size: 1.1rem; flex: 1; color: var(--ink-800); }
   .ov-modal-body { padding: 18px 20px 22px; }
   .cal-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px,1fr)); gap: 8px; margin-bottom: 14px; }
   .cal-stat { padding: 9px; text-align: center; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-sm); }

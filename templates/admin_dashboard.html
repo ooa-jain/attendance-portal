@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Admin console · Office of Academics</title>
-<meta name="theme-color" content="#0A1324">
+<meta name="theme-color" content="#0B1730">
 
 <!-- App logo as favicon -->
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
@@ -13,27 +13,16 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin.css') }}">
-<!-- Luno-style dashboard chrome. Must sit between oa-admin and the dark
-     theme: it overrides the former, the latter overrides it. -->
-<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-luno.css') }}">
-<!-- The Packet skin. Inert unless data-skin="packet" is on <html>. -->
-<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-packet.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin-dark.css') }}">
 <script>
   // Set before the first paint, so a reload in dark mode never flashes white.
-  try {
-    if (localStorage.getItem('oaTheme') === 'dark')
-      document.documentElement.setAttribute('data-theme', 'dark');
-    if (localStorage.getItem('oaSkin') !== 'luno')
-      document.documentElement.setAttribute('data-skin', 'packet');
-  } catch (e) {}
+  try { if (localStorage.getItem('oaTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
 </script>
 </head>
 <body>
@@ -66,11 +55,6 @@
       <button class="oa-navitem ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <div class="oa-dsep"></div>
-      <button type="button" class="oa-themeswitch" onclick="toggleSkin()">
-        <i class="fas fa-palette"></i>
-        <span class="lbl-luno">Packet skin</span>
-        <span class="lbl-packet">Luno skin</span>
-      </button>
       <button type="button" class="oa-themeswitch" onclick="toggleTheme()">
         <i class="fas fa-circle-half-stroke"></i>
         <span class="lbl-light">Dark mode</span>
@@ -79,11 +63,9 @@
       <button class="oa-navitem danger" onclick="logout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </nav>
     <div class="oa-rail-foot">
-      Signed in as <strong style="color:var(--ink-800)">{{ current_user.full_name or current_user.username }}</strong><br>
+      Signed in as <strong>{{ current_user.full_name or current_user.username }}</strong><br>
       Head Office, Bengaluru
-      <div style="font-size:0.75rem;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:var(--t2)">
-        <i class="fas fa-location-dot" style="color:#0071e3"></i> JAIN Campus (12.9248, 77.5702)
-      </div>
+      <div class="loc"><i class="fas fa-location-dot"></i> JAIN Campus (12.9248, 77.5702)</div>
     </div>
   </aside>
 
@@ -113,7 +95,7 @@
     <div class="lu-avatar" title="{{ current_user.full_name or current_user.username }}">
       {{ ((current_user.full_name or current_user.username).split()|map('first')|join|upper)[:2] }}
     </div>
-    <button class="oa-btn oa-btn-sm oa-only-mobile" style="background:var(--paper-2);color:var(--t1)" onclick="logout()">
+    <button class="oa-iconbtn oa-only-mobile" aria-label="Sign out" onclick="logout()">
       <i class="fas fa-arrow-right-from-bracket"></i>
     </button>
   </header>
@@ -228,7 +210,7 @@
           <input type="date" id="analysisDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadAnalysisOverview()">
           <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadAnalysisOverview()"><i class="fas fa-rotate"></i> Refresh</button>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           Every registered person for the selected day — who signed in properly, who left early,
           who never signed in, and each person's 30-day progress.
         </p>
@@ -264,12 +246,12 @@
       </div>
 
       <!-- ── Build a group → download Excel or create a no-login shareable link ── -->
-      <section class="oa-card" style="margin-top:16px">
-        <div class="ad-analysis" style="margin:0;background:transparent;border:none;padding:0">
+      <section class="oa-card">
+        <div class="ad-analysis">
           <div class="ad-analysis-boxhead">
             <strong><i class="fas fa-file-excel"></i> Download or share a group</strong>
           </div>
-          <p class="ad-hint" style="margin-top:-6px;margin-bottom:12px">
+          <p class="ad-hint">
             Pick a From→To date range and the people to include, then download the working-hours
             Excel or create a link anyone can open — <strong>no login</strong> — to see who signed in,
             who didn't, and download the same Excel.
@@ -353,11 +335,11 @@
       </section>
 
       <!-- Individual attendance: pick a person → month calendar of login days -->
-      <section class="oa-card" style="margin-top:16px">
+      <section class="oa-card">
         <div class="oa-card-head">
           <h2>Individual attendance calendar</h2>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           Click a name to see, on a month calendar, exactly which days that person signed in
           and how many days in the month.
         </p>
@@ -388,7 +370,7 @@
           <span class="oa-tag" id="acMonthLabel">—</span>
           <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="acShiftMonth(1)"><i class="fas fa-chevron-right"></i></button>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">Click any day to see everyone who signed in — times, locations and their work note.</p>
+        <p class="ad-hint">Click any day to see everyone who signed in — times, locations and their work note.</p>
         <div id="acGrid">
           <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
         </div>
@@ -416,7 +398,7 @@
 
       <!-- ── Bulk shift control ── -->
       <div class="ad-bulk">
-        <i class="fas fa-layer-group" style="font-size:1.4rem;color:var(--gold-400)"></i>
+        <i class="fas fa-layer-group" style="font-size:1.4rem"></i>
         <div class="bd">
           <div class="t">Shift attendance</div>
           <div class="s">
@@ -674,7 +656,7 @@
           <span class="spacer"></span>
           <span class="oa-tag" id="mailStatusTag">Checking…</span>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           Leave applications are mailed the moment someone applies. The daily summary —
           who signed in and out, who didn't, and any requests waiting on you — goes out
           on a schedule, with the day's spreadsheet attached.
@@ -707,7 +689,7 @@
             <i class="fas fa-wand-magic-sparkles"></i> Use the "new reports" template
           </button>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           People see this when they open their dashboard — as a card with the JAIN mark. It keeps
           appearing until the days run out, they have seen it the set number of times, or they
           tap "Got it". Nothing is emailed; it shows inside the portal.
@@ -806,7 +788,7 @@
           <input type="date" id="secDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadSecurityInsights()">
           <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadSecurityInsights()"><i class="fas fa-rotate"></i> Refresh</button>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           Signals worth a second look for the chosen day — not accusations. The one that matters
           most is a <strong>shared device</strong>: one phone or browser used by two different
           people is what a proxy sign-in looks like.
@@ -843,12 +825,12 @@
         </div>
       </section>
 
-      <section class="oa-card" style="border-color:var(--gold-400);background:var(--gold-050)">
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-          <i class="fas fa-broom" style="font-size:1.2rem;color:var(--gold-600)"></i>
-          <div style="flex:1;min-width:190px">
-            <div style="font-size:.82rem;font-weight:800;color:var(--ink-800)">Clear out old snapshots</div>
-            <div style="font-size:.7rem;color:var(--t2)">Deletes face log entries older than the number of days you choose.</div>
+      <section class="oa-card ad-callout">
+        <div class="row">
+          <i class="fas fa-broom"></i>
+          <div class="bd">
+            <div class="t">Clear out old snapshots</div>
+            <div class="s">Deletes face log entries older than the number of days you choose.</div>
           </div>
           <input type="number" id="purgedays" value="30" min="1" class="oa-input" style="width:96px">
           <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="purgeOldLogs()"><i class="fas fa-trash"></i> Purge</button>
@@ -893,7 +875,7 @@
     <div id="export-tab" class="ad-panel">
       <section class="oa-card">
         <div class="oa-card-head"><h2>Export attendance</h2></div>
-        <p style="font-size:.78rem;color:var(--t2);margin-bottom:16px">
+        <p class="oa-lede">
           Downloads a CSV with sign-in and sign-out times, hours, locations and device details
           for every entry in the range.
         </p>

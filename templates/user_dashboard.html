@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>My attendance · Office of Academics</title>
-<meta name="theme-color" content="#0A1324">
+<meta name="theme-color" content="#0B1730">
 
 <!-- App logo as favicon -->
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
@@ -14,49 +14,17 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
 
-<style>
-  .tab { display: none; }
-  .tab.on { display: block; animation: tabIn .22s ease-out; }
-  @keyframes tabIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-
-  .pwa-banner {
-    display: none;
-    align-items: center; gap: 12px;
-    background: var(--gold-050);
-    border: 1px solid var(--gold-400);
-    border-radius: var(--r-lg);
-    padding: 13px 15px;
-    margin-bottom: 14px;
-  }
-  .pwa-banner.show { display: flex; }
-  .pwa-banner .bd { flex: 1; }
-  .pwa-banner .t { font-size: .8rem; font-weight: 800; color: var(--ink-800); }
-  .pwa-banner .s { font-size: .68rem; color: var(--t2); }
-
-  .seg { display: flex; gap: 5px; background: var(--card); border: 1px solid var(--line);
-         padding: 5px; border-radius: var(--r); margin-bottom: 14px; }
-  .seg button { flex: 1; padding: 10px; border-radius: var(--r-sm); font-size: .78rem;
-                font-weight: 700; color: var(--t2); transition: background .15s, color .15s; }
-  .seg button.on { background: var(--ink-800); color: var(--on-ink); }
-
-  .shiftblock { padding: 16px 0; border-bottom: 1px dashed var(--line-2); }
-  .shiftblock:last-of-type { border-bottom: none; }
-  .shiftblock > .hd { display: flex; align-items: center; justify-content: space-between;
-                      gap: 10px; margin-bottom: 10px; }
-  .shiftblock > .hd .nm { font-family: var(--display); font-size: 1.02rem;
-                          font-weight: 600; color: var(--ink-800); }
-
-  @media (min-width: 1024px) {
-    .dash-split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .95fr); gap: 20px; align-items: start; }
-  }
-</style>
+<script>
+  // Set before the first paint, so a reload in dark mode never flashes white.
+  try { if (localStorage.getItem('oaTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+</script>
 </head>
 <body>
 
@@ -90,14 +58,13 @@
       <button class="oa-navitem" onclick="openLeave()"><i class="fas fa-calendar-xmark"></i> Apply for leave</button>
       <button class="oa-navitem" id="di-face-reg-web" style="display:none" onclick="openFaceRegIfAllowed()"><i class="fas fa-camera"></i> Register face</button>
       <div class="oa-dsep"></div>
+      <button type="button" class="oa-themeswitch" onclick="toggleTheme()"><i class="fas fa-circle-half-stroke"></i><span class="lbl-light">Dark mode</span><span class="lbl-dark">Light mode</span></button>
       <button class="oa-navitem danger" onclick="handleLogout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </nav>
     <div class="oa-rail-foot">
-      <strong style="color:var(--ink-800)">Head Office</strong><br>
+      <strong>Head Office</strong><br>
       Office of Academics, Bengaluru
-      <div style="font-size:0.75rem;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:var(--t2)" id="railLocFoot">
-        <i class="fas fa-location-dot" style="color:#34c759"></i> <span id="railLocText">Checking location…</span>
-      </div>
+      <div class="loc" id="railLocFoot"><i class="fas fa-location-dot"></i> <span id="railLocText">Checking location…</span></div>
     </div>
   </aside>
 
@@ -138,6 +105,7 @@
       <button class="oa-navitem" onclick="openLeave();closeDrawer()"><i class="fas fa-calendar-xmark"></i> Apply for leave</button>
       <button class="oa-navitem" id="di-face-reg" style="display:none" onclick="openFaceRegIfAllowed();closeDrawer()"><i class="fas fa-camera"></i> Register face</button>
       <div class="oa-dsep"></div>
+      <button type="button" class="oa-themeswitch" onclick="toggleTheme()"><i class="fas fa-circle-half-stroke"></i><span class="lbl-light">Dark mode</span><span class="lbl-dark">Light mode</span></button>
       <button class="oa-navitem danger" onclick="handleLogout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </div>
   </nav>
@@ -150,7 +118,7 @@
     <div id="tab-normal" class="tab on">
 
       <div class="pwa-banner" id="pwaBanner">
-        <i class="fas fa-mobile-screen" style="font-size:1.3rem;color:var(--gold-600)"></i>
+        <i class="fas fa-mobile-screen" style="font-size:1.2rem;color:var(--gold-600)"></i>
         <div class="bd">
           <div class="t">Keep this on your home screen</div>
           <div class="s">Mark attendance in one tap, no browser needed</div>
@@ -322,32 +290,28 @@
               <h3>Where you are</h3>
               <span class="spacer"></span>
               <a id="userGmapsLink" href="#" target="_blank" rel="noopener"
-                 style="font-size:.7rem;font-weight:700;color:var(--ink-600)">
-                Open in Maps <i class="fas fa-arrow-up-right-from-square" style="font-size:.62rem"></i>
+                 style="font-size:.8rem;font-weight:600">
+                Open in Maps <i class="fas fa-arrow-up-right-from-square" style="font-size:.66rem"></i>
               </a>
             </div>
-            <!-- Address Search & Drag Pin Helper -->
-            <div style="display:flex;gap:8px;margin-bottom:10px;">
-              <input type="text" id="mapSearchInput" placeholder="Search address, landmark, or building..." 
-                     style="flex:1;padding:7px 12px;font-size:0.8rem;border:1px solid var(--line,#ccc);border-radius:8px;background:var(--bg,#fff);color:var(--t1);"
+            <div class="oa-maptools">
+              <input type="text" id="mapSearchInput" class="oa-input" placeholder="Search address, landmark or building…"
                      onkeydown="if(event.key==='Enter') searchAddressOnMap()">
-              <button class="oa-btn oa-btn-quiet" onclick="searchAddressOnMap()" style="padding:6px 12px;font-size:0.78rem;flex-shrink:0;">
+              <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="searchAddressOnMap()">
                 <i class="fas fa-magnifying-glass"></i> Search
               </button>
             </div>
 
-            <div class="oa-mapframe" style="height:260px;border-radius:12px;overflow:hidden;position:relative;border:1px solid var(--line,#e5e5e7);">
+            <div class="oa-mapframe" style="height:260px;position:relative">
               <div id="userLeafletMap" style="width:100%;height:100%;z-index:1;"></div>
               <iframe id="userMapIframe" loading="lazy" allowfullscreen title="Your location" style="width:100%;height:100%;border:0;display:none;"></iframe>
             </div>
 
-            <div style="font-size:0.72rem;color:var(--t2);margin-top:6px;display:flex;align-items:center;gap:4px;">
-              <i class="fas fa-hand-pointer" style="color:var(--accent,#0071e3)"></i> Tip: Drag the blue pin marker on the map to set your exact position.
-            </div>
+            <div class="oa-maptip"><i class="fas fa-hand-pointer"></i> Drag the pin on the map to set your exact position.</div>
 
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-top:8px">
-              <div style="font-size:.78rem;color:var(--t2);line-height:1.35;flex:1" id="userCoordsText">Coordinates</div>
-              <button class="oa-btn oa-btn-quiet" onclick="refreshLocation()" style="flex-shrink:0"><i class="fas fa-rotate"></i> GPS Refresh</button>
+            <div class="oa-mapmeta">
+              <div style="flex:1" id="userCoordsText">Coordinates</div>
+              <button class="oa-btn oa-btn-quiet" onclick="refreshLocation()" style="flex-shrink:0"><i class="fas fa-rotate"></i> GPS refresh</button>
             </div>
           </section>
         </div>
@@ -358,7 +322,7 @@
     <div id="tab-shift" class="tab">
       <section class="oa-masthead">
         <div class="greet">Shift attendance</div>
-        <div class="who" style="font-size:1.3rem">Shift 1 &amp; Shift 2</div>
+        <div class="who">Shift 1 &amp; Shift 2</div>
         <div class="lede">Each shift is tracked separately against half your daily target.</div>
         <div class="oa-pills">
           <div class="oa-pill">
@@ -472,10 +436,10 @@
 
         <section class="oa-card">
           <div class="oa-card-title"><i class="fas fa-chart-pie"></i> Hours by type</div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">
-            <div><div class="oa-num" style="font-size:1.4rem;font-weight:700;color:var(--ink-800)" id="svS1">0</div><div class="k" style="font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-top:4px">Shift 1</div></div>
-            <div><div class="oa-num" style="font-size:1.4rem;font-weight:700;color:var(--gold-600)" id="svS2">0</div><div class="k" style="font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-top:4px">Shift 2</div></div>
-            <div><div class="oa-num" style="font-size:1.4rem;font-weight:700;color:var(--ok)" id="svNorm">0</div><div class="k" style="font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-top:4px">Normal</div></div>
+          <div class="oa-statgrid oa-split3">
+            <div class="oa-stat"><div class="v" id="svS1">0</div><div class="k">Shift 1</div></div>
+            <div class="oa-stat"><div class="v" id="svS2">0</div><div class="k">Shift 2</div></div>
+            <div class="oa-stat"><div class="v" id="svNorm">0</div><div class="k">Normal</div></div>
           </div>
         </section>
       </div>
@@ -497,12 +461,12 @@
       <!-- Download your own report -->
       <section class="oa-card">
         <div class="oa-card-title"><i class="fas fa-file-excel"></i> My attendance report</div>
-        <p style="font-size:.78rem;color:var(--t2);line-height:1.6;margin-bottom:12px">
+        <p class="oa-lede">
           Every day between two dates — where you signed in and out, your hours and the notes you
           left, with absent days in red and Saturday/Sunday in yellow. Carries your name and the
           JAIN mark, so it is ready to hand in.
         </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="oa-two">
           <div class="oa-field"><label for="rpFrom">From</label><input type="date" id="rpFrom"></div>
           <div class="oa-field"><label for="rpTo">To</label><input type="date" id="rpTo"></div>
         </div>
@@ -705,7 +669,7 @@
     <div class="oa-handle"></div>
     <div class="oa-sheet-title">Please confirm</div>
     <div class="oa-sheet-body">
-      <p style="font-size:.84rem;color:var(--t2);text-align:center;line-height:1.6" id="confMsg"></p>
+      <p style="font-size:.88rem;color:var(--t2);line-height:1.6" id="confMsg"></p>
     </div>
     <div class="oa-sheet-actions">
       <button class="oa-btn oa-btn-bad" id="confYes">Yes, go ahead</button>
