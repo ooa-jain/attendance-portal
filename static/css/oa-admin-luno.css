@@ -1,0 +1,283 @@
+/* ══════════════════════════════════════════════════════════════
+   oa-admin-luno.css — dashboard chrome for the admin console
+
+   Modelled on the Luno admin template the office asked for: a white
+   top bar carrying search and quick actions, a breadcrumb, a greeting
+   row with the date and export shortcuts, and stat tiles that read
+   label → figure → trend, each closed off by a progress bar.
+
+   Linked ONLY from admin_dashboard.html, so nothing here can reach
+   the intern pages or the share links. It overrides oa-core/oa-admin
+   by load order alone — no !important, so the dark theme can still
+   win where it needs to.
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Luno sits its cards on a cool grey rather than the warm paper the
+     rest of the portal uses. Scoped to the admin page by the link tag. */
+  --lu-canvas: #F1F4F8;
+  --lu-line:   #E6EAF0;
+  --lu-ico-bg: #F3F5F9;
+}
+
+body { background: var(--lu-canvas); }
+
+/* ── Top bar ──────────────────────────────────────────────────
+   White, not navy: the rail already carries the brand, and a second
+   dark band above it made the console feel boxed in.               */
+.oa-topbar {
+  height: 62px;
+  background: var(--card);
+  color: var(--t1);
+  border-bottom: 1px solid var(--lu-line);
+  box-shadow: none;
+  gap: 14px;
+}
+.oa-topbar .org { color: var(--t1); }
+.oa-topbar .sub { color: var(--t3); }
+.oa-topbar .titles { flex: none; }
+
+/* Search. Grows to fill the bar on wide screens, hidden on phones
+   where the bar has no room for it. */
+.lu-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 620px;
+  position: relative;
+  display: none;
+}
+.lu-search > i {
+  position: absolute;
+  left: 12px; top: 50%;
+  transform: translateY(-50%);
+  font-size: .78rem;
+  color: var(--t3);
+  pointer-events: none;
+}
+.lu-search input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px 0 32px;
+  font: inherit;
+  font-size: .82rem;
+  color: var(--t1);
+  background: var(--card);
+  border: 1px solid var(--lu-line);
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.lu-search input::placeholder { color: var(--t3); }
+.lu-search input:focus {
+  border-color: var(--gold-500);
+  box-shadow: 0 0 0 3px rgba(238, 189, 27, .18);
+}
+
+.lu-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.lu-ico {
+  position: relative;
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--t2);
+  font-size: .86rem;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.lu-ico:hover { background: var(--lu-ico-bg); color: var(--t1); }
+.lu-ico .lu-dot {
+  position: absolute;
+  top: 7px; right: 8px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--bad);
+  border: 1.5px solid var(--card);
+}
+
+.lu-avatar {
+  flex: none;
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--ink-800);
+  color: var(--gold-400);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--gold-500);
+}
+
+@media (min-width: 900px)  { .lu-search { display: block; } }
+@media (max-width: 899px)  { .lu-actions .lu-ico.lu-opt { display: none; } }
+
+/* ── Breadcrumb + greeting ────────────────────────────────── */
+.lu-crumbs {
+  display: flex; align-items: center; gap: 7px;
+  order: -1;
+  font-size: .76rem;
+  color: var(--t3);
+  margin-bottom: 14px;
+}
+.lu-crumbs a, .lu-crumbs button {
+  color: var(--gold-600);
+  font: inherit;
+  background: none; border: 0; padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+.lu-crumbs a:hover, .lu-crumbs button:hover { text-decoration: underline; }
+.lu-crumbs .sep { color: var(--t3); }
+.lu-crumbs .here { color: var(--t2); font-weight: 600; }
+
+.lu-greet {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.lu-greet h1 {
+  font-family: var(--body);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--t1);
+  margin: 0 0 3px;
+}
+.lu-greet .lede { font-size: .8rem; color: var(--t2); }
+.lu-greet-right { display: flex; align-items: center; gap: 0; }
+
+.lu-daterange {
+  height: 36px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px;
+  font-size: .78rem;
+  color: var(--t1);
+  background: var(--card);
+  border: 1px solid var(--lu-line);
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  white-space: nowrap;
+}
+.lu-daterange i { color: var(--t3); font-size: .74rem; }
+
+/* The dark action cluster butted up against the date, as in Luno. */
+.lu-quick { display: flex; }
+.lu-quick button {
+  width: 38px; height: 36px;
+  display: grid; place-items: center;
+  border: 0;
+  background: var(--ink-800);
+  color: var(--on-ink);
+  font-size: .8rem;
+  cursor: pointer;
+  border-left: 1px solid rgba(255, 255, 255, .1);
+  transition: background .15s;
+}
+.lu-quick button:first-child { border-left: 0; }
+.lu-quick button:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.lu-quick button:hover { background: var(--ink-600); }
+
+/* ── Stat tiles ───────────────────────────────────────────────
+   Luno's reading order: what it is, how many, which way it moved.
+   The bar along the bottom is the figure as a share of its own
+   ceiling, set per tile with --pct from the dashboard script.     */
+.stats-grid {
+  /* Six figures, so a fixed three across reads better than auto-fit, which
+     left a 4 + 2 row with a gap down the right of the second line. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (min-width: 1150px) { .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .stats-grid { grid-template-columns: minmax(0, 1fr); } }
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  padding: 16px 16px 20px;
+  border: 1px solid var(--lu-line);
+  border-top: 1px solid var(--lu-line);
+  border-radius: var(--r-sm);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+.stat-card .label {
+  order: -1;
+  margin: 0 0 10px;
+  font-size: .64rem;
+  letter-spacing: .08em;
+  color: var(--t2);
+  padding-right: 34px;      /* clear of the icon */
+}
+.stat-card .value {
+  font-family: var(--body);
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -.03em;
+}
+.stat-card { display: flex; flex-direction: column; }
+
+.stat-card .lu-tico {
+  position: absolute;
+  top: 13px; right: 13px;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: 7px;
+  font-size: .76rem;
+  background: var(--lu-ico-bg);
+  color: var(--t2);
+}
+.stat-card .lu-note {
+  margin-top: 7px;
+  font-size: .72rem;
+  color: var(--t3);
+}
+.stat-card .lu-delta {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 7px;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  vertical-align: 3px;
+}
+.stat-card .lu-delta.up   { color: var(--ok); }
+.stat-card .lu-delta.down { color: var(--bad); }
+.stat-card .lu-delta.flat { color: var(--t3); }
+
+.stat-card::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: 0;
+  height: 3px;
+  width: var(--pct, 0%);
+  background: var(--accent, var(--gold-500));
+  border-radius: 0 3px 3px 0;
+  transition: width .5s ease;
+}
+/* A tile at zero still needs to show its colour, or the row looks broken. */
+.stat-card::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: var(--lu-line);
+}
+.stat-card .lu-tico { z-index: 1; }
+
+.stat-card.acc-ok     { --accent: var(--ok); }
+.stat-card.acc-warn   { --accent: var(--warn); }
+.stat-card.acc-bad    { --accent: var(--bad); }
+.stat-card.acc-info   { --accent: var(--info); }
+.stat-card.acc-gold   { --accent: var(--gold-500); }
+.stat-card.acc-ok   .lu-tico { background: var(--ok-bg);   color: var(--ok); }
+.stat-card.acc-warn .lu-tico { background: var(--warn-bg); color: var(--warn); }
+.stat-card.acc-bad  .lu-tico { background: var(--bad-bg);  color: var(--bad); }
+.stat-card.acc-info .lu-tico { background: var(--info-bg); color: var(--info); }
+.stat-card.acc-gold .lu-tico { background: var(--gold-050); color: var(--gold-600); }
+
+/* ── Cards, squared off the way the template has them ───────── */
+.oa-card { border-radius: var(--r-sm); border-color: var(--lu-line); }
+.oa-card-head h2 { font-family: var(--body); font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
+
+/* The masthead becomes the greeting row above, so it goes. */
+#dashboard-tab > .oa-masthead { display: none; }

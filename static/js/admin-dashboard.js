@@ -2,6 +2,131 @@
 
     function logout() { window.location.href = '/logout'; }
 
+    // Dark mode for the console. One attribute on <html>; the stylesheet does
+    // the rest, and the choice is remembered per browser.
+    function toggleTheme() {
+        const root = document.documentElement;
+        const dark = root.getAttribute('data-theme') === 'dark';
+        if (dark) root.removeAttribute('data-theme');
+        else root.setAttribute('data-theme', 'dark');
+        try { localStorage.setItem('oaTheme', dark ? 'light' : 'dark'); } catch (e) {}
+    }
+
+    // Skins. Luno is the default; Packet is a flat, square alternative.
+    // Its two faces are fetched only when it is switched on, so the Luno
+    // skin pays nothing for them.
+    function lunoLoadPacketFonts() {
+        if (document.getElementById('pkFonts')) return;
+        const l = document.createElement('link');
+        l.id = 'pkFonts';
+        l.rel = 'stylesheet';
+        l.href = 'https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700'
+               + '&family=Raleway:wght@400;600;700&display=swap';
+        document.head.appendChild(l);
+    }
+
+    function toggleSkin() {
+        const root = document.documentElement;
+        const packet = root.getAttribute('data-skin') === 'packet';
+        if (packet) root.removeAttribute('data-skin');
+        else { root.setAttribute('data-skin', 'packet'); lunoLoadPacketFonts(); }
+        try { localStorage.setItem('oaSkin', packet ? 'luno' : 'packet'); } catch (e) {}
+    }
+
+    /* ══ Luno dashboard chrome ═══════════════════════════════════════════
+       The top bar and the greeting row are plain markup; these are the
+       few behaviours behind them.                                        */
+
+    // Section names as they read in the breadcrumb and the search hints.
+    const LUNO_TABS = {
+        dashboard: 'Dashboard',   locations: 'Locations & Map',
+        early:     'Early sign-outs', analysis: 'Analysis',
+        calendar:  'Calendar',    export:    'Export',
+        users:     'People',      leaves:    'Leave requests',
+        notices:   'Notices',     face:      'Security',
+    };
+
+    // Go to a section from somewhere other than the rail — the top-bar
+    // icons, the breadcrumb, the quick actions. Clicking the rail button
+    // rather than calling switchTab directly keeps the moving highlight
+    // and the active state in step.
+    function goTab(tab) {
+        const btn = document.querySelector(
+            `.oa-rail-nav .ad-tab[onclick*="'${tab}'"]`);
+        if (btn) { btn.click(); return; }
+        switchTab(tab);                       // mobile, where there is no rail
+        lunoAfterTab(tab);
+    }
+
+    function lunoAfterTab(tab) {
+        const crumb = document.getElementById('lunoCrumb');
+        if (crumb) crumb.textContent = LUNO_TABS[tab] || 'Dashboard';
+    }
+
+    function lunoFullscreen() {
+        const d = document;
+        if (d.fullscreenElement) { d.exitFullscreen?.(); return; }
+        d.documentElement.requestFullscreen?.().catch(() => {});
+    }
+
+    // Search filters the rows of whichever section is open, and dims the
+    // rail items that do not match, so typing "leave" points at the right
+    // place even when you are looking at something else.
+    function lunoSearch(raw) {
+        const q = (raw || '').trim().toLowerCase();
+
+        document.querySelectorAll('.oa-rail-nav .ad-tab').forEach(b => {
+            b.style.opacity = (!q || b.textContent.toLowerCase().includes(q)) ? '' : '.35';
+        });
+
+        const panel = document.querySelector('.ad-panel.on');
+        if (!panel) return;
+        panel.querySelectorAll('table tbody tr').forEach(tr => {
+            if (tr.children.length === 1 && tr.children[0].colSpan > 1) return;  // "Loading…"
+            tr.hidden = !!q && !tr.textContent.toLowerCase().includes(q);
+        });
+    }
+
+    // The bar across the bottom of each tile: the figure as a share of a
+    // ceiling that means something for that tile.
+    function lunoPaintStats() {
+        const n = id => {
+            const el = document.getElementById(id);
+            return el ? (parseInt(el.textContent, 10) || 0) : 0;
+        };
+        const cards  = document.querySelectorAll('#lunoStats .stat-card');
+        if (!cards.length) return;
+        const people = parseInt(cards[0].querySelector('.value')?.textContent, 10) || 0;
+        const checks = n('faceLogs24h');
+        const share  = (v, of) => of > 0 ? Math.max(0, Math.min(100, (v / of) * 100)) : (v > 0 ? 100 : 0);
+
+        const pcts = [
+            people ? 100 : 0,
+            share(n('todayAttendance'), people),
+            share(n('pendingLeaves'),   people),
+            share(n('earlyLogouts'),    people),
+            checks ? 100 : 0,
+            share(n('faceFailures'),    checks),
+        ];
+        cards.forEach((c, i) => c.style.setProperty('--pct', pcts[i].toFixed(1) + '%'));
+
+        const dot = (id, on) => {
+            const el = document.getElementById(id);
+            if (el) el.hidden = !on;
+        };
+        dot('lunoLeaveDot',  n('pendingLeaves') > 0);
+    }
+
+    function lunoInit() {
+        if (document.documentElement.getAttribute('data-skin') === 'packet')
+            lunoLoadPacketFonts();
+        const d = new Date();
+        const el = document.getElementById('lunoToday');
+        if (el) el.textContent = d.toLocaleDateString('en-GB',
+            { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    document.addEventListener('DOMContentLoaded', lunoInit);
+
     function showAlert(msg, type) {
         const c = document.getElementById('alertContainer');
         const el = document.createElement('div');
@@ -26,6 +151,191 @@
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
         if (tab === 'calendar') loadCalendarOverview();
         if (tab === 'face') loadSecurityInsights();
+        if (tab === 'notices') { loadNotices(); loadMailSettings(); }
+        lunoAfterTab(tab);
+    }
+
+    // ── Email reports: what goes out, and a way to prove it works ─────────
+    async function loadMailSettings() {
+        const box = document.getElementById('mailSettings');
+        const tag = document.getElementById('mailStatusTag');
+        if (!box) return;
+        try {
+            const d = await ntFetchJson('/api/admin/mail-settings');
+            const rows = [
+                ['Goes to', (d.recipients || []).join(', ') || 'nobody — set REPORT_RECIPIENTS'],
+                ['Leave applications', d.leave_mail ? 'Mailed as they arrive' : 'Off'],
+                ['Spreadsheet', d.attach_excel ? 'Attached to the summary' : 'Not attached'],
+                ['Sent from', d.sender || '—'],
+                ['Mail server', `${d.server}:${d.port} · ${d.encryption}`],
+            ];
+            box.innerHTML = rows.map(([k, v]) =>
+                `<div class="ml-row"><div class="ml-k">${escapeHtml(k)}</div>
+                 <div class="ml-v">${escapeHtml(v)}</div></div>`).join('');
+            if (tag) {
+                const none = !(d.recipients || []).length;
+                tag.textContent = none ? 'No recipients' : 'Configured';
+                tag.className = 'oa-tag ' + (none ? 'warn' : 'ok');
+            }
+        } catch (err) {
+            box.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>'
+                          + escapeHtml(err.message) + '</p></div>';
+            if (tag) { tag.textContent = 'Unavailable'; tag.className = 'oa-tag warn'; }
+        }
+    }
+
+    async function sendMailReport() {
+        const day = document.getElementById('mailDate').value || '';
+        showAlert('Sending…', 'success');
+        try {
+            const d = await ntFetchJson('/api/admin/mail-report', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: day })
+            });
+            showAlert(`Summary for ${d.date} sent to ${escapeHtml((d.sent_to || []).join(', '))}.`, 'success');
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
+    // ── Notices: what people see when they open their dashboard ───────────
+
+    // A JSON call that says something useful when the reply isn't JSON —
+    // a 404 here almost always means the server is still running the old
+    // code (pulled, but not restarted), which is otherwise baffling to read.
+    async function ntFetchJson(url, options) {
+        const res  = await fetch(url, options);
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch {
+            if (res.status === 404) {
+                throw new Error('This feature is not on the server yet (404). '
+                              + 'Restart the app after pulling: sudo systemctl restart jain-intern');
+            }
+            if (res.status === 401 || res.status === 302 || /<form|<!DOCTYPE/i.test(text)) {
+                throw new Error('Your session has expired — sign in again.');
+            }
+            throw new Error(`Server returned ${res.status} (not JSON).`);
+        }
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        return data;
+    }
+    const NT_PRESET = {
+        title: 'New: download your attendance report in Excel and Word',
+        body: 'Your dashboard can now hand you your own attendance report.\n\n'
+            + 'Open Statistics, pick a date range (or tap "This month"), and download it as '
+            + 'Excel or Word. It lists every day — when you signed in and out, from where, your '
+            + 'hours and the note you left at sign-out — with absent days in red and Saturday '
+            + 'and Sunday in yellow, plus a summary of days worked on top.\n\n'
+            + 'It carries your name and the JAIN mark, so it is ready to hand in. '
+            + 'Do this at the end of every month for your records.',
+        kind: 'feature', days: 2, max_views: 2,
+        cta_label: 'Show me', cta_tab: 'stats',
+    };
+
+    function ntPreset() {
+        document.getElementById('ntfTitle').value  = NT_PRESET.title;
+        document.getElementById('ntfBody').value   = NT_PRESET.body;
+        document.getElementById('ntfKind').value   = NT_PRESET.kind;
+        document.getElementById('ntfDays').value   = NT_PRESET.days;
+        document.getElementById('ntfViews').value  = NT_PRESET.max_views;
+        document.getElementById('ntfCta').value    = NT_PRESET.cta_label;
+        document.getElementById('ntfTab').value    = NT_PRESET.cta_tab;
+        showAlert('Template loaded — edit the wording, then Start sending.', 'success');
+    }
+
+    function ntAudChanged() {
+        const some = document.querySelector('input[name="ntAud"]:checked').value === 'some';
+        document.getElementById('ntPeople').style.display = some ? 'block' : 'none';
+    }
+
+    function ntFilterPeople() {
+        const q = (document.getElementById('ntPeopleSearch').value || '').toLowerCase();
+        document.querySelectorAll('#ntPeople .nt-person').forEach(el => {
+            el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+        });
+    }
+
+    async function ntCreate(start) {
+        const some = document.querySelector('input[name="ntAud"]:checked').value === 'some';
+        const audience = some
+            ? Array.from(document.querySelectorAll('.nt-pick:checked')).map(c => c.value)
+            : [];
+        if (some && !audience.length) { showAlert('Pick at least one person, or choose Everyone.', 'danger'); return; }
+
+        const payload = {
+            title:     document.getElementById('ntfTitle').value.trim(),
+            body:      document.getElementById('ntfBody').value.trim(),
+            kind:      document.getElementById('ntfKind').value,
+            days:      parseInt(document.getElementById('ntfDays').value, 10) || 2,
+            max_views: parseInt(document.getElementById('ntfViews').value, 10) || 2,
+            cta_label: document.getElementById('ntfCta').value.trim(),
+            cta_tab:   document.getElementById('ntfTab').value,
+            audience, start,
+        };
+        if (!payload.title || !payload.body) { showAlert('A notice needs a title and a message.', 'danger'); return; }
+
+        try {
+            await ntFetchJson('/api/admin/notices', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            showAlert(start ? 'Notice is now going out.' : 'Saved — start it whenever you like.', 'success');
+            ['ntfTitle', 'ntfBody', 'ntfCta'].forEach(id => { document.getElementById(id).value = ''; });
+            document.querySelectorAll('.nt-pick:checked').forEach(c => { c.checked = false; });
+            loadNotices();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
+    async function loadNotices() {
+        const list = document.getElementById('ntList');
+        if (!list) return;
+        list.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
+        try {
+            const data = await ntFetchJson('/api/admin/notices');
+            const items = data.notices || [];
+            list.innerHTML = items.length ? items.map(n => `
+                <div class="nt-row ${n.active ? 'on' : ''}">
+                    <div class="nt-row-main">
+                        <div class="nt-row-title">
+                            <span class="nt-state ${n.active ? 'on' : ''}">${n.active ? 'Sending' : 'Stopped'}</span>
+                            ${escapeHtml(n.title)}
+                        </div>
+                        <div class="nt-row-meta">
+                            ${n.everyone ? 'Everyone' : escapeHtml(n.audience.join(', '))}
+                            · ${n.days} day${n.days !== 1 ? 's' : ''}
+                            · up to ${n.max_views} sign-in${n.max_views !== 1 ? 's' : ''}
+                            · seen by ${n.seen_by}
+                            · by ${escapeHtml(n.created_by || '—')}
+                        </div>
+                    </div>
+                    <div class="nt-row-acts">
+                        ${n.active
+                            ? `<button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="ntAction('${n.id}','stop')"><i class="fas fa-stop"></i> Stop</button>`
+                            : `<button class="oa-btn oa-btn-primary oa-btn-sm" onclick="ntAction('${n.id}','start')"><i class="fas fa-paper-plane"></i> Start</button>`}
+                        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="ntAction('${n.id}','reset')" title="Show it again to everyone, from now"><i class="fas fa-rotate-left"></i> Show again</button>
+                        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="ntAction('${n.id}','delete')"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>`).join('')
+                : '<div class="oa-empty"><i class="fas fa-bullhorn"></i><p>No notices yet. Write one above.</p></div>';
+        } catch (err) {
+            list.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
+    }
+
+    async function ntAction(id, action) {
+        if (action === 'delete' && !confirm('Delete this notice for good?')) return;
+        try {
+            await ntFetchJson(`/api/admin/notices/${id}/${action}`, { method: 'POST' });
+            showAlert({ start: 'Notice is now going out.', stop: 'Stopped — nobody new will see it.',
+                        reset: 'It will show again to everyone.', delete: 'Notice deleted.' }[action] || 'Done', 'success');
+            loadNotices();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
     }
 
     // ── Security & integrity: signals worth a second look, for one day ────
@@ -59,7 +369,7 @@
         const where = p.address ? ` · ${escapeHtml(p.address)}` : '';
         const dev   = [p.device, p.browser].filter(Boolean).map(escapeHtml).join(' · ');
         return `<div class="sec-item">
-            <div class="sec-item-top"><strong>${escapeHtml(p.username || '—')}</strong>
+            <div class="sec-item-top"><strong>${escapeHtml(p.name || p.username || '—')}</strong>
               <span class="oa-tag">${escapeHtml(p.shift_name || 'Normal')}</span>
               <span class="spacer"></span>
               <span class="sec-mono">${p.login_time || '—'}${p.logout_time ? ' → ' + p.logout_time : ''}${p.hours ? ' · ' + p.hours + 'h' : ''}</span>
@@ -95,7 +405,7 @@
                 'The photo taken at sign-in did not match the registered face.',
                 data.face_failures,
                 f => `<div class="sec-item">
-                        <div class="sec-item-top"><strong>${escapeHtml(f.username || '—')}</strong>
+                        <div class="sec-item-top"><strong>${escapeHtml(f.name || f.username || '—')}</strong>
                           <span class="oa-tag">${escapeHtml(f.shift_name || '')}</span>
                           <span class="spacer"></span>
                           <span class="sec-mono">${escapeHtml(f.time || '')}</span></div>
@@ -147,13 +457,14 @@
             const failRes = await fetch(`/api/admin/face-logs?match=false&date=${today}&per_page=1`);
             const failData = await failRes.json();
             document.getElementById('faceFailures').textContent = failData.total || 0;
+            lunoPaintStats();
 
             const allLoc = await fetch(`/api/admin/user-locations/${today}`);
             const allLocData = await allLoc.json();
             let html = '';
             (allLocData.locations || []).slice(0, 15).forEach(l => {
                 html += `<tr>
-                    <td><strong>${l.username}</strong></td>
+                    <td><strong>${l.name || l.username}</strong></td>
                     <td>${l.date}</td>
                     <td>${l.shift_name}</td>
                     <td>${l.login_time}</td>
@@ -592,7 +903,7 @@
                         const marker = L.marker([l.login_lat, l.login_lng]).addTo(adminMap)
                             .bindPopup(`
                                 <div style="font-family:sans-serif;padding:4px;">
-                                    <strong style="color:#0071e3;font-size:0.95rem;">${l.username}</strong><br>
+                                    <strong style="color:#0071e3;font-size:0.95rem;">${l.name || l.username}</strong><br>
                                     <span style="font-size:0.8rem;color:#555;">Shift: ${l.shift_name}</span><br>
                                     <span style="font-size:0.8rem;color:#555;">Login: ${l.login_time}</span><br>
                                     <div style="font-size:0.75rem;margin-top:4px;color:#333;">${l.login_address}</div>
@@ -609,7 +920,7 @@
                     html += `<div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);box-shadow:0 4px 15px rgba(0,0,0,0.03);border-radius:16px;padding:20px;margin-bottom:18px;">
                         <div style="display:flex;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;align-items:center;">
                             <div style="display:flex;align-items:center;gap:10px;">
-                                <strong style="font-size:1.05rem;">${l.username}</strong>
+                                <strong style="font-size:1.05rem;">${l.name || l.username}</strong>
                                 <span class="badge" style="background:${l.at_office?'#34c759':'#ff9500'};color:white;">${l.at_office?'🏛️ On Campus':'📡 Remote'}</span>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;">
@@ -749,7 +1060,7 @@
         const barColor = p.progress_pct >= 80 ? '#2E7D46' : p.progress_pct >= 50 ? '#C77700' : '#C0362C';
         return `<div class="an-u">
             <div class="an-u-top">
-              <span class="an-u-name">${p.username}</span>
+              <span class="an-u-name">${p.name || p.username}</span>
               <span class="an-u-prog">${p.progress_pct}%</span>
             </div>
             ${timeline}
@@ -787,13 +1098,14 @@
         document.getElementById('calendarModal').classList.remove('active');
     }
 
-    // The same range the calendar is showing, downloaded as a formatted workbook.
-    function downloadUserExcel() {
+    // The same range the calendar is showing, as a workbook or a Word document.
+    function downloadUserReport(kind) {
         let from = document.getElementById('calFrom').value;
         let to   = document.getElementById('calTo').value;
         if (!calUserId || !from || !to) { showAlert('Pick a From and To date', 'danger'); return; }
         if (from > to) [from, to] = [to, from];
-        window.location.href = `/api/admin/user-excel/${calUserId}?from=${from}&to=${to}`;
+        const path = kind === 'word' ? 'user-word' : 'user-excel';
+        window.location.href = `/api/admin/${path}/${calUserId}?from=${from}&to=${to}`;
     }
 
     const CAL_STATUS_LABEL = {
@@ -1000,7 +1312,7 @@
             document.getElementById('acDayList').innerHTML = locs.length ? locs.map(l => `
                 <div class="ac-day-item">
                     <div class="ac-day-item-head">
-                        <strong>${escapeHtml(l.username)}</strong>
+                        <strong>${escapeHtml(l.name || l.username)}</strong>
                         <span class="oa-tag ${l.at_office ? 'ok' : 'warn'}">${l.at_office ? 'On campus' : 'Remote'}</span>
                         <span class="oa-tag">${escapeHtml(l.shift_name)}</span>
                         <span class="spacer"></span>

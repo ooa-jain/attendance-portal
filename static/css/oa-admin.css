@@ -16,8 +16,30 @@
   margin-bottom: 20px;
   border-bottom: 1px solid var(--line);
   scrollbar-width: none;
+  position: relative;           /* anchors the sliding underline */
 }
 .ad-tabs::-webkit-scrollbar { display: none; }
+
+/* One underline that travels between tabs, instead of a border per tab. */
+.ad-tab-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 0;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--gold-400), var(--gold-500));
+  box-shadow: 0 0 10px rgba(238, 189, 27, .45);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform .32s cubic-bezier(.22, 1, .36, 1),
+    width     .32s cubic-bezier(.22, 1, .36, 1),
+    opacity   .18s ease;
+}
+.ad-tab-underline.is-on { opacity: 1; }
+.ad-tab-underline.no-anim { transition: none; }
 
 .ad-tab {
   display: inline-flex;
@@ -30,11 +52,25 @@
   white-space: nowrap;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color .15s, border-color .15s;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  transition: color .15s, background .15s;
 }
-.ad-tab i { font-size: .8rem; }
-.ad-tab:hover { color: var(--ink-700); }
-.ad-tab.on { color: var(--ink-800); border-bottom-color: var(--gold-500); }
+.ad-tab i { font-size: .8rem; transition: transform .2s cubic-bezier(.22, 1, .36, 1); }
+.ad-tab:hover { color: var(--ink-700); background: rgba(10, 19, 36, .04); }
+.ad-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-500), 0 0 0 4px rgba(238, 189, 27, .2);
+}
+.ad-tab.on { color: var(--ink-800); }
+.ad-tab.on i { color: var(--gold-600); transform: translateY(-1px); }
+/* The travelling underline replaces the per-tab border, but if JS never runs
+   the tab still reads as selected. */
+.no-js-underline .ad-tab.on { border-bottom-color: var(--gold-500); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-tab-underline { transition: opacity .18s ease; }
+  .ad-tab i, .ad-tab.on i { transition: none; transform: none; }
+}
 
 .ad-panel { display: none; }
 .ad-panel.on { display: block; animation: adIn .2s ease-out; }
@@ -621,6 +657,58 @@
   text-transform: uppercase; color: var(--t3); margin-bottom: 2px;
 }
 .cal-note-empty { font-size: .78rem; color: var(--t3); }
+
+/* ── Name & role editor on a person's card ───────────────────────────── */
+.ad-profile-row { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
+.ad-profile-row .oa-input { font-size: .78rem; padding: 7px 9px; }
+.ad-profile-row select.oa-input { width: auto; }
+@media (max-width: 560px) {
+  .ad-profile-row { grid-template-columns: 1fr; }
+  .ad-profile-row select.oa-input { width: 100%; }
+}
+
+/* ── Email reports: the settings read-out ────────────────────────────── */
+.ml-grid { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line);
+           border-radius: var(--r-sm); overflow: hidden; }
+.ml-row { display: grid; grid-template-columns: 170px 1fr; gap: 12px;
+          background: #fff; padding: 10px 14px; font-size: .8rem; }
+.ml-k { color: var(--t3); font-size: .7rem; font-weight: 800; letter-spacing: .06em;
+        text-transform: uppercase; align-self: center; }
+.ml-v { color: var(--t1); word-break: break-word; font-family: var(--mono); font-size: .76rem; }
+@media (max-width: 560px) { .ml-row { grid-template-columns: 1fr; gap: 3px; } }
+
+/* ── Notices: compose + list ─────────────────────────────────────────── */
+.nt-aud { display: flex; gap: 18px; flex-wrap: wrap; }
+.nt-radio { display: inline-flex; align-items: center; gap: 7px; font-size: .8rem; color: var(--t1); cursor: pointer; }
+.nt-people {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  max-height: 190px; overflow-y: auto;
+  padding: 10px; background: var(--paper);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.nt-person {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; background: #fff;
+  border: 1px solid var(--line); border-radius: 999px;
+  font-size: .76rem; color: var(--t1); cursor: pointer;
+}
+.nt-person:hover { border-color: var(--gold-500); }
+
+.nt-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; margin-bottom: 8px; background: #fff;
+  border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: var(--r-sm);
+}
+.nt-row.on { border-left-color: #2E7D46; background: #FAFDFB; }
+.nt-row-main { flex: 1; min-width: 220px; }
+.nt-row-title { font-size: .86rem; font-weight: 700; color: var(--t1); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nt-row-meta { font-size: .7rem; color: var(--t2); margin-top: 4px; font-family: var(--mono); }
+.nt-state {
+  font-size: .55rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 999px; background: var(--paper-2); color: var(--t3);
+}
+.nt-state.on { background: #E8F5EC; color: #1E7D46; }
+.nt-row-acts { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ── Security & integrity panel ──────────────────────────────────────── */
 .sec-tiles {

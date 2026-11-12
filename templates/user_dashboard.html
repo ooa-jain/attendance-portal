@@ -79,8 +79,10 @@
       </div>
     </div>
     <nav class="oa-rail-nav">
+      <div class="oa-nav-group">Attendance</div>
       <button class="oa-navitem on" data-tab="normal" onclick="goTab('normal')"><i class="fas fa-clock"></i> Today</button>
       <button class="oa-navitem" data-tab="shift" onclick="goTab('shift')" style="display:none"><i class="fas fa-layer-group"></i> Shifts</button>
+      <div class="oa-nav-group">My record</div>
       <button class="oa-navitem" data-tab="stats" onclick="goTab('stats')"><i class="fas fa-chart-simple"></i> Statistics</button>
       <button class="oa-navitem" data-tab="calendar" onclick="goTab('calendar')"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="oa-navitem" onclick="scrollToLocationCard()"><i class="fas fa-location-dot"></i> Your location</button>
@@ -91,7 +93,7 @@
       <button class="oa-navitem danger" onclick="handleLogout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </nav>
     <div class="oa-rail-foot">
-      <strong style="color:var(--gold-400)">Head Office</strong><br>
+      <strong style="color:var(--ink-800)">Head Office</strong><br>
       Office of Academics, Bengaluru
       <div style="font-size:0.75rem;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:var(--t2)" id="railLocFoot">
         <i class="fas fa-location-dot" style="color:#34c759"></i> <span id="railLocText">Checking location…</span>
@@ -505,7 +507,8 @@
           <div class="oa-field"><label for="rpTo">To</label><input type="date" id="rpTo"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="oa-btn oa-btn-primary" onclick="downloadMyReport()"><i class="fas fa-download"></i> Download report</button>
+          <button class="oa-btn oa-btn-primary" onclick="downloadMyReport('excel')"><i class="fas fa-file-excel"></i> Excel</button>
+          <button class="oa-btn oa-btn-primary" onclick="downloadMyReport('word')"><i class="fas fa-file-word"></i> Word</button>
           <button class="oa-btn oa-btn-ghost" onclick="setReportRange('month')">This month</button>
           <button class="oa-btn oa-btn-ghost" onclick="setReportRange('prev')">Last month</button>
         </div>
@@ -647,6 +650,22 @@
   </div>
 </div>
 
+<!-- ══ NOTICE ("what's new") ════════════════════════════════════ -->
+<div class="oa-backdrop" id="noticeBD">
+  <div class="oa-sheet nt-sheet">
+    <div class="oa-handle"></div>
+    <div class="nt-badge" id="ntBadge">NEW</div>
+    <div class="nt-mark"><img src="{{ url_for('static', filename='images/jain.png') }}" alt=""></div>
+    <div class="nt-title" id="ntTitle">—</div>
+    <div class="nt-body" id="ntBody"></div>
+    <div class="oa-sheet-actions">
+      <button class="oa-btn oa-btn-primary" id="ntCta" style="display:none"></button>
+      <button class="oa-btn oa-btn-ghost" onclick="closeNotice(false)">Remind me later</button>
+      <button class="oa-btn oa-btn-ghost" onclick="closeNotice(true)">Got it, don't show again</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ DAY DETAIL SHEET ═════════════════════════════════════════ -->
 <div class="oa-backdrop" id="dayBD">
   <div class="oa-sheet">
@@ -695,6 +714,7 @@
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/oa-nav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/user-dashboard.js') }}"></script>
 <script>
   // Mirror the drawer's "Register face" visibility onto the web rail item

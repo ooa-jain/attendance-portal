@@ -152,75 +152,152 @@ a { color: var(--ink-600); text-decoration: none; }
 
 .oa-shell { min-height: 100vh; }
 
-/* ── Left rail (web ≥1024px) ── */
+/* ── Left rail (web ≥1024px) ──
+   White rail against the warm paper of the content area: the two tones
+   separate on their own, so the divider can stay a hairline. */
 .oa-rail {
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--rail);
-  background: var(--ink-800);
-  color: var(--on-ink);
+  background: #FFFFFF;
+  color: var(--ink-800);
   display: none;
   flex-direction: column;
   z-index: 60;
-  border-right: 1px solid rgba(255, 255, 255, .06);
+  border-right: 1px solid var(--line);
 }
 
 .oa-rail-head {
   padding: 22px 20px 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  border-bottom: 1px solid var(--line);
   display: flex;
   gap: 12px;
   align-items: center;
 }
-.oa-rail-head img { width: 38px; height: 38px; border-radius: 9px; flex: none; }
+.oa-rail-head img {
+  width: 38px; height: 38px; border-radius: 9px; flex: none;
+  box-shadow: 0 0 0 1px rgba(10, 19, 36, .07), 0 4px 12px rgba(10, 19, 36, .10);
+}
 .oa-rail-head .org {
   font-size: .74rem;
   font-weight: 800;
   letter-spacing: .04em;
   line-height: 1.3;
+  color: var(--ink-800);
 }
 .oa-rail-head .sub {
   font-size: .64rem;
-  color: var(--on-ink-dim);
+  color: var(--t3);
   letter-spacing: .05em;
 }
 
-.oa-rail-nav { padding: 14px 12px; display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
+.oa-rail-nav {
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow-y: auto;
+  position: relative;          /* anchors the sliding highlight */
+}
 
-.oa-navitem {
+/* The highlight: one element that travels to whichever item is active,
+   rather than every item carrying its own background. On white the gold
+   tint reads cleanly, so the accent can carry the fill as well as the edge. */
+.oa-nav-highlight {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 0;
+  height: 0;
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, rgba(238, 189, 27, .17) 0%, rgba(238, 189, 27, .05) 100%);
+  box-shadow: inset 0 0 0 1px rgba(238, 189, 27, .25);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform .34s cubic-bezier(.22, 1, .36, 1),
+    height    .34s cubic-bezier(.22, 1, .36, 1),
+    opacity   .18s ease;
+}
+.oa-nav-highlight::before {           /* the gold edge that reads as "you are here" */
+  content: "";
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 58%;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--gold-500), var(--gold-600));
+}
+.oa-nav-highlight.is-on { opacity: 1; }
+/* Until it has been measured once, don't let it fly in from the corner. */
+.oa-nav-highlight.no-anim { transition: none; }
+
+.oa-rail-nav .oa-navitem, .oa-navitem {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
   padding: 11px 14px;
   border-radius: var(--r-sm);
-  color: var(--on-ink-dim);
+  color: var(--t2);
   font-size: .84rem;
   font-weight: 600;
   text-align: left;
-  transition: background .14s, color .14s;
   position: relative;
+  z-index: 1;                   /* sits above the highlight */
+  transition: color .16s ease, background .16s ease;
 }
-.oa-navitem i { width: 17px; font-size: .88rem; text-align: center; }
-.oa-navitem:hover { background: rgba(255, 255, 255, .06); color: var(--on-ink); }
-.oa-navitem.on { background: rgba(238, 189, 27, .12); color: var(--gold-400); }
-.oa-navitem.on::before {
-  content: "";
-  position: absolute;
-  left: -12px; top: 50%;
-  transform: translateY(-50%);
-  width: 3px; height: 22px;
-  background: var(--gold-500);
-  border-radius: 0 3px 3px 0;
+.oa-rail-nav .oa-navitem i, .oa-navitem i {
+  width: 17px;
+  font-size: .88rem;
+  text-align: center;
+  flex: none;
+  color: var(--t3);
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1), color .16s ease;
 }
-.oa-navitem.danger { color: #F2A9A4; }
-.oa-navitem.danger:hover { background: rgba(183, 48, 42, .18); color: #FFD3D0; }
+
+.oa-rail-nav .oa-navitem:hover, .oa-navitem:hover { background: rgba(10, 19, 36, .045); color: var(--ink-800); }
+.oa-rail-nav .oa-navitem:hover i, .oa-navitem:hover i { color: var(--ink-700); transform: translateX(1px) scale(1.06); }
+.oa-rail-nav .oa-navitem:focus-visible, .oa-navitem:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-500), 0 0 0 4px rgba(238, 189, 27, .22);
+}
+
+/* Active: the label goes to full ink so it is the most readable thing in
+   the rail; the gold stays on the icon and the edge. */
+.oa-rail-nav .oa-navitem.on, .oa-navitem.on { background: transparent; color: var(--ink-800); font-weight: 700; }
+.oa-rail-nav .oa-navitem.on i, .oa-navitem.on i { color: var(--gold-600); }
+
+.oa-rail-nav .oa-navitem.danger, .oa-navitem.danger { color: var(--bad); }
+.oa-rail-nav .oa-navitem.danger i, .oa-navitem.danger i { color: var(--bad); opacity: .8; }
+.oa-rail-nav .oa-navitem.danger:hover, .oa-navitem.danger:hover { background: var(--bad-bg); color: var(--bad); }
+.oa-rail-nav .oa-navitem.danger:hover i, .oa-navitem.danger:hover i { color: var(--bad); opacity: 1; }
+
+/* Eyebrow labels that group the nav into sections. */
+.oa-nav-group {
+  font-size: .56rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--t3);
+  padding: 14px 15px 6px;
+  user-select: none;
+}
+.oa-nav-group:first-child { padding-top: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-nav-highlight { transition: opacity .18s ease; }
+  .oa-navitem i { transition: color .16s ease; }
+  .oa-navitem:hover i { transform: none; }
+}
 
 .oa-rail-foot {
   padding: 14px 16px 18px;
-  border-top: 1px solid rgba(255, 255, 255, .08);
+  border-top: 1px solid var(--line);
   font-size: .66rem;
-  color: var(--on-ink-dim);
+  color: var(--t3);
   line-height: 1.5;
 }
 
@@ -303,8 +380,9 @@ a { color: var(--ink-600); text-decoration: none; }
   top: 0; right: 0;
   width: min(300px, 84vw);
   height: 100%;
-  background: var(--ink-800);
-  color: var(--on-ink);
+  background: #FFFFFF;
+  color: var(--ink-800);
+  border-left: 1px solid var(--line);
   transform: translateX(100%);
   transition: transform .26s cubic-bezier(.32, .72, 0, 1);
   z-index: 80;
@@ -331,10 +409,10 @@ a { color: var(--ink-600); text-decoration: none; }
   display: flex; align-items: center; justify-content: center;
   flex: none;
 }
-.oa-duser .nm { font-size: .92rem; font-weight: 700; }
-.oa-duser .rl { font-size: .68rem; color: var(--on-ink-dim); }
+.oa-duser .nm { font-size: .92rem; font-weight: 700; color: var(--ink-800); }
+.oa-duser .rl { font-size: .68rem; color: var(--t3); }
 
-.oa-dsep { height: 1px; background: rgba(255, 255, 255, .08); margin: 8px 14px; }
+.oa-dsep { height: 1px; background: var(--line); margin: 8px 14px; }
 
 /* ── Bottom nav (mobile) ── */
 .oa-botnav {
@@ -362,15 +440,20 @@ a { color: var(--ink-600); text-decoration: none; }
   transition: color .14s;
   position: relative;
 }
-.oa-bnav i { font-size: 1.02rem; }
+.oa-bnav i { font-size: 1.02rem; transition: transform .2s cubic-bezier(.22, 1, .36, 1); }
 .oa-bnav.on { color: var(--ink-800); }
+.oa-bnav.on i { transform: translateY(-1px); }
 .oa-bnav.on::after {
   content: "";
   position: absolute;
   top: 6px;
   width: 20px; height: 3px;
-  background: var(--gold-500);
+  background: linear-gradient(90deg, var(--gold-400), var(--gold-500));
   border-radius: 2px;
+  box-shadow: 0 0 10px rgba(238, 189, 27, .5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .oa-bnav i, .oa-bnav.on i { transition: none; transform: none; }
 }
 
 /* ── Content area ── */

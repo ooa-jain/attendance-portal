@@ -15,8 +15,12 @@
 
     <form method="POST" action="{{ url_for('register') }}">
       <div class="oa-field">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autocapitalize="none" spellcheck="false">
+        <label for="full_name">Full name</label>
+        <input type="text" id="full_name" name="full_name" placeholder="e.g. Dr. Madhavi R">
+      </div>
+      <div class="oa-field">
+        <label for="username">Username <span style="font-weight:400;color:var(--t3)">— used to sign in</span></label>
+        <input type="text" id="username" name="username" required autocapitalize="none" spellcheck="false" placeholder="e.g. madhavi">
       </div>
       <div class="oa-field">
         <label for="email">Email</label>
