@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Admin console · Office of Academics</title>
-<meta name="theme-color" content="#0B1730">
+<meta name="theme-color" content="#F1F2F5">
 
 <!-- App logo as favicon -->
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
@@ -13,7 +13,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -27,14 +27,14 @@
 </head>
 <body>
 
-<div class="oa-shell">
+<div class="oa-shell has-rail">
 
   <!-- ══ LEFT RAIL ════════════════════════════════════════════ -->
   <aside class="oa-rail">
     <div class="oa-rail-head">
       <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
       <div>
-        <div class="org">OFFICE OF ACADEMICS</div>
+        <div class="org">Office of Academics</div>
         <div class="sub">Admin console</div>
       </div>
     </div>
@@ -73,8 +73,8 @@
   <header class="oa-topbar">
     <img class="brandmark" src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
     <div class="titles">
-      <div class="org">ADMIN CONSOLE</div>
-      <div class="sub">Office of Academics · Head Office</div>
+      <div class="org" id="lunoCrumb">Dashboard</div>
+      <div class="sub">Admin console</div>
     </div>
     <div class="lu-search">
       <i class="fas fa-magnifying-glass"></i>
@@ -106,7 +106,7 @@
     <div class="lu-crumbs">
       <button type="button" onclick="goTab('dashboard')">Home</button>
       <span class="sep">/</span>
-      <span class="here" id="lunoCrumb">Dashboard</span>
+      <span class="here">Admin</span>
     </div>
 
     <!-- Mobile tab strip (rail handles this on web) -->
@@ -127,7 +127,7 @@
     <div id="dashboard-tab" class="ad-panel on">
       <div class="lu-greet">
         <div>
-          <h1>Welcome back, {% set _parts = (current_user.full_name or current_user.username).split() %}{% set _first = _parts|reject('in', ['Dr.','Dr','Mr.','Mr','Ms.','Ms','Mrs.','Mrs','Prof.','Prof'])|list %}{{ (_first or _parts)[0] }}!</h1>
+          <h1>Hi, {% set _parts = (current_user.full_name or current_user.username).split() %}{% set _first = _parts|reject('in', ['Dr.','Dr','Mr.','Mr','Ms.','Ms','Mrs.','Mrs','Prof.','Prof'])|list %}{{ (_first or _parts)[0] }}!</h1>
           <div class="lede" id="lunoLede">Office of Academics · Head Office, Bengaluru</div>
         </div>
         <div class="lu-greet-right">
