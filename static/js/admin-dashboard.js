@@ -117,7 +117,6 @@
         if (tab === 'face') loadFaceLogs(1);
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
         if (tab === 'calendar') { loadCalendarOverview(); loadHolidays(); }
-        if (tab === 'dashboard') loadLeaderboard();
         if (tab === 'face') loadSecurityInsights();
         if (tab === 'notices') { loadNotices(); loadMailSettings(); }
         lunoAfterTab(tab);

@@ -4210,119 +4210,6 @@ def change_my_password():
 
 
 # ─────────────────────────────────────────────────────────────
-#  STREAKS AND THE MONTHLY LEADERBOARD
-# ─────────────────────────────────────────────────────────────
-
-def _current_streak(present_dates, leave_dates, holidays, today):
-    """Consecutive working days present, counting back from today.
-
-    Weekends, declared holidays and approved leave neither add to the streak
-    nor break it. Today only counts once the person has signed in — not
-    having signed in *yet* does not end a run.
-    """
-    streak, cur, guard = 0, today, 0
-    while guard < 400:
-        guard += 1
-        iso = cur.isoformat()
-        if iso in present_dates:
-            streak += 1
-        elif cur == today or cur.weekday() >= 5 or iso in holidays or iso in leave_dates:
-            pass
-        else:
-            break
-        cur -= timedelta(days=1)
-        if not present_dates or iso < min(present_dates):
-            break
-    return streak
-
-
-def compute_leaderboard(month_start, month_end, department=None):
-    """Attendance ranking for one month: days present, then hours, with the
-    streak each person is on. Admin accounts are not ranked."""
-    today = get_ist_now().date()
-    q = {"role": {"$ne": "admin"}}
-    if department:
-        q["department"] = department
-    users = list(mongo.db.users.find(q, {"username": 1, "full_name": 1, "department": 1}))
-    if not users:
-        return []
-    uids = [u["_id"] for u in users]
-
-    # One pass over ~4 months of records covers both the month and any streak.
-    since = min(month_start, today - timedelta(days=120)).isoformat()
-    recs = mongo.db.attendance.find(
-        {"user_id": {"$in": uids}, "date": {"$gte": since}},
-        {"user_id": 1, "date": 1, "hours": 1})
-    dates, hours = {}, {}
-    ms, me = month_start.isoformat(), month_end.isoformat()
-    for r in recs:
-        uid, d = r.get("user_id"), r.get("date")
-        if not d:
-            continue
-        dates.setdefault(uid, set()).add(d)
-        if ms <= d <= me:
-            hours[uid] = hours.get(uid, 0.0) + (r.get("hours", 0) or 0)
-
-    leaves = {}
-    for l in mongo.db.leave_applications.find(
-            {"user_id": {"$in": uids}, "status": "approved", "date": {"$gte": since}},
-            {"user_id": 1, "date": 1}):
-        leaves.setdefault(l.get("user_id"), set()).add(l.get("date"))
-
-    holidays = holiday_map()
-    rows = []
-    for u in users:
-        uid  = u["_id"]
-        mine = dates.get(uid, set())
-        rows.append({
-            "user_id":    str(uid),
-            "username":   u.get("username", ""),
-            "name":       display_name(u),
-            "department": u.get("department", ""),
-            "days":       sum(1 for d in mine if ms <= d <= me),
-            "hours":      round(hours.get(uid, 0.0), 1),
-            "streak":     _current_streak(mine, leaves.get(uid, set()), holidays, today),
-        })
-    rows.sort(key=lambda r: (-r["days"], -r["hours"], r["name"].lower()))
-    rank = 0
-    for i, r in enumerate(rows):
-        if i == 0 or (r["days"], r["hours"]) != (rows[i - 1]["days"], rows[i - 1]["hours"]):
-            rank = i + 1
-        r["rank"] = rank
-    return rows
-
-
-@app.route("/api/leaderboard")
-@login_required
-def leaderboard():
-    """This month's attendance leaderboard.
-
-    People see names, days present and streaks — not each other's hours.
-    Administrators see hours as well and can narrow it to one department.
-    """
-    start, end = _resolve_user_range()
-    if not request.args.get("month") and not request.args.get("from"):
-        end = (date(start.year + 1, 1, 1) if start.month == 12
-               else date(start.year, start.month + 1, 1)) - timedelta(days=1)
-    is_admin = current_user.role == "admin"
-    dept = (request.args.get("department") or "").strip() if is_admin else None
-    rows = compute_leaderboard(start, end, dept or None)
-    me = None
-    for r in rows:
-        r["is_me"] = r["user_id"] == str(current_user.id)
-        if r["is_me"]:
-            me = dict(r)
-    if not is_admin:
-        for r in rows:
-            if not r["is_me"]:
-                r.pop("hours", None)
-            r.pop("username", None)
-    limit = request.args.get("limit", type=int, default=10)
-    return jsonify({"month": start.strftime("%B %Y"), "total": len(rows),
-                    "rows": rows[:max(1, min(limit, 100))], "me": me})
-
-
-# ─────────────────────────────────────────────────────────────
 #  SIGN-OUT REMINDERS
 # ─────────────────────────────────────────────────────────────
 
@@ -4590,7 +4477,7 @@ def month_bounds(ym):
     return start, nxt - timedelta(days=1)
 
 
-def _monthly_mail(user_doc, start, end, data, rank_info):
+def _monthly_mail(user_doc, start, end, data):
     s = data["summary"]
     name = display_name(user_doc)
     month = start.strftime("%B %Y")
@@ -4604,10 +4491,6 @@ def _monthly_mail(user_doc, start, end, data, rank_info):
         f'<div style="font-size:12px;color:#555766;margin-top:2px">{_html_escape(k)}</div></div></td>'
         + ("</tr><tr>" if i == 2 else "")
         for i, (k, v, bg) in enumerate(tiles))
-    rank_line = ""
-    if rank_info:
-        rank_line = (f'<p style="font-size:14px;color:#555766;margin:14px 0 0">On the leaderboard you finished '
-                     f'<strong style="color:#16161D">#{rank_info["rank"]} of {rank_info["total"]}</strong>.</p>')
     note = ("A full month without an absence. Well done." if not s.get("absent") and s.get("present")
             else f'{s.get("absent")} working day{"s" if s.get("absent") != 1 else ""} without a sign-in.'
             if s.get("absent") else "")
@@ -4616,7 +4499,7 @@ def _monthly_mail(user_doc, start, end, data, rank_info):
              f'<strong style="color:#16161D">{month}</strong>. The day-by-day sheet is attached.</p>'
              f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>{cells}</tr></table>'
              + (f'<p style="font-size:14px;color:#555766;margin:14px 0 0">{_html_escape(note)}</p>' if note else "")
-             + rank_line +
+             +
              '<p style="font-size:12px;color:#8B8D9C;margin:18px 0 0">Saturdays are optional and Sundays and declared '
              'holidays are not counted. If something looks wrong, tell the Office of Academics.</p>')
     text = (f"Hello {name},\n\nYour attendance for {month}:\n"
@@ -4631,7 +4514,6 @@ def send_monthly_reports(start=None, end=None, background=False):
     if not start:
         start, end = previous_month()
     users = list(mongo.db.users.find({"role": {"$in": list(STAFF_ROLES)}}, USER_LIST_FIELDS))
-    board = {r["user_id"]: r for r in compute_leaderboard(start, end)}
     out = {"month": start.strftime("%B %Y"), "sent": 0, "no_email": [], "failed": []}
     for u in users:
         email = (u.get("email") or "").strip()
@@ -4640,9 +4522,7 @@ def send_monthly_reports(start=None, end=None, background=False):
             continue
         try:
             data = compute_user_analysis(u, start, end)
-            row = board.get(str(u["_id"]))
-            rank = {"rank": row["rank"], "total": len(board)} if row and row["days"] else None
-            subject, text, html = _monthly_mail(u, start, end, data, rank)
+            subject, text, html = _monthly_mail(u, start, end, data)
             xlsx = build_person_workbook(u, start, end, data).getvalue()
             att = [(person_download_name(u.get("username", ""), start, end),
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx)]

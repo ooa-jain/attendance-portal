@@ -203,24 +203,8 @@
         </div>
       </section>
 
-      <section class="oa-card">
-        <div class="oa-card-head">
-          <h2>Leaderboard</h2>
-          <span class="oa-tag" id="lbMonth">This month</span>
-          <span class="spacer"></span>
-          <select class="oa-input" id="lbDept" style="width:auto" onchange="loadLeaderboard()" aria-label="Department">
-            <option value="">Everyone</option>
-            {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
-          </select>
-        </div>
-        <p class="ad-hint">Most days present this month, then most hours. People see this list on their Statistics page without each other's hours.</p>
-        <div class="lb-list" id="lbList">
-          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
-        </div>
-      </section>
     </div>
 
-    <!-- (leaderboard sits at the foot of Overview) -->
     <!-- ════════ ANALYSIS (Power-BI style) ════════ -->
     <div id="analysis-tab" class="ad-panel">
       <section class="oa-card">

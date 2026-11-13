@@ -830,3 +830,11 @@ excluded, targeted ones only to their audience) and decisions on their own leave
 from the last 60 days, newest first, with an unread count on the tab. Opening
 the tab marks them read; it does not use up a notice's pop-up showings.
 
+### Leaderboard removed
+
+The monthly leaderboard is gone: the card on the student Statistics page and on
+the admin Overview, the streak badge by the student's name, the
+`/api/leaderboard` route, and the leaderboard place in the monthly email. The
+"Day streak" figure in *This month at a glance* stays — it only ever showed the
+person their own streak.
+
