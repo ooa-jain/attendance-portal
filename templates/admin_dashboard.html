@@ -500,6 +500,24 @@
         </form>
       </section>
 
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Add many people at once</h2>
+          <span class="spacer"></span>
+          <a class="oa-btn oa-btn-ghost oa-btn-sm" href="{{ url_for('admin_import_template') }}"><i class="fas fa-download"></i> Template</a>
+        </div>
+        <p class="ad-hint">
+          Upload a CSV or Excel file with one person per row. Columns: <strong>username</strong> (required), full_name, email,
+          role, department, work_hours, password. Leave password empty and one is made up for that person — you see it once,
+          after creating. Nothing is created until you check the file and confirm.
+        </p>
+        <div class="imp-pick">
+          <input type="file" id="impFile" class="oa-input" accept=".csv,.xlsx" onchange="impReset()">
+          <button class="oa-btn oa-btn-primary" id="impCheckBtn" onclick="impRun(true)"><i class="fas fa-list-check"></i> Check file</button>
+        </div>
+        <div id="impOut"></div>
+      </section>
+
       <div class="ad-notice">
         <i class="fas fa-shield-halved"></i>
         <div>
@@ -742,6 +760,21 @@
           </button>
           <button class="oa-btn oa-btn-ghost" id="remindBtn" onclick="remindSignout()">
             <i class="fas fa-bell"></i> Remind people still signed in
+          </button>
+        </div>
+
+        <div class="ml-monthly">
+          <div class="bd">
+            <div class="t">Monthly reports</div>
+            <div class="s">Each intern and employee gets their own month by email, with their day-by-day Excel attached.
+              Runs on the 1st from cron (<code>send_monthly.py</code>); send a month by hand here.</div>
+          </div>
+          <div class="oa-field" style="margin:0">
+            <label for="mrMonth">Month</label>
+            <input type="month" id="mrMonth" class="oa-input" style="width:auto">
+          </div>
+          <button class="oa-btn oa-btn-primary" id="mrBtn" onclick="sendMonthly(this)">
+            <i class="fas fa-paper-plane"></i> Send to everyone
           </button>
         </div>
         <p class="ad-hint" style="margin-top:10px">

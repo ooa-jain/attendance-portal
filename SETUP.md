@@ -83,6 +83,8 @@ Port 465 means implicit SSL. Set `SMTP_USE_SSL=0` for STARTTLS on 587.
 | `GOOGLE_MAPS_API_KEY` | map tiles on the Locations tab |
 | `PROTOTYPE_PASSWORD` | gate for `/admin/prototype`; has a fallback in the code |
 | `SKIP_INDEXES` | `1` skips index creation at startup |
+| `PUBLIC_BASE_URL` | the portal's public address, e.g. `https://attendance.example.edu`; used to build password-reset links. **Set this** — behind nginx the app may otherwise see `http://127.0.0.1:8000` |
+| `MONTHLY_REPORT_ENABLED` | `1` (default) to let `send_monthly.py` mail everyone their month; `0` stops it |
 | `SIGNOUT_NUDGE_HOUR` | hour (IST, 24h) from which the dashboard reminds someone still signed in; default `18` |
 
 > Put no real passwords in this file when sharing it. The values live in
@@ -120,6 +122,7 @@ ensure_admin.py            create or repair the admin account
 reset_admin_password.py    password reset
 send_digest.py             cron entry point for the daily summary
 send_reminders.py          cron entry point for the evening sign-out reminder
+send_monthly.py            cron entry point for each person's monthly report
 test_mail.py               SMTP diagnostic — probes ports, reports the real error
 face_v2_reference.py       reference for the next face pipeline (not wired in)
 
@@ -178,6 +181,12 @@ Cron for the digest:
 
 ```
 5 21 * * * cd /var/www/jain-intern && venv/bin/python send_digest.py >> /var/log/jain-digest.log 2>&1
+```
+
+Cron for the monthly report (09:15 on the 1st):
+
+```
+15 9 1 * * cd /var/www/jain-intern && venv/bin/python send_monthly.py >> /var/log/jain-monthly.log 2>&1
 ```
 
 Cron for the sign-out reminder (Monday to Saturday, 18:30):

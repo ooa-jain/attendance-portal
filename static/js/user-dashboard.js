@@ -95,6 +95,53 @@ function goTab(t){
   if(di) di.classList.add('on');
   if(t==='calendar') renderCal();
   if(t==='stats'){ loadMonthGlance(); if(!document.getElementById('rpFrom').value) setReportRange('month'); }
+  if(t==='notices') loadAnnouncements(true);
+}
+
+// ─ Notices board: everything the office sent, and leave decisions ─
+const NB_KIND = {
+  feature:   ['New feature', 'nb-lilac'],
+  info:      ['Information', 'nb-sky'],
+  warning:   ['Important',   'nb-pink'],
+  'leave-ok':['Leave',       'nb-mint'],
+  'leave-no':['Leave',       'nb-pink'],
+};
+function nbSetUnread(n){
+  document.querySelectorAll('[data-unread]').forEach(el=>{ el.hidden=!n; el.textContent=n; });
+  document.querySelectorAll('[data-unread-dot]').forEach(el=>{ el.hidden=!n; });
+}
+async function loadAnnouncements(markRead){
+  const box=document.getElementById('nbList');
+  try{
+    const r=await fetch('/api/user/announcements');
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Could not load notices');
+    nbSetUnread(markRead?0:d.unread);
+    if(!box) return;
+    const items=d.items||[];
+    if(!items.length){
+      box.innerHTML='<div class="oa-empty"><i class="fas fa-bullhorn"></i><p>Nothing from the office yet. Notices and leave decisions will appear here.</p></div>';
+    } else {
+      box.innerHTML=items.map(it=>{
+        const [label,cls]=NB_KIND[it.kind]||NB_KIND.info;
+        const when=new Date(it.at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Kolkata'});
+        const cta=(it.cta_tab&&it.cta_label)?`<button class="oa-btn oa-btn-primary oa-btn-sm" onclick="goTab('${esc(it.cta_tab)}')">${esc(it.cta_label)}</button>`:'';
+        const icon=it.source==='leave'?(it.kind==='leave-ok'?'fa-circle-check':'fa-circle-xmark'):(it.kind==='warning'?'fa-triangle-exclamation':it.kind==='feature'?'fa-wand-magic-sparkles':'fa-circle-info');
+        return `<article class="nb-item ${cls}${it.unread?' unread':''}">
+          <div class="nb-ic"><i class="fas ${icon}"></i></div>
+          <div class="nb-bd">
+            <div class="nb-meta"><span class="nb-kind">${label}</span><span>${when}</span>${it.unread?'<span class="nb-new">New</span>':''}</div>
+            <h3>${esc(it.title)}</h3>
+            ${it.body?`<p>${esc(it.body)}</p>`:''}
+            ${cta}
+          </div>
+        </article>`;
+      }).join('');
+    }
+    if(markRead && d.unread) fetch('/api/user/announcements/read',{method:'POST'}).catch(()=>{});
+  }catch(e){
+    if(box) box.innerHTML=`<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>${esc(e.message)}</p></div>`;
+  }
 }
 function toggleDrawer(){ document.getElementById('drawer').classList.contains('show')?closeDrawer():openDrawer(); }
 function openDrawer(){
@@ -1333,3 +1380,5 @@ setTimeout(loadNotice, 900);
 setInterval(loadDD, 60000);
 setInterval(loadTeamToday, 60000);
 
+// Unread count for the Notices tab badge.
+loadAnnouncements(false);

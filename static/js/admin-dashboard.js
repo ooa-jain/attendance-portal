@@ -135,6 +135,8 @@
                 ['Leave applications', d.leave_mail ? 'Mailed as they arrive' : 'Off'],
                 ['Spreadsheet', d.attach_excel ? 'Attached to the summary' : 'Not attached'],
                 ['Sign-out reminder', d.signout_reminder ? 'On — runs from cron (send_reminders.py)' : 'Off'],
+                ['Monthly reports', d.monthly_report ? 'On — runs on the 1st from cron (send_monthly.py)' : 'Off'],
+                ['Links in mails', d.public_base_url || 'From the address the admin used (set PUBLIC_BASE_URL to fix it)'],
                 ['Sent from', d.sender || '—'],
                 ['Mail server', `${d.server}:${d.port} · ${d.encryption}`],
             ];
@@ -168,6 +170,116 @@
         } finally {
             if (btn) btn.disabled = false;
         }
+    }
+
+    // ── Monthly reports: send a month by hand (two taps, it mails everyone) ──
+    function lastMonthValue() {
+        const t = new Date(); const d = new Date(t.getFullYear(), t.getMonth() - 1, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    (function () {
+        const m = document.getElementById('mrMonth');
+        if (m && !m.value) m.value = lastMonthValue();
+    })();
+
+    async function sendMonthly(btn) {
+        const month = document.getElementById('mrMonth').value || lastMonthValue();
+        if (!btn.dataset.armed) {
+            btn.dataset.armed = '1';
+            const label = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Tap again to mail everyone';
+            btn.classList.add('oa-btn-bad');
+            setTimeout(() => { delete btn.dataset.armed; btn.innerHTML = label; btn.classList.remove('oa-btn-bad'); }, 4000);
+            return;
+        }
+        delete btn.dataset.armed;
+        btn.disabled = true;
+        btn.classList.remove('oa-btn-bad');
+        btn.innerHTML = '<i class="fas fa-circle-notch spin"></i> Sending…';
+        try {
+            const d = await ntFetchJson('/api/admin/monthly-reports', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ month }),
+            });
+            showAlert(`${escapeHtml(d.month)}: ${d.sent} report${d.sent === 1 ? '' : 's'} on the way`
+                + ((d.no_email || []).length ? ` · no email on file: ${d.no_email.map(escapeHtml).join(', ')}` : ''), 'success');
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send to everyone';
+        }
+    }
+
+    // ── Bulk add people: check the file, then create ─────────────────────
+    function impReset() { document.getElementById('impOut').innerHTML = ''; }
+
+    async function impRun(dry) {
+        const input = document.getElementById('impFile');
+        const out = document.getElementById('impOut');
+        if (!input.files.length) { showAlert('Choose a CSV or Excel file first.', 'danger'); return; }
+        const fd = new FormData();
+        fd.append('file', input.files[0]);
+        fd.append('dry_run', dry ? '1' : '0');
+        out.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>' + (dry ? 'Checking…' : 'Creating accounts…') + '</p></div>';
+        try {
+            const d = await ntFetchJson('/api/admin/users/import', { method: 'POST', body: fd });
+            if (dry) {
+                const rows = d.rows.map(r => `
+                  <tr class="${r.ok ? '' : 'bad'}">
+                    <td class="num">${r.row}</td>
+                    <td><strong>${escapeHtml(r.username || '—')}</strong></td>
+                    <td>${escapeHtml(r.full_name)}</td>
+                    <td>${escapeHtml(r.email || '—')}</td>
+                    <td>${escapeHtml(r.role)}</td>
+                    <td>${escapeHtml(r.department || '—')}</td>
+                    <td class="num">${r.work_hours}</td>
+                    <td>${r.ok ? `<span class="oa-tag ok">Ready</span>${r.has_password ? '' : ' <span class="oa-tag">Password made up</span>'}`
+                               : `<span class="oa-tag bad">${escapeHtml(r.problems.join('; '))}</span>`}</td>
+                  </tr>`).join('');
+                out.innerHTML = `
+                  <div class="imp-sum">
+                    <span class="oa-tag ok">${d.valid} ready</span>
+                    ${d.invalid ? `<span class="oa-tag bad">${d.invalid} with problems (skipped)</span>` : ''}
+                    <span class="spacer"></span>
+                    ${d.valid ? `<button class="oa-btn oa-btn-primary" onclick="impRun(false)"><i class="fas fa-user-plus"></i> Create ${d.valid} account${d.valid === 1 ? '' : 's'}</button>` : ''}
+                  </div>
+                  <div class="oa-tablewrap imp-table"><table class="oa-table">
+                    <thead><tr><th>Row</th><th>Username</th><th>Full name</th><th>Email</th><th>Role</th><th>Department</th><th>Hours</th><th>Check</th></tr></thead>
+                    <tbody>${rows}</tbody></table></div>`;
+            } else {
+                const made = d.created.filter(c => c.password);
+                const lines = made.map(c => `${c.username}\t${c.password}`).join('\n');
+                out.innerHTML = `
+                  <div class="imp-done">
+                    <div class="t"><i class="fas fa-circle-check"></i> Created ${d.created.length} account${d.created.length === 1 ? '' : 's'}</div>
+                    ${made.length ? `
+                      <p>These passwords were made up and are shown <strong>only now</strong>. Copy them before leaving this page.
+                         People with an email on file can also use “Forgot your password?” on the sign-in page.</p>
+                      <div class="oa-tablewrap imp-table"><table class="oa-table">
+                        <thead><tr><th>Username</th><th>Full name</th><th>Password</th></tr></thead>
+                        <tbody>${made.map(c => `<tr><td><strong>${escapeHtml(c.username)}</strong></td><td>${escapeHtml(c.full_name)}</td><td class="num"><code>${escapeHtml(c.password)}</code></td></tr>`).join('')}</tbody>
+                      </table></div>
+                      <textarea id="impCopy" class="oa-input" rows="1" readonly hidden>${escapeHtml(lines)}</textarea>` : ''}
+                    <div class="oa-inline" style="margin-top:12px">
+                      ${made.length ? '<button class="oa-btn oa-btn-ghost" onclick="impCopyAll(this)"><i class="fas fa-copy"></i> Copy usernames and passwords</button>' : ''}
+                      <button class="oa-btn oa-btn-primary" onclick="location.reload()"><i class="fas fa-rotate"></i> Reload to see them</button>
+                    </div>
+                  </div>`;
+                document.getElementById('impFile').value = '';
+            }
+        } catch (err) {
+            out.innerHTML = '<div class="oa-flash danger"><i class="fas fa-circle-info"></i><span>' + escapeHtml(err.message) + '</span></div>';
+        }
+    }
+
+    function impCopyAll(btn) {
+        const ta = document.getElementById('impCopy');
+        const text = ta ? ta.value : '';
+        const done = () => { btn.innerHTML = '<i class="fas fa-check"></i> Copied'; };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => { ta.hidden = false; ta.select(); });
+        } else { ta.hidden = false; ta.select(); }
     }
 
     // ── People: save name, role and department from a person's card ──────

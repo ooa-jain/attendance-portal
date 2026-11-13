@@ -937,3 +937,30 @@ p.ad-hint { margin-bottom: 14px; }
 .hol-date b { display: block; font-family: var(--display); font-size: 1rem; font-weight: 700; letter-spacing: -.02em; color: var(--t1); font-variant-numeric: tabular-nums; }
 .hol-date span { font-size: .74rem; color: var(--t3); }
 .hol-nm { flex: 1; min-width: 0; font-size: .92rem; font-weight: 500; color: var(--t1); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ══ MONTHLY REPORTS ROW ═════════════════════════════════════ */
+.ml-monthly {
+  display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
+  margin-top: 18px; padding: 16px 18px; border-radius: var(--r-lg); background: var(--tint-sky);
+}
+.ml-monthly .bd { flex: 1; min-width: 240px; }
+.ml-monthly .t { font-family: var(--display); font-size: 1.05rem; font-weight: 700; letter-spacing: -.02em; color: var(--t1); }
+.ml-monthly .s { font-size: .84rem; color: var(--t2); line-height: 1.5; }
+.ml-monthly code { font-size: .78rem; background: var(--card); padding: 1px 6px; border-radius: 6px; }
+.ml-monthly .oa-input { background: var(--card); }
+
+/* ══ BULK IMPORT ═════════════════════════════════════════════ */
+.imp-pick { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.imp-pick input[type="file"] { flex: 1; min-width: 220px; padding: 9px 12px; }
+.imp-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0 10px; }
+.imp-sum .spacer { flex: 1; }
+.imp-table { border-radius: var(--r); background: var(--paper); max-height: 420px; overflow: auto; }
+.imp-table .oa-table th { position: sticky; top: 0; background: var(--paper); z-index: 1; }
+.imp-table tr.bad td { background: var(--bad-bg); }
+.imp-table .oa-tag.bad { white-space: normal; }
+.imp-done { margin-top: 16px; padding: 18px; border-radius: var(--r-lg); background: var(--tint-mint); }
+.imp-done .t { font-family: var(--display); font-size: 1.15rem; font-weight: 700; color: var(--t1); margin-bottom: 6px; }
+.imp-done .t i { color: var(--ok); }
+.imp-done p { font-size: .88rem; color: var(--t2); margin-bottom: 10px; }
+.imp-done .imp-table { background: var(--card); }
+.imp-done .imp-table .oa-table th { background: var(--card); }

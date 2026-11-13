@@ -793,3 +793,40 @@ counted as an absence** in a person's analysis, reports or attendance rate,
 and the day snapshot files no-shows under Off rather than Missed sign-in.
 Previously only Sundays were treated this way.
 
+---
+
+## Forgot password, monthly reports, bulk import, notices board
+
+### Forgot password
+
+**Forgot your password?** on the sign-in page. Enter a username or the email
+on file; a link valid for one hour, usable once, is mailed. The page answers the
+same whether or not the account exists, and sends at most one mail per account
+every two minutes. Only a hash of the link's token is stored, and expired
+tokens delete themselves (TTL index). People with no email on file are told to
+ask the office. **Set `PUBLIC_BASE_URL`** so the link points at the real address.
+
+### Monthly report
+
+Each intern and employee is mailed their own month on the 1st — days worked,
+absences, leave, attendance rate, hours, their leaderboard place — with their
+day-by-day Excel attached. Cron runs `send_monthly.py`; **Notices → Email
+reports → Monthly reports** sends any past month by hand (tap twice, because it
+mails everyone).
+
+### Add many people at once
+
+**People → Add many people at once**: upload a CSV or Excel file (template
+provided). **Check file** lists every row as ready or with its problem
+(username taken, twice in the file, bad role, hours, email, short password);
+nothing is created until **Create N accounts**. Rows with problems are skipped.
+Blank passwords are made up and shown once, with a copy button. Header names
+are forgiving (`Name`, `Dept`, `Hours`, `E-mail` all work). Up to 500 rows, 2 MB.
+
+### Notices tab
+
+Students have a **Notices** tab listing every notice sent to them (drafts
+excluded, targeted ones only to their audience) and decisions on their own leave
+from the last 60 days, newest first, with an unread count on the tab. Opening
+the tab marks them read; it does not use up a notice's pop-up showings.
+

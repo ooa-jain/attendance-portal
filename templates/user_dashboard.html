@@ -53,6 +53,7 @@
         <button class="oa-navitem" data-tab="shift" onclick="goTab('shift')" style="display:none"><i class="fas fa-layer-group"></i> Shifts</button>
         <button class="oa-navitem" data-tab="stats" onclick="goTab('stats')"><i class="fas fa-chart-simple"></i> Statistics</button>
         <button class="oa-navitem" data-tab="calendar" onclick="goTab('calendar')"><i class="fas fa-calendar-days"></i> Calendar</button>
+        <button class="oa-navitem" data-tab="notices" onclick="goTab('notices')"><i class="fas fa-bullhorn"></i> Notices <span class="nb-count" data-unread hidden></span></button>
       </nav>
 
       <div class="st-right">
@@ -88,6 +89,7 @@
       <button class="oa-navitem" id="di-shift" data-tab="shift" onclick="goTab('shift');closeDrawer()" style="display:none"><i class="fas fa-layer-group"></i> Shifts</button>
       <button class="oa-navitem" id="di-stats" data-tab="stats" onclick="goTab('stats');closeDrawer()"><i class="fas fa-chart-simple"></i> Statistics</button>
       <button class="oa-navitem" id="di-calendar" data-tab="calendar" onclick="goTab('calendar');closeDrawer()"><i class="fas fa-calendar-days"></i> Calendar</button>
+      <button class="oa-navitem" id="di-notices" data-tab="notices" onclick="goTab('notices');closeDrawer()"><i class="fas fa-bullhorn"></i> Notices <span class="nb-count" data-unread hidden></span></button>
       <button class="oa-navitem" onclick="scrollToLocationCard();closeDrawer()"><i class="fas fa-location-dot"></i> Your location</button>
       <div class="oa-dsep"></div>
       <button class="oa-navitem" onclick="openLeave();closeDrawer()"><i class="fas fa-calendar-xmark"></i> Apply for leave</button>
@@ -517,6 +519,16 @@
       <div class="oa-rule"><span class="tick"></span><span class="lbl">My approved leave</span></div>
       <div id="myLeaves"></div>
     </div>
+    <!-- ════════ NOTICES ════════ -->
+    <div id="tab-notices" class="tab">
+      <div class="st-hello">
+        <div class="greet">From the Office of Academics</div>
+        <div class="who">Notices</div>
+      </div>
+      <div class="nb-list" id="nbList">
+        <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+      </div>
+    </div>
   </main>
 
   <!-- ══ BOTTOM NAV (mobile) ══════════════════════════════════ -->
@@ -525,6 +537,7 @@
     <button class="oa-bnav" id="bn-shift" data-tab="shift" onclick="goTab('shift')" style="display:none"><i class="fas fa-layer-group"></i><span>Shifts</span></button>
     <button class="oa-bnav" data-tab="stats" onclick="goTab('stats')"><i class="fas fa-chart-simple"></i><span>Stats</span></button>
     <button class="oa-bnav" data-tab="calendar" onclick="goTab('calendar')"><i class="fas fa-calendar-days"></i><span>Calendar</span></button>
+    <button class="oa-bnav" data-tab="notices" onclick="goTab('notices')"><i class="fas fa-bullhorn"></i><span>Notices</span><b class="nb-dot" data-unread-dot hidden></b></button>
   </nav>
 </div>
 

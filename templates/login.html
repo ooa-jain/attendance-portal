@@ -81,6 +81,8 @@
   .lg-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); padding: 12px 14px; color: var(--t3); font-size: .92rem; border-radius: 50%; }
   .lg-eye:hover { color: var(--t1); }
   .lg-form .oa-btn-block { min-height: 58px; font-family: var(--display); font-size: 1.1rem; font-weight: 700; margin-top: 8px; }
+  .lg-forgot { margin-top: 16px; text-align: center; font-size: .92rem; }
+  .lg-forgot a { font-weight: 600; }
   .lg-foot { margin-top: 24px; font-size: .78rem; color: var(--t3); line-height: 1.6; }
   .lg-theme { position: fixed; top: 14px; right: 14px; z-index: 5; }
 
@@ -176,6 +178,7 @@
         Sign in <i class="fas fa-arrow-right"></i>
       </button>
     </form>
+    <p class="lg-forgot"><a href="{{ url_for('forgot_password') }}">Forgot your password?</a></p>
 
     <div class="lg-foot">
       Office of Academics · JAIN (Deemed-to-be University)<br>

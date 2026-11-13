@@ -1117,6 +1117,48 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .lb-days b { display: block; font-family: var(--display); font-size: 1.3rem; font-weight: 800; letter-spacing: -.03em; color: var(--t1); font-variant-numeric: tabular-nums; }
 .lb-days span { font-size: .72rem; color: var(--t3); }
 
+/* ══ NOTICES BOARD ══════════════════════════════════════════ */
+
+.nb-list { display: flex; flex-direction: column; gap: 10px; max-width: 820px; }
+.nb-item {
+  display: flex; gap: 14px; align-items: flex-start;
+  background: var(--card); border-radius: var(--r-lg);
+  padding: 18px;
+  --nb: var(--tint-sky);
+}
+.nb-item.unread { box-shadow: inset 4px 0 0 var(--accent); }
+.nb-ic { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--nb); color: var(--t1); flex: none; }
+.nb-bd { flex: 1; min-width: 0; }
+.nb-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .78rem; color: var(--t3); }
+.nb-kind { font-weight: 600; color: var(--t1); background: var(--nb); padding: 2px 10px; border-radius: 999px; }
+.nb-new { font-weight: 700; color: #fff; background: var(--accent); padding: 2px 9px; border-radius: 999px; }
+:root[data-theme="dark"] .nb-new { color: #16161D; }
+.nb-bd h3 { font-family: var(--display); font-size: 1.15rem; font-weight: 700; letter-spacing: -.02em; color: var(--t1); margin: 6px 0 4px; text-wrap: balance; }
+.nb-bd p { font-size: .92rem; color: var(--t2); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 68ch; }
+.nb-bd .oa-btn { margin-top: 12px; }
+.nb-sky   { --nb: var(--tint-sky); }
+.nb-lilac { --nb: var(--tint-lilac); }
+.nb-pink  { --nb: var(--tint-pink); }
+.nb-mint  { --nb: var(--tint-mint); }
+.nb-count {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  display: inline-grid; place-items: center;
+  background: var(--stop); color: #fff; font-size: .7rem; font-weight: 700; margin-left: 2px;
+}
+.oa-bnav { position: relative; }
+.nb-dot { position: absolute; top: 12px; right: calc(50% - 16px); width: 8px; height: 8px; border-radius: 50%; background: var(--stop); }
+
+/* ══ PASSWORD PAGES ══════════════════════════════════════════ */
+
+.pw-page { min-height: calc(100vh - 160px); display: grid; place-items: center; }
+.pw-card { width: 100%; max-width: 440px; padding: 30px 28px; }
+.pw-icon { width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; background: var(--tint-lilac); color: var(--t1); font-size: 1.2rem; margin-bottom: 16px; }
+.pw-icon.ok  { background: var(--tint-mint); }
+.pw-icon.bad { background: var(--tint-pink); }
+.pw-title { font-family: var(--display); font-size: 1.9rem; font-weight: 800; letter-spacing: -.04em; line-height: 1.1; color: var(--t1); margin-bottom: 8px; text-wrap: balance; }
+.pw-foot { margin-top: 18px; text-align: center; font-size: .9rem; }
+.pw-foot a { font-weight: 600; }
+
 /* ══ SPIN ════════════════════════════════════════════════════ */
 .spin { animation: oaSpin 1s linear infinite; display: inline-block; }
 @keyframes oaSpin { to { transform: rotate(360deg); } }

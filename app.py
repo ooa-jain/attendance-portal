@@ -14,6 +14,7 @@ import re
 import random
 import secrets
 import hmac
+import hashlib
 import json
 import threading
 import requests
@@ -97,6 +98,11 @@ SIGNOUT_REMINDER_ENABLED = _env('SIGNOUT_REMINDER_ENABLED', default='1').lower()
 # From this hour (IST, 24h) the dashboard itself reminds a person still signed in.
 SIGNOUT_NUDGE_HOUR = int(_env('SIGNOUT_NUDGE_HOUR', default='18'))
 MIN_PASSWORD_LENGTH = 8
+# Links in mails (password reset) are built from this when set, e.g.
+# https://attendance.example.edu — otherwise from the address the request came in on.
+PUBLIC_BASE_URL = (_env('PUBLIC_BASE_URL', default='') or '').rstrip('/')
+RESET_LINK_MINUTES = 60
+MONTHLY_REPORT_ENABLED = _env('MONTHLY_REPORT_ENABLED', default='1').lower() not in ('0', 'false', 'no', 'off')
 
 
 
@@ -137,6 +143,9 @@ if os.environ.get("SKIP_INDEXES", "").lower() not in ("1", "true", "yes"):
         mongo.db.leave_applications.create_index([("user_id", 1), ("date", 1)])
         mongo.db.face_security_logs.create_index([("date", 1), ("match_result", 1)])
         mongo.db.users.create_index("username")
+        mongo.db.password_resets.create_index("token_hash")
+        # Expired reset links remove themselves.
+        mongo.db.password_resets.create_index("expires_at", expireAfterSeconds=0)
     except Exception as e:
         print(f"[MONGO WARNING] Could not ensure indexes: {e}")
 
@@ -1862,6 +1871,8 @@ def admin_mail_settings():
         "encryption":     "SSL" if app.config.get("MAIL_USE_SSL") else "STARTTLS",
         "sender":         app.config.get("MAIL_DEFAULT_SENDER"),
         "signout_reminder": SIGNOUT_REMINDER_ENABLED,
+        "monthly_report":   MONTHLY_REPORT_ENABLED,
+        "public_base_url":  PUBLIC_BASE_URL,
     })
 
 
@@ -4444,6 +4455,427 @@ def admin_delete_holiday(day):
             "updated_by": current_user.username}}, upsert=True)
     else:
         mongo.db.holidays.delete_one({"date": day})
+    return jsonify({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────
+#  FORGOT PASSWORD — a one-hour link by email
+# ─────────────────────────────────────────────────────────────
+
+
+def _hash_token(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _external_url(endpoint, **values):
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL + url_for(endpoint, **values)
+    return url_for(endpoint, _external=True, **values)
+
+
+def _find_account(identifier):
+    """A username, or an email address on file (any letter case)."""
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    doc = mongo.db.users.find_one({"username": ident})
+    if doc:
+        return doc
+    if "@" in ident:
+        return mongo.db.users.find_one(
+            {"email": {"$regex": "^" + re.escape(ident) + "$", "$options": "i"}})
+    return None
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(_home_for(current_user.role))
+    if request.method == "POST":
+        user = _find_account(request.form.get("identifier"))
+        email = (user.get("email") or "").strip() if user else ""
+        if user and email:
+            now = datetime.utcnow()
+            # One mail every two minutes per account, so the form cannot be
+            # used to flood someone's inbox.
+            recent = mongo.db.password_resets.find_one(
+                {"user_id": user["_id"], "created_at": {"$gte": now - timedelta(minutes=2)}})
+            if not recent:
+                token = secrets.token_urlsafe(32)
+                mongo.db.password_resets.insert_one({
+                    "user_id": user["_id"], "token_hash": _hash_token(token),
+                    "created_at": now, "expires_at": now + timedelta(minutes=RESET_LINK_MINUTES),
+                    "used": False, "ip": request.remote_addr,
+                })
+                link = _external_url("reset_password", token=token)
+                name = display_name(user)
+                text = (f"Hello {name},\n\nSomeone asked to reset the password for the Attendance Portal "
+                        f"account '{user['username']}'. To choose a new password, open this link within "
+                        f"{RESET_LINK_MINUTES} minutes:\n\n{link}\n\n"
+                        "If you did not ask for this, ignore this mail. Your password stays the same.")
+                inner = (f'<p style="font-size:15px;color:#16161D;margin:0 0 12px">Hello {_html_escape(name)},</p>'
+                         '<p style="font-size:14px;line-height:1.6;color:#555766;margin:0 0 18px">Someone asked to reset '
+                         f'the password for the account <strong style="color:#16161D">{_html_escape(user["username"])}</strong>. '
+                         f'The link works once, for {RESET_LINK_MINUTES} minutes.</p>'
+                         f'<p style="margin:0 0 18px"><a href="{_html_escape(link)}" style="display:inline-block;'
+                         'background:#16161D;color:#fff;text-decoration:none;font-weight:700;font-size:14px;'
+                         'padding:12px 22px;border-radius:999px">Choose a new password</a></p>'
+                         '<p style="font-size:12px;line-height:1.6;color:#8B8D9C;margin:0">If you did not ask for this, '
+                         'ignore this mail. Your password stays the same.</p>')
+                send_mail_async("Reset your Attendance Portal password", [email], text,
+                                _mail_shell("Reset your password", "Attendance Portal", inner))
+        # The same answer whether or not the account exists, so the form
+        # cannot be used to find out who has an account.
+        return render_template("forgot_password.html", sent=True)
+    return render_template("forgot_password.html", sent=False)
+
+
+def _live_reset(token):
+    if not token:
+        return None
+    return mongo.db.password_resets.find_one({
+        "token_hash": _hash_token(token), "used": False,
+        "expires_at": {"$gt": datetime.utcnow()},
+    })
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    rec = _live_reset(token)
+    if not rec:
+        return render_template("reset_password.html", invalid=True), 400
+    user = mongo.db.users.find_one({"_id": rec["user_id"]})
+    if not user:
+        return render_template("reset_password.html", invalid=True), 400
+    if request.method == "POST":
+        new   = request.form.get("password") or ""
+        again = request.form.get("again") or ""
+        error = None
+        if len(new) < MIN_PASSWORD_LENGTH:
+            error = f"Use at least {MIN_PASSWORD_LENGTH} characters."
+        elif new != again:
+            error = "The two passwords do not match."
+        if error:
+            return render_template("reset_password.html", invalid=False,
+                                   username=user["username"], error=error), 400
+        mongo.db.users.update_one({"_id": user["_id"]}, {"$set": {
+            "password": bcrypt.generate_password_hash(new).decode("utf-8"),
+            "password_changed_at": datetime.utcnow(),
+        }})
+        # This link and any other outstanding ones stop working.
+        mongo.db.password_resets.update_many({"user_id": user["_id"], "used": False},
+                                             {"$set": {"used": True, "used_at": datetime.utcnow()}})
+        flash("Password changed. Sign in with the new one.", "success")
+        return redirect(url_for("login"))
+    return render_template("reset_password.html", invalid=False, username=user["username"])
+
+
+# ─────────────────────────────────────────────────────────────
+#  MONTHLY REPORT — each person's month, by email, with their Excel
+# ─────────────────────────────────────────────────────────────
+
+def previous_month(today=None):
+    today = today or get_ist_now().date()
+    end = today.replace(day=1) - timedelta(days=1)
+    return end.replace(day=1), end
+
+
+def month_bounds(ym):
+    """'2026-10' -> (date(2026,10,1), date(2026,10,31)); None on a bad value."""
+    try:
+        start = datetime.strptime(ym, "%Y-%m").date().replace(day=1)
+    except (ValueError, TypeError):
+        return None
+    nxt = date(start.year + 1, 1, 1) if start.month == 12 else date(start.year, start.month + 1, 1)
+    return start, nxt - timedelta(days=1)
+
+
+def _monthly_mail(user_doc, start, end, data, rank_info):
+    s = data["summary"]
+    name = display_name(user_doc)
+    month = start.strftime("%B %Y")
+    rate = s.get("attendance_rate", 0)
+    tiles = [("Days worked", s.get("present", 0), "#D9F6E6"), ("Absent", s.get("absent", 0), "#FFE0EA"),
+             ("On leave", s.get("leave", 0), "#FFF0B8"), ("Attendance", f"{rate}%", "#DDEBFF"),
+             ("Total hours", s.get("total_hours", 0), "#EAE4FF"), ("Average a day", f"{s.get('avg_hours', 0)}h", "#FFE6D5")]
+    cells = "".join(
+        f'<td width="33%" style="padding:5px"><div style="background:{bg};border-radius:14px;padding:14px">'
+        f'<div style="font-size:24px;font-weight:800;color:#16161D">{_html_escape(str(v))}</div>'
+        f'<div style="font-size:12px;color:#555766;margin-top:2px">{_html_escape(k)}</div></div></td>'
+        + ("</tr><tr>" if i == 2 else "")
+        for i, (k, v, bg) in enumerate(tiles))
+    rank_line = ""
+    if rank_info:
+        rank_line = (f'<p style="font-size:14px;color:#555766;margin:14px 0 0">On the leaderboard you finished '
+                     f'<strong style="color:#16161D">#{rank_info["rank"]} of {rank_info["total"]}</strong>.</p>')
+    note = ("A full month without an absence. Well done." if not s.get("absent") and s.get("present")
+            else f'{s.get("absent")} working day{"s" if s.get("absent") != 1 else ""} without a sign-in.'
+            if s.get("absent") else "")
+    inner = (f'<p style="font-size:15px;color:#16161D;margin:0 0 12px">Hello {_html_escape(name)},</p>'
+             f'<p style="font-size:14px;line-height:1.6;color:#555766;margin:0 0 14px">Here is your attendance for '
+             f'<strong style="color:#16161D">{month}</strong>. The day-by-day sheet is attached.</p>'
+             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>{cells}</tr></table>'
+             + (f'<p style="font-size:14px;color:#555766;margin:14px 0 0">{_html_escape(note)}</p>' if note else "")
+             + rank_line +
+             '<p style="font-size:12px;color:#8B8D9C;margin:18px 0 0">Saturdays are optional and Sundays and declared '
+             'holidays are not counted. If something looks wrong, tell the Office of Academics.</p>')
+    text = (f"Hello {name},\n\nYour attendance for {month}:\n"
+            f"Days worked {s.get('present', 0)} · Absent {s.get('absent', 0)} · On leave {s.get('leave', 0)} · "
+            f"Attendance {rate}% · Hours {s.get('total_hours', 0)}\n\nThe day-by-day sheet is attached.")
+    return (f"Your attendance for {month}", text,
+            _mail_shell(f"Your attendance · {month}", "Monthly summary", inner))
+
+
+def send_monthly_reports(start=None, end=None, background=False):
+    """Mail every intern and employee their own month. Returns counts."""
+    if not start:
+        start, end = previous_month()
+    users = list(mongo.db.users.find({"role": {"$in": list(STAFF_ROLES)}}, USER_LIST_FIELDS))
+    board = {r["user_id"]: r for r in compute_leaderboard(start, end)}
+    out = {"month": start.strftime("%B %Y"), "sent": 0, "no_email": [], "failed": []}
+    for u in users:
+        email = (u.get("email") or "").strip()
+        if not email:
+            out["no_email"].append(display_name(u))
+            continue
+        try:
+            data = compute_user_analysis(u, start, end)
+            row = board.get(str(u["_id"]))
+            rank = {"rank": row["rank"], "total": len(board)} if row and row["days"] else None
+            subject, text, html = _monthly_mail(u, start, end, data, rank)
+            xlsx = build_person_workbook(u, start, end, data).getvalue()
+            att = [(person_download_name(u.get("username", ""), start, end),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx)]
+        except Exception as e:
+            out["failed"].append(f"{display_name(u)}: {e}")
+            continue
+        if background:
+            send_mail_async(subject, [email], text, html, att)
+            out["sent"] += 1
+        else:
+            ok, err = send_mail(subject, [email], text, html, att)
+            if ok:
+                out["sent"] += 1
+            else:
+                out["failed"].append(f"{display_name(u)}: {err}")
+    return out
+
+
+@app.route("/api/admin/monthly-reports", methods=["POST"])
+@login_required
+def admin_monthly_reports():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    body = request.get_json(silent=True) or {}
+    rng = month_bounds(body.get("month")) if body.get("month") else previous_month()
+    if not rng:
+        return jsonify({"error": "Pick a month."}), 400
+    if rng[0] > get_ist_now().date():
+        return jsonify({"error": "That month has not started yet."}), 400
+    res = send_monthly_reports(*rng, background=True)
+    return jsonify({"ok": True, **res})
+
+
+# ─────────────────────────────────────────────────────────────
+#  BULK ADD PEOPLE — from a CSV or Excel file
+# ─────────────────────────────────────────────────────────────
+
+IMPORT_MAX_ROWS = 500
+IMPORT_COLUMNS = ["username", "full_name", "email", "role", "department", "work_hours", "password"]
+_IMPORT_ALIASES = {
+    "user": "username", "login": "username", "user_name": "username", "username": "username",
+    "name": "full_name", "full_name": "full_name", "fullname": "full_name",
+    "email": "email", "e-mail": "email", "email_address": "email", "mail": "email",
+    "role": "role", "type": "role",
+    "department": "department", "dept": "department", "team": "department", "batch": "department",
+    "work_hours": "work_hours", "hours": "work_hours", "daily_hours": "work_hours", "daily_hours_target": "work_hours",
+    "password": "password",
+}
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{2,40}$")
+_EMAIL_RE    = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PW_CHARS    = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+
+
+def _generated_password():
+    return "".join(secrets.choice(_PW_CHARS) for _ in range(10))
+
+
+def _read_people_file(storage):
+    """Rows from an uploaded .csv or .xlsx, keyed by our column names."""
+    name = (storage.filename or "").lower()
+    raw = storage.read(2 * 1024 * 1024 + 1)
+    if len(raw) > 2 * 1024 * 1024:
+        raise ValueError("The file is larger than 2 MB.")
+    buf = io.BytesIO(raw)
+    if name.endswith(".csv"):
+        df = pd.read_csv(buf, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    elif name.endswith((".xlsx", ".xlsm")):
+        df = pd.read_excel(buf, dtype=str, keep_default_na=False)
+    else:
+        raise ValueError("Upload a .csv or .xlsx file.")
+    cols = {}
+    for c in df.columns:
+        key = re.sub(r"[\s]+", "_", str(c).strip().lower())
+        if key in _IMPORT_ALIASES:
+            cols[c] = _IMPORT_ALIASES[key]
+    if "username" not in cols.values():
+        raise ValueError("The file needs a 'username' column. Download the template to see the layout.")
+    df = df[list(cols)].rename(columns=cols)
+    rows = []
+    for rec in df.to_dict("records"):
+        row = {k: str(rec.get(k, "") or "").strip() for k in IMPORT_COLUMNS}
+        if any(row.values()):
+            rows.append(row)
+    if len(rows) > IMPORT_MAX_ROWS:
+        raise ValueError(f"At most {IMPORT_MAX_ROWS} people per file; this one has {len(rows)}.")
+    return rows
+
+
+def _check_people_rows(rows):
+    existing = {u["username"].lower() for u in mongo.db.users.find({}, {"username": 1}) if u.get("username")}
+    seen, out = set(), []
+    for i, r in enumerate(rows, start=2):           # row 1 is the header in the file
+        problems = []
+        u = r["username"]
+        if not u:
+            problems.append("no username")
+        elif not _USERNAME_RE.match(u):
+            problems.append("username may use letters, digits, . _ - (2–40 characters)")
+        elif u.lower() in existing:
+            problems.append("username already taken")
+        elif u.lower() in seen:
+            problems.append("username appears twice in the file")
+        role = (r["role"] or "intern").lower()
+        if role not in ALL_ROLES:
+            problems.append("role must be intern, employee or admin")
+        try:
+            hours = float(r["work_hours"]) if r["work_hours"] else float(DEFAULT_WORK_HOURS)
+            if not 1 <= hours <= 16:
+                problems.append("daily hours must be between 1 and 16")
+        except ValueError:
+            hours = DEFAULT_WORK_HOURS
+            problems.append("daily hours is not a number")
+        if r["email"] and not _EMAIL_RE.match(r["email"]):
+            problems.append("email does not look right")
+        if r["password"] and len(r["password"]) < MIN_PASSWORD_LENGTH:
+            problems.append(f"password shorter than {MIN_PASSWORD_LENGTH} characters")
+        if u:
+            seen.add(u.lower())
+        out.append({"row": i, "username": u, "full_name": r["full_name"] or u, "email": r["email"],
+                    "role": role, "department": r["department"][:60], "work_hours": hours,
+                    "password": r["password"], "ok": not problems, "problems": problems})
+    return out
+
+
+@app.route("/api/admin/users/import", methods=["POST"])
+@login_required
+def admin_import_users():
+    """Check a file (dry_run=1) or create every valid row in it."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "Choose a file first."}), 400
+    try:
+        rows = _check_people_rows(_read_people_file(f))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Could not read the file: {e}"}), 400
+    good = [r for r in rows if r["ok"]]
+    summary = {"total": len(rows), "valid": len(good), "invalid": len(rows) - len(good)}
+    if request.form.get("dry_run") == "1":
+        return jsonify({"ok": True, "dry_run": True, **summary,
+                        "rows": [{k: v for k, v in r.items() if k != "password"} | {"has_password": bool(r["password"])}
+                                 for r in rows]})
+    created = []
+    for r in good:
+        pw = r["password"] or _generated_password()
+        mongo.db.users.insert_one({
+            "username": r["username"], "full_name": r["full_name"],
+            "password": bcrypt.generate_password_hash(pw).decode("utf-8"),
+            "role": r["role"], "email": r["email"], "work_hours": r["work_hours"],
+            "department": r["department"], "created_at": datetime.utcnow(),
+            "created_by": current_user.username, "imported": True,
+            "face_registered": False, "face_required": False,
+            "face_registration_enabled": False, "shift_login_enabled": False,
+        })
+        created.append({"username": r["username"], "full_name": r["full_name"],
+                        "password": "" if r["password"] else pw})
+    return jsonify({"ok": True, "dry_run": False, **summary, "created": created})
+
+
+@app.route("/api/admin/users/import-template")
+@login_required
+def admin_import_template():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    body = ("username,full_name,email,role,department,work_hours,password\n"
+            "ananya.r,Ananya Rao,ananya.r@example.edu,intern,Admissions,8,\n"
+            "rohan.i,Rohan Iyer,,employee,Examinations,7.5,\n")
+    return app.response_class(body, mimetype="text/csv", headers={
+        "Content-Disposition": "attachment; filename=people_template.csv"})
+
+
+# ─────────────────────────────────────────────────────────────
+#  NOTICES BOARD — everything sent to this person, kept readable
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/user/announcements")
+@login_required
+def user_announcements():
+    """Every notice this person was sent, newest first, plus decisions on
+    their own leave requests from the last 60 days."""
+    uid, name = ObjectId(current_user.id), current_user.username
+    sent = [n for n in mongo.db.notices.find({"started_at": {"$ne": None}}).sort("started_at", -1).limit(100)
+            if not n.get("audience") or name in n.get("audience")]
+    views = {v["notice_id"]: v for v in mongo.db.notice_views.find(
+        {"user_id": uid, "notice_id": {"$in": [n["_id"] for n in sent]}})}
+    items = []
+    for n in sent:
+        items.append({
+            "id": str(n["_id"]), "source": "notice", "kind": n.get("kind", "info"),
+            "title": n.get("title", ""), "body": n.get("body", ""),
+            "cta_label": n.get("cta_label", ""), "cta_tab": n.get("cta_tab", ""),
+            "at": n["started_at"].isoformat() + "Z",
+            "unread": n["_id"] not in views,
+        })
+    since = (get_ist_now().date() - timedelta(days=60)).isoformat()
+    for l in mongo.db.leave_applications.find({"user_id": uid, "status": {"$in": ["approved", "denied"]},
+                                               "date": {"$gte": since}}).sort("updated_at", -1):
+        try:
+            pretty = datetime.strptime(l.get("date"), "%Y-%m-%d").strftime("%a %d %b")
+        except (ValueError, TypeError):
+            pretty = l.get("date", "")
+        approved = l.get("status") == "approved"
+        when = l.get("updated_at") or l.get("applied_at") or datetime.utcnow()
+        items.append({
+            "id": str(l["_id"]), "source": "leave", "kind": "leave-ok" if approved else "leave-no",
+            "title": f"Leave on {pretty} {'approved' if approved else 'not approved'}",
+            "body": (l.get("admin_comments") or "").strip() or f"{l.get('type', 'Leave')} · {l.get('comments') or 'no reason given'}",
+            "at": when.isoformat() + "Z", "unread": not l.get("user_notified"),
+        })
+    items.sort(key=lambda x: x["at"], reverse=True)
+    return jsonify({"items": items, "unread": sum(1 for i in items if i["unread"])})
+
+
+@app.route("/api/user/announcements/read", methods=["POST"])
+@login_required
+def user_announcements_read():
+    """Mark everything on the board as read. A notice read here still pops
+    up as before — reading the board does not use up its showings."""
+    uid = ObjectId(current_user.id)
+    now = datetime.utcnow()
+    for n in mongo.db.notices.find({"started_at": {"$ne": None}}, {"_id": 1, "audience": 1}):
+        if n.get("audience") and current_user.username not in n["audience"]:
+            continue
+        mongo.db.notice_views.update_one(
+            {"notice_id": n["_id"], "user_id": uid},
+            {"$set": {"read_on_board": now, "username": current_user.username},
+             "$setOnInsert": {"views": 0, "first_seen": now}}, upsert=True)
+    mongo.db.leave_applications.update_many(
+        {"user_id": uid, "status": {"$in": ["approved", "denied"]}, "user_notified": {"$ne": True}},
+        {"$set": {"user_notified": True}})
     return jsonify({"ok": True})
 
 
