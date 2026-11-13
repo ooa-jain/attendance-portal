@@ -325,7 +325,8 @@
 
 .ad-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
 
-.ad-profile-row { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
+.ad-profile-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+.ad-profile-row .oa-input { background: var(--card); }
 .ad-profile-row .oa-input { font-size: .82rem; min-height: 36px; padding: 6px 10px; }
 .ad-profile-row select.oa-input { width: auto; }
 @media (max-width: 560px) {
@@ -920,3 +921,19 @@ p.ad-hint { margin-bottom: 14px; }
 :root[data-theme="dark"] .leaflet-popup-content-wrapper,
 :root[data-theme="dark"] .leaflet-popup-tip { background: var(--card); color: var(--t1); }
 .ad-analysis-boxhead strong { display: inline-flex; align-items: center; gap: 8px; }
+
+/* ══ PEOPLE TOOLBAR ══════════════════════════════════════════ */
+.ad-peoplebar { display: grid; grid-template-columns: 1fr minmax(160px, 240px); gap: 10px; margin-bottom: 14px; }
+.ad-peoplebar .oa-input { background: var(--card); border-radius: 999px; padding-left: 18px; }
+@media (max-width: 560px) { .ad-peoplebar { grid-template-columns: 1fr; } }
+
+/* ══ HOLIDAYS ════════════════════════════════════════════════ */
+.hol-add { display: grid; grid-template-columns: 180px 1fr auto; gap: 0 12px; align-items: end; margin-bottom: 6px; }
+.hol-add .oa-btn { margin-bottom: 14px; }
+@media (max-width: 640px) { .hol-add { grid-template-columns: 1fr; } }
+.hol-list { display: flex; flex-direction: column; gap: 6px; }
+.hol-row { display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 14px; border-radius: var(--r); background: var(--paper); }
+.hol-date { width: 76px; flex: none; line-height: 1.15; }
+.hol-date b { display: block; font-family: var(--display); font-size: 1rem; font-weight: 700; letter-spacing: -.02em; color: var(--t1); font-variant-numeric: tabular-nums; }
+.hol-date span { font-size: .74rem; color: var(--t3); }
+.hol-nm { flex: 1; min-width: 0; font-size: .92rem; font-weight: 500; color: var(--t1); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

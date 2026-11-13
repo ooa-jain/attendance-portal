@@ -72,6 +72,7 @@ deployment already used `SMTP_*`.
 | `REPORT_RECIPIENTS` | comma-separated; who gets the daily digest |
 | `LEAVE_MAIL_ENABLED` | `1` to mail leave applications as they arrive |
 | `DAILY_DIGEST_ATTACH_EXCEL` | `1` to attach the spreadsheet |
+| `SIGNOUT_REMINDER_ENABLED` | `1` (default) to mail a reminder to people still signed in; `0` switches it off |
 
 Port 465 means implicit SSL. Set `SMTP_USE_SSL=0` for STARTTLS on 587.
 
@@ -82,6 +83,7 @@ Port 465 means implicit SSL. Set `SMTP_USE_SSL=0` for STARTTLS on 587.
 | `GOOGLE_MAPS_API_KEY` | map tiles on the Locations tab |
 | `PROTOTYPE_PASSWORD` | gate for `/admin/prototype`; has a fallback in the code |
 | `SKIP_INDEXES` | `1` skips index creation at startup |
+| `SIGNOUT_NUDGE_HOUR` | hour (IST, 24h) from which the dashboard reminds someone still signed in; default `18` |
 
 > Put no real passwords in this file when sharing it. The values live in
 > `.env`, which is deliberately untracked.
@@ -117,6 +119,7 @@ admin.py                   admin helpers
 ensure_admin.py            create or repair the admin account
 reset_admin_password.py    password reset
 send_digest.py             cron entry point for the daily summary
+send_reminders.py          cron entry point for the evening sign-out reminder
 test_mail.py               SMTP diagnostic — probes ports, reports the real error
 face_v2_reference.py       reference for the next face pipeline (not wired in)
 
@@ -175,6 +178,12 @@ Cron for the digest:
 
 ```
 5 21 * * * cd /var/www/jain-intern && venv/bin/python send_digest.py >> /var/log/jain-digest.log 2>&1
+```
+
+Cron for the sign-out reminder (Monday to Saturday, 18:30):
+
+```
+30 18 * * 1-6 cd /var/www/jain-intern && venv/bin/python send_reminders.py >> /var/log/jain-reminders.log 2>&1
 ```
 
 **Prototype** — `/admin/prototype/login`, password-gated, separately

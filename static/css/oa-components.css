@@ -1066,6 +1066,57 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .oa-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .oa-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 
+/* ══ SIGN-OUT NUDGE ══════════════════════════════════════════ */
+
+.st-nudge {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--gold-500); color: #16161D;
+  border-radius: var(--r-lg);
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+.st-nudge .ic { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: #fff; font-size: 1.2rem; flex: none; }
+.st-nudge .bd { flex: 1; min-width: 200px; }
+.st-nudge .t { font-family: var(--display); font-size: 1.1rem; font-weight: 700; letter-spacing: -.02em; }
+.st-nudge .s { font-size: .86rem; color: #3A3320; }
+.st-nudge .oa-btn-primary { background: #16161D; color: #fff; }
+
+.st-streak { background: var(--gold-500); color: #16161D; font-weight: 600; cursor: pointer; }
+
+/* ══ LEADERBOARD ═════════════════════════════════════════════ */
+
+.lb-list { display: flex; flex-direction: column; gap: 6px; }
+.lb-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-radius: var(--r);
+  background: var(--paper);
+  min-width: 0;
+}
+.lb-row.me { background: var(--tint-sun); }
+.lb-rank {
+  width: 30px; text-align: center; flex: none;
+  font-family: var(--display); font-size: 1.05rem; font-weight: 700; color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
+.lb-av {
+  width: 38px; height: 38px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--tint-lilac); color: var(--t1);
+  font-family: var(--display); font-weight: 700;
+}
+.lb-row:nth-child(4n+2) .lb-av { background: var(--tint-mint); }
+.lb-row:nth-child(4n+3) .lb-av { background: var(--tint-pink); }
+.lb-row:nth-child(4n+4) .lb-av { background: var(--tint-sky); }
+.lb-row.me .lb-av { background: var(--gold-500); color: #16161D; }
+.lb-who { flex: 1; min-width: 0; }
+.lb-who .nm { font-size: .94rem; font-weight: 600; color: var(--t1); line-height: 1.25; overflow-wrap: anywhere; }
+.lb-who .nm .you { font-size: .7rem; background: var(--gold-500); color: #16161D; padding: 1px 8px; border-radius: 999px; margin-left: 4px; }
+.lb-who .sub { font-size: .78rem; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-streak { font-size: .8rem; font-weight: 600; color: var(--t1); background: var(--card); padding: 4px 10px; border-radius: 999px; flex: none; }
+.lb-days { text-align: right; flex: none; min-width: 48px; line-height: 1.1; }
+.lb-days b { display: block; font-family: var(--display); font-size: 1.3rem; font-weight: 800; letter-spacing: -.03em; color: var(--t1); font-variant-numeric: tabular-nums; }
+.lb-days span { font-size: .72rem; color: var(--t3); }
+
 /* ══ SPIN ════════════════════════════════════════════════════ */
 .spin { animation: oaSpin 1s linear infinite; display: inline-block; }
 @keyframes oaSpin { to { transform: rotate(360deg); } }

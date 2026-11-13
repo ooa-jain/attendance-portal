@@ -116,7 +116,8 @@
         if (tab === 'locations') loadLocations();
         if (tab === 'face') loadFaceLogs(1);
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
-        if (tab === 'calendar') loadCalendarOverview();
+        if (tab === 'calendar') { loadCalendarOverview(); loadHolidays(); }
+        if (tab === 'dashboard') loadLeaderboard();
         if (tab === 'face') loadSecurityInsights();
         if (tab === 'notices') { loadNotices(); loadMailSettings(); }
         lunoAfterTab(tab);
@@ -133,6 +134,7 @@
                 ['Goes to', (d.recipients || []).join(', ') || 'nobody — set REPORT_RECIPIENTS'],
                 ['Leave applications', d.leave_mail ? 'Mailed as they arrive' : 'Off'],
                 ['Spreadsheet', d.attach_excel ? 'Attached to the summary' : 'Not attached'],
+                ['Sign-out reminder', d.signout_reminder ? 'On — runs from cron (send_reminders.py)' : 'Off'],
                 ['Sent from', d.sender || '—'],
                 ['Mail server', `${d.server}:${d.port} · ${d.encryption}`],
             ];
@@ -148,6 +150,137 @@
             box.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>'
                           + escapeHtml(err.message) + '</p></div>';
             if (tag) { tag.textContent = 'Unavailable'; tag.className = 'oa-tag warn'; }
+        }
+    }
+
+    // Mail everyone who signed in today and has not signed out.
+    async function remindSignout() {
+        const btn = document.getElementById('remindBtn');
+        if (btn) btn.disabled = true;
+        try {
+            const d = await ntFetchJson('/api/admin/remind-signout', { method: 'POST' });
+            const n = (d.people || []).length;
+            if (!n) showAlert('Nobody is signed in right now.', 'success');
+            else showAlert(`Still signed in: ${n}. Reminder mailed to ${d.sent}`
+                + ((d.no_email || []).length ? ` · no email on file: ${d.no_email.map(escapeHtml).join(', ')}` : ''), 'success');
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    // ── People: save name, role and department from a person's card ──────
+    async function saveUserProfile(uid) {
+        const name = document.getElementById('pfname-' + uid)?.value.trim() || '';
+        const role = document.getElementById('pfrole-' + uid)?.value || '';
+        const dept = document.getElementById('pfdept-' + uid)?.value.trim() || '';
+        try {
+            const d = await ntFetchJson(`/api/admin/user/${uid}/profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ full_name: name, role: role, department: dept }),
+            });
+            const nm = document.querySelector(`[data-name-of="${uid}"]`);
+            if (nm) nm.textContent = d.name;
+            const tag = document.querySelector(`[data-role-tag="${uid}"]`);
+            if (tag) { tag.textContent = d.role; tag.classList.toggle('gold', d.role === 'admin'); }
+            const dp = document.querySelector(`[data-dept-of="${uid}"]`);
+            if (dp) dp.textContent = d.department || 'No department';
+            const card = document.getElementById('ucard-' + uid);
+            if (card) card.dataset.dept = d.department || '';
+            showAlert('Saved. Reload the page to see new departments in the filters.', 'success');
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        }
+    }
+
+    // People tab: narrow the cards by name and department.
+    function filterPeople() {
+        const q = (document.getElementById('peopleSearch')?.value || '').trim().toLowerCase();
+        const dept = document.getElementById('peopleDept')?.value || '';
+        let shown = 0;
+        document.querySelectorAll('.ad-usergrid .ad-user').forEach(c => {
+            const okName = !q || (c.dataset.name || '').includes(q);
+            const d = c.dataset.dept || '';
+            const okDept = !dept || (dept === '__none__' ? !d : d === dept);
+            c.hidden = !(okName && okDept);
+            if (!c.hidden) shown++;
+        });
+        const n = document.getElementById('peopleCount');
+        if (n) n.textContent = shown;
+    }
+
+    // Analysis: tick everyone in one department.
+    function anPickDept(dept) {
+        if (!dept) return;
+        document.querySelectorAll('.an-user').forEach(c => { c.checked = c.dataset.dept === dept; });
+        anUsersChanged();
+    }
+
+    // ── Holidays the office manages itself ───────────────────────────────
+    let holYear = new Date().getFullYear();
+
+    function holShiftYear(delta) { holYear += delta; loadHolidays(); }
+
+    async function loadHolidays() {
+        const box = document.getElementById('holList');
+        if (!box) return;
+        document.getElementById('holYear').textContent = holYear;
+        try {
+            const d = await ntFetchJson('/api/admin/holidays?year=' + holYear);
+            const rows = d.holidays || [];
+            box.innerHTML = rows.length ? rows.map(h => `
+                <div class="hol-row">
+                  <div class="hol-date"><b>${escapeHtml(h.pretty)}</b><span>${escapeHtml(h.day)}</span></div>
+                  <div class="hol-nm">${escapeHtml(h.name)}
+                    ${h.custom ? '<span class="oa-tag info">Added by office</span>' : ''}</div>
+                  <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" title="Remove this holiday"
+                          onclick="holDelete('${h.date}', this)"><i class="fas fa-trash"></i></button>
+                </div>`).join('')
+              : `<div class="oa-empty"><i class="fas fa-calendar-plus"></i><p>No holidays listed for ${holYear} yet. Add the first one above.</p></div>`;
+        } catch (err) {
+            box.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>'
+                          + escapeHtml(err.message) + '</p></div>';
+        }
+    }
+
+    async function holAdd(ev) {
+        ev.preventDefault();
+        const date = document.getElementById('holDate').value;
+        const name = document.getElementById('holName').value.trim();
+        try {
+            await ntFetchJson('/api/admin/holidays', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date, name }),
+            });
+            document.getElementById('holName').value = '';
+            holYear = parseInt(date.slice(0, 4), 10) || holYear;
+            showAlert('Holiday added', 'success');
+            loadHolidays();
+            loadCalendarOverview();
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        }
+    }
+
+    // Two taps to remove: the first arms the button, the second deletes.
+    async function holDelete(day, btn) {
+        if (!btn.dataset.armed) {
+            btn.dataset.armed = '1';
+            btn.innerHTML = 'Remove?';
+            btn.classList.add('oa-btn-bad');
+            setTimeout(() => { delete btn.dataset.armed; btn.innerHTML = '<i class="fas fa-trash"></i>'; btn.classList.remove('oa-btn-bad'); }, 3500);
+            return;
+        }
+        try {
+            await ntFetchJson('/api/admin/holidays/' + day, { method: 'DELETE' });
+            showAlert('Holiday removed', 'success');
+            loadHolidays();
+            loadCalendarOverview();
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
         }
     }
 

@@ -92,6 +92,11 @@ REPORT_RECIPIENTS = [a.strip() for a in _env(
     'REPORT_RECIPIENTS', default='ooa.connect@jainuniversity.ac.in').split(',') if a.strip()]
 LEAVE_MAIL_ENABLED = _env('LEAVE_MAIL_ENABLED', default='1').lower() not in ('0', 'false', 'no', 'off')
 DAILY_DIGEST_ATTACH_EXCEL = _env('DAILY_DIGEST_ATTACH_EXCEL', default='1').lower() not in ('0', 'false', 'no', 'off')
+# Evening nudge to anyone who signed in and has not signed out.
+SIGNOUT_REMINDER_ENABLED = _env('SIGNOUT_REMINDER_ENABLED', default='1').lower() not in ('0', 'false', 'no', 'off')
+# From this hour (IST, 24h) the dashboard itself reminds a person still signed in.
+SIGNOUT_NUDGE_HOUR = int(_env('SIGNOUT_NUDGE_HOUR', default='18'))
+MIN_PASSWORD_LENGTH = 8
 
 
 
@@ -188,6 +193,29 @@ UNIVERSITY_HOLIDAYS_2026 = {
     "2026-11-27": {"name": "Kanakadasa Jayanthi", "type": "general"},
     "2026-12-25": {"name": "Christmas", "type": "general"},
 }
+
+
+def holiday_map():
+    """Every holiday the portal knows about, as {date: {name, type, custom}}.
+
+    The list above is the starting point. Administrators add to it — or
+    strike a date out of it — from the Calendar tab, and those edits live in
+    the `holidays` collection so nobody has to change code each year.
+    """
+    hm = {d: {**info, "custom": False} for d, info in UNIVERSITY_HOLIDAYS_2026.items()}
+    try:
+        for h in mongo.db.holidays.find({}):
+            d = h.get("date")
+            if not d:
+                continue
+            if h.get("removed"):
+                hm.pop(d, None)
+            else:
+                hm[d] = {"name": h.get("name") or "Holiday",
+                         "type": h.get("type") or "general", "custom": True}
+    except Exception as e:                      # a database hiccup must not hide the built-in list
+        print(f"[HOLIDAYS] could not read custom holidays: {e}")
+    return hm
 
 
 # ─────────────────────────────────────────────────────────────
@@ -396,6 +424,7 @@ class User(UserMixin):
         self.role       = user_doc.get("role", "intern")
         self.email      = user_doc.get("email")
         self.work_hours = user_doc.get("work_hours", DEFAULT_WORK_HOURS)
+        self.department = (user_doc.get("department") or "").strip()
 
 
 @login_manager.user_loader
@@ -1832,6 +1861,7 @@ def admin_mail_settings():
         "port":           app.config.get("MAIL_PORT"),
         "encryption":     "SSL" if app.config.get("MAIL_USE_SSL") else "STARTTLS",
         "sender":         app.config.get("MAIL_DEFAULT_SENDER"),
+        "signout_reminder": SIGNOUT_REMINDER_ENABLED,
     })
 
 
@@ -2154,7 +2184,10 @@ def get_dashboard_data():
             "history":                all_formatted,
             "leaves":                 leave_dates,
             "shifts":                 SHIFT_TIMINGS,
-            "min_hours_warning":      MIN_WORK_HOURS
+            "min_hours_warning":      MIN_WORK_HOURS,
+            "signout_nudge_hour":     SIGNOUT_NUDGE_HOUR,
+            "ist_hour":               ist_now.hour,
+            "department":             getattr(current_user, "department", "")
         })
     except Exception as e:
         print(f"Error in dashboard data API: {e}")
@@ -2227,8 +2260,9 @@ def apply_leave():
             if existing.get("status") in ("pending", "approved"):
                 return jsonify({"error": f"You already have a {existing['status']} leave for this date"}), 400
             mongo.db.leave_applications.delete_one({"_id": existing["_id"]})
-        if leave_date in UNIVERSITY_HOLIDAYS_2026:
-            return jsonify({"error": f"Already a holiday: {UNIVERSITY_HOLIDAYS_2026[leave_date]['name']}"}), 400
+        _hols = holiday_map()
+        if leave_date in _hols:
+            return jsonify({"error": f"Already a holiday: {_hols[leave_date]['name']}"}), 400
         if datetime.strptime(leave_date, "%Y-%m-%d").weekday() in [6]:
             return jsonify({"error": "Cannot apply for leave on Sundays"}), 400
         leave_doc = {
@@ -2265,10 +2299,10 @@ def get_all_leaves():
 @app.route("/api/holidays")
 def get_holidays():
     try:
-        year  = request.args.get('year', type=int, default=2026)
+        year  = request.args.get('year', type=int, default=date.today().year)
         month = request.args.get('month', type=int, default=None)
         result = {}
-        for date_str, info in UNIVERSITY_HOLIDAYS_2026.items():
+        for date_str, info in holiday_map().items():
             hd = datetime.strptime(date_str, "%Y-%m-%d")
             if hd.year != year: continue
             if month and hd.month != month: continue
@@ -2358,6 +2392,8 @@ def admin_update_user_profile(user_id):
             if str(user_id) == str(current_user.id) and role != "admin":
                 return jsonify({"error": "You cannot take away your own admin access."}), 400
             updates["role"] = role
+        if "department" in data:              # an empty value clears it
+            updates["department"] = (data.get("department") or "").strip()[:60]
         if not updates:
             return jsonify({"error": "Nothing to change"}), 400
 
@@ -2365,7 +2401,8 @@ def admin_update_user_profile(user_id):
         if not res.matched_count:
             return jsonify({"error": "User not found"}), 404
         doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
-        return jsonify({"ok": True, "name": display_name(doc), "role": doc.get("role", "intern")})
+        return jsonify({"ok": True, "name": display_name(doc), "role": doc.get("role", "intern"),
+                        "department": doc.get("department", "")})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2615,7 +2652,8 @@ def compute_day_overview(day, usernames=None):
         # Sunday = holiday, Saturday = optional: on those days a no-show is "off",
         # not "absent".
         day_wd  = day_date.weekday()   # 0=Mon … 5=Sat, 6=Sun
-        weekend = day_wd in (5, 6)
+        day_holiday = holiday_map().get(day)
+        weekend = day_wd in (5, 6) or bool(day_holiday)
 
         buckets = {k: [] for k in ("complete", "active", "early", "absent", "on_leave", "off")}
         totals  = {"registered": 0, "complete": 0, "active": 0, "early": 0,
@@ -2673,6 +2711,7 @@ def compute_day_overview(day, usernames=None):
                 "username":      uname,
                 "name":          display_name(u),
                 "role":          u.get("role", "intern"),
+                "department":    u.get("department", ""),
                 "status":        status,
                 "target_hours":  round(target, 2),
                 "hours":         round(total_hours, 2),
@@ -2703,7 +2742,8 @@ def compute_day_overview(day, usernames=None):
         return {
             "date":       day,
             "weekend":    weekend,
-            "day_label":  "Sunday · holiday" if day_wd == 6 else ("Saturday · optional" if day_wd == 5 else ""),
+            "day_label":  (f"Holiday · {day_holiday['name']}" if day_holiday else
+                           "Sunday · holiday" if day_wd == 6 else ("Saturday · optional" if day_wd == 5 else "")),
             "totals":     totals,
             "signed_in":  signed_in,
             "expected":   expected,
@@ -2783,6 +2823,7 @@ def compute_user_analysis(user_doc, start, end):
 
     today = date.today()
     present_set = set(days.keys())
+    holidays = holiday_map()
     timeline = []
     # working = compulsory Mon–Fri days; Sunday is a holiday, Saturday is optional
     # (a Saturday sign-in counts as worked, but a missed Saturday is never absent).
@@ -2805,6 +2846,11 @@ def compute_user_analysis(user_doc, start, end):
                 status, hrs, met = "present", days[iso]["hours"], days[iso]["met_target"]
             else:
                 status, hrs, met = "optional", 0, False
+        elif iso in holidays and not is_present:   # declared holiday — not a working day
+            status, hrs, met = "holiday", 0, False
+        elif iso in holidays:                      # came in on a holiday: counts as worked
+            present += 1; optional_worked += 1
+            status, hrs, met = "present", days[iso]["hours"], days[iso]["met_target"]
         else:                               # Mon–Fri — compulsory
             working += 1
             if is_present:
@@ -3001,7 +3047,8 @@ def admin_dashboard():
     cutoff    = (date.today() - timedelta(days=90)).isoformat()
     leaves    = list(mongo.db.leave_applications.find({"date": {"$gte": cutoff}}).sort("applied_at", -1))
     leaves_data = [{"id":str(l["_id"]),"username":l.get("username"),"user_email":l.get("user_email"),"date":l.get("date"),"type":l.get("type"),"comments":l.get("comments",""),"status":l.get("status","pending"),"admin_comments":l.get("admin_comments",""),"applied_at":l.get("applied_at"),"updated_at":l.get("updated_at")} for l in leaves]
-    return render_template("admin_dashboard.html", users=users, leaves=leaves_data, shifts=SHIFT_TIMINGS, today_date=date.today().isoformat(), google_maps_api_key=GOOGLE_MAPS_API_KEY)
+    departments = sorted({(u.get("department") or "").strip() for u in users} - {""}, key=str.lower)
+    return render_template("admin_dashboard.html", users=users, leaves=leaves_data, departments=departments, shifts=SHIFT_TIMINGS, today_date=date.today().isoformat(), google_maps_api_key=GOOGLE_MAPS_API_KEY)
 
 
 @app.route("/admin/export", methods=["GET"])
@@ -4006,6 +4053,7 @@ def admin_create_user():
     if role not in ALL_ROLES:
         role = "intern"
     email      = request.form.get("email", "")
+    department = (request.form.get("department") or "").strip()[:60]
     work_hours = float(request.form.get("work_hours", DEFAULT_WORK_HOURS))
     if mongo.db.users.find_one({"username": username}):
         flash("User exists", "danger"); return redirect(url_for("admin_dashboard"))
@@ -4014,6 +4062,7 @@ def admin_create_user():
         "username": username, "full_name": full_name or username,
         "password": hashed, "role": role,
         "email": email, "work_hours": work_hours,
+        "department": department,
         "created_at": datetime.utcnow(),
         "face_registered": False,
         "face_required": False,
@@ -4118,6 +4167,284 @@ def shared_prototype_view(token):
         return render_template("prototype_login.html",
                                error="That share link is not valid any more."), 404
     return render_template("prototype.html", shared=True)
+
+
+# ─────────────────────────────────────────────────────────────
+#  CHANGE MY OWN PASSWORD
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/user/change-password", methods=["POST"])
+@login_required
+def change_my_password():
+    """Anyone signed in can change their own password, given the current one."""
+    if session.get("impersonator_id"):
+        return jsonify({"error": "Not while viewing as someone else. Return to admin first."}), 403
+    data    = request.get_json(silent=True) or {}
+    current = data.get("current") or ""
+    new     = data.get("new") or ""
+    doc = mongo.db.users.find_one({"_id": ObjectId(current_user.id)})
+    if not doc:
+        return jsonify({"error": "Account not found"}), 404
+    if not bcrypt.check_password_hash(doc["password"], current):
+        return jsonify({"error": "Your current password is not right."}), 400
+    if len(new) < MIN_PASSWORD_LENGTH:
+        return jsonify({"error": f"Use at least {MIN_PASSWORD_LENGTH} characters."}), 400
+    if new == current:
+        return jsonify({"error": "The new password is the same as the current one."}), 400
+    mongo.db.users.update_one({"_id": doc["_id"]}, {"$set": {
+        "password": bcrypt.generate_password_hash(new).decode("utf-8"),
+        "password_changed_at": datetime.utcnow(),
+    }})
+    return jsonify({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────
+#  STREAKS AND THE MONTHLY LEADERBOARD
+# ─────────────────────────────────────────────────────────────
+
+def _current_streak(present_dates, leave_dates, holidays, today):
+    """Consecutive working days present, counting back from today.
+
+    Weekends, declared holidays and approved leave neither add to the streak
+    nor break it. Today only counts once the person has signed in — not
+    having signed in *yet* does not end a run.
+    """
+    streak, cur, guard = 0, today, 0
+    while guard < 400:
+        guard += 1
+        iso = cur.isoformat()
+        if iso in present_dates:
+            streak += 1
+        elif cur == today or cur.weekday() >= 5 or iso in holidays or iso in leave_dates:
+            pass
+        else:
+            break
+        cur -= timedelta(days=1)
+        if not present_dates or iso < min(present_dates):
+            break
+    return streak
+
+
+def compute_leaderboard(month_start, month_end, department=None):
+    """Attendance ranking for one month: days present, then hours, with the
+    streak each person is on. Admin accounts are not ranked."""
+    today = get_ist_now().date()
+    q = {"role": {"$ne": "admin"}}
+    if department:
+        q["department"] = department
+    users = list(mongo.db.users.find(q, {"username": 1, "full_name": 1, "department": 1}))
+    if not users:
+        return []
+    uids = [u["_id"] for u in users]
+
+    # One pass over ~4 months of records covers both the month and any streak.
+    since = min(month_start, today - timedelta(days=120)).isoformat()
+    recs = mongo.db.attendance.find(
+        {"user_id": {"$in": uids}, "date": {"$gte": since}},
+        {"user_id": 1, "date": 1, "hours": 1})
+    dates, hours = {}, {}
+    ms, me = month_start.isoformat(), month_end.isoformat()
+    for r in recs:
+        uid, d = r.get("user_id"), r.get("date")
+        if not d:
+            continue
+        dates.setdefault(uid, set()).add(d)
+        if ms <= d <= me:
+            hours[uid] = hours.get(uid, 0.0) + (r.get("hours", 0) or 0)
+
+    leaves = {}
+    for l in mongo.db.leave_applications.find(
+            {"user_id": {"$in": uids}, "status": "approved", "date": {"$gte": since}},
+            {"user_id": 1, "date": 1}):
+        leaves.setdefault(l.get("user_id"), set()).add(l.get("date"))
+
+    holidays = holiday_map()
+    rows = []
+    for u in users:
+        uid  = u["_id"]
+        mine = dates.get(uid, set())
+        rows.append({
+            "user_id":    str(uid),
+            "username":   u.get("username", ""),
+            "name":       display_name(u),
+            "department": u.get("department", ""),
+            "days":       sum(1 for d in mine if ms <= d <= me),
+            "hours":      round(hours.get(uid, 0.0), 1),
+            "streak":     _current_streak(mine, leaves.get(uid, set()), holidays, today),
+        })
+    rows.sort(key=lambda r: (-r["days"], -r["hours"], r["name"].lower()))
+    rank = 0
+    for i, r in enumerate(rows):
+        if i == 0 or (r["days"], r["hours"]) != (rows[i - 1]["days"], rows[i - 1]["hours"]):
+            rank = i + 1
+        r["rank"] = rank
+    return rows
+
+
+@app.route("/api/leaderboard")
+@login_required
+def leaderboard():
+    """This month's attendance leaderboard.
+
+    People see names, days present and streaks — not each other's hours.
+    Administrators see hours as well and can narrow it to one department.
+    """
+    start, end = _resolve_user_range()
+    if not request.args.get("month") and not request.args.get("from"):
+        end = (date(start.year + 1, 1, 1) if start.month == 12
+               else date(start.year, start.month + 1, 1)) - timedelta(days=1)
+    is_admin = current_user.role == "admin"
+    dept = (request.args.get("department") or "").strip() if is_admin else None
+    rows = compute_leaderboard(start, end, dept or None)
+    me = None
+    for r in rows:
+        r["is_me"] = r["user_id"] == str(current_user.id)
+        if r["is_me"]:
+            me = dict(r)
+    if not is_admin:
+        for r in rows:
+            if not r["is_me"]:
+                r.pop("hours", None)
+            r.pop("username", None)
+    limit = request.args.get("limit", type=int, default=10)
+    return jsonify({"month": start.strftime("%B %Y"), "total": len(rows),
+                    "rows": rows[:max(1, min(limit, 100))], "me": me})
+
+
+# ─────────────────────────────────────────────────────────────
+#  SIGN-OUT REMINDERS
+# ─────────────────────────────────────────────────────────────
+
+def open_sessions(day=None):
+    """Sessions with a sign-in and no sign-out on `day` (default: today, IST)."""
+    day = day or get_ist_now().date().isoformat()
+    return list(mongo.db.attendance.find({"date": day, "logout_time": {"$exists": False}}))
+
+
+def send_signout_reminders(day=None, background=False):
+    """Mail everyone still signed in. Returns {sent, no_email, failed, people}.
+
+    One mail per person however many sessions they left open. With
+    background=True the mails are handed to a thread and counted as sent.
+    """
+    sessions = open_sessions(day)
+    by_user = {}
+    for r in sessions:
+        by_user.setdefault(r.get("user_id"), r)
+    out = {"sent": 0, "no_email": [], "failed": [], "people": []}
+    if not by_user:
+        return out
+    docs = {u["_id"]: u for u in mongo.db.users.find({"_id": {"$in": list(by_user)}},
+                                                     {"username": 1, "full_name": 1, "email": 1})}
+    for uid, rec in by_user.items():
+        u = docs.get(uid)
+        if not u:
+            continue
+        name  = display_name(u)
+        email = (u.get("email") or "").strip()
+        out["people"].append(name)
+        if not email:
+            out["no_email"].append(name)
+            continue
+        since = format_ist_time(rec.get("login_time")) if rec.get("login_time") else "earlier today"
+        text = (f"Hello {name},\n\nYou signed in at {since} and have not signed out yet.\n"
+                "If you have finished for the day, open the Attendance Portal and sign out "
+                "so your hours are recorded correctly.\n\nOffice of Academics · JAIN (Deemed-to-be University)")
+        inner = (f'<p style="font-size:15px;color:#16161D;margin:0 0 12px">Hello {_html_escape(name)},</p>'
+                 f'<p style="font-size:14px;line-height:1.6;color:#555766;margin:0 0 12px">You signed in at '
+                 f'<strong style="color:#16161D">{_html_escape(since)}</strong> and have not signed out yet.</p>'
+                 '<p style="font-size:14px;line-height:1.6;color:#555766;margin:0">If you have finished for the day, '
+                 'open the Attendance Portal and sign out so your hours are recorded correctly.</p>')
+        html = _mail_shell("You are still signed in", "Sign-out reminder", inner)
+        subject = "Reminder: you are still signed in"
+        if background:
+            send_mail_async(subject, [email], text, html)
+            out["sent"] += 1
+        else:
+            ok, err = send_mail(subject, [email], text, html)
+            if ok:
+                out["sent"] += 1
+            else:
+                out["failed"].append(f"{name}: {err}")
+    return out
+
+
+@app.route("/api/admin/remind-signout", methods=["POST"])
+@login_required
+def admin_remind_signout():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    res = send_signout_reminders(background=True)
+    return jsonify({"ok": True, **res})
+
+
+# ─────────────────────────────────────────────────────────────
+#  DEPARTMENTS AND HOLIDAYS — administrator-managed lists
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/departments")
+@login_required
+def admin_departments():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    counts = {}
+    for u in mongo.db.users.find({"role": {"$ne": "admin"}}, {"department": 1}):
+        d = (u.get("department") or "").strip()
+        counts[d] = counts.get(d, 0) + 1
+    return jsonify({"departments": [{"name": k, "people": v}
+                                    for k, v in sorted(counts.items(), key=lambda kv: kv[0].lower()) if k],
+                    "unassigned": counts.get("", 0)})
+
+
+@app.route("/api/admin/holidays", methods=["GET", "POST"])
+@login_required
+def admin_holidays():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        d    = (data.get("date") or "").strip()
+        name = (data.get("name") or "").strip()[:120]
+        try:
+            datetime.strptime(d, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Pick a date."}), 400
+        if not name:
+            return jsonify({"error": "Give the holiday a name."}), 400
+        mongo.db.holidays.update_one({"date": d}, {"$set": {
+            "date": d, "name": name, "type": "general", "removed": False,
+            "updated_at": datetime.utcnow(), "updated_by": current_user.username,
+        }}, upsert=True)
+        return jsonify({"ok": True})
+    year = request.args.get("year", type=int, default=date.today().year)
+    rows = []
+    for d, info in sorted(holiday_map().items()):
+        if not d.startswith(f"{year}-"):
+            continue
+        hd = datetime.strptime(d, "%Y-%m-%d")
+        rows.append({"date": d, "name": info["name"], "custom": bool(info.get("custom")),
+                     "day": hd.strftime("%a"), "pretty": hd.strftime("%d %b")})
+    return jsonify({"year": year, "holidays": rows})
+
+
+@app.route("/api/admin/holidays/<day>", methods=["DELETE"])
+@login_required
+def admin_delete_holiday(day):
+    """Remove a holiday. A built-in one is struck out rather than deleted, so
+    it stays gone after the next deploy."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Bad date"}), 400
+    if day in UNIVERSITY_HOLIDAYS_2026:
+        mongo.db.holidays.update_one({"date": day}, {"$set": {
+            "date": day, "removed": True, "updated_at": datetime.utcnow(),
+            "updated_by": current_user.username}}, upsert=True)
+    else:
+        mongo.db.holidays.delete_one({"date": day})
+    return jsonify({"ok": True})
 
 
 @app.route("/health")

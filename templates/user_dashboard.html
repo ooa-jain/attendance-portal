@@ -59,6 +59,7 @@
         <div class="oa-clock" id="liveTime">--:--:--</div>
         <button class="oa-btn oa-btn-primary oa-btn-sm oa-only-web" onclick="openLeave()"><i class="fas fa-plus"></i> Leave</button>
         <button class="oa-iconbtn oa-only-web" id="di-face-reg-web" style="display:none" title="Register face" aria-label="Register face" onclick="openFaceRegIfAllowed()"><i class="fas fa-camera"></i></button>
+        <button class="oa-iconbtn oa-only-web" title="Change password" aria-label="Change password" onclick="openPw()"><i class="fas fa-key"></i></button>
         <button class="oa-iconbtn oa-only-web" title="Light / dark" aria-label="Switch light or dark mode" onclick="toggleTheme()"><i class="fas fa-circle-half-stroke"></i></button>
         <button class="oa-iconbtn oa-only-web" title="Sign out" aria-label="Sign out" onclick="handleLogout()"><i class="fas fa-arrow-right-from-bracket"></i></button>
         <button class="oa-burger" id="hbtn" onclick="toggleDrawer()" aria-label="Open menu">
@@ -91,6 +92,7 @@
       <div class="oa-dsep"></div>
       <button class="oa-navitem" onclick="openLeave();closeDrawer()"><i class="fas fa-calendar-xmark"></i> Apply for leave</button>
       <button class="oa-navitem" id="di-face-reg" style="display:none" onclick="openFaceRegIfAllowed();closeDrawer()"><i class="fas fa-camera"></i> Register face</button>
+      <button class="oa-navitem" onclick="closeDrawer();openPw()"><i class="fas fa-key"></i> Change password</button>
       <div class="oa-dsep"></div>
       <button type="button" class="oa-themeswitch" onclick="toggleTheme()"><i class="fas fa-circle-half-stroke"></i><span class="lbl-light">Dark mode</span><span class="lbl-dark">Light mode</span></button>
       <button class="oa-navitem danger" onclick="handleLogout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
@@ -121,7 +123,19 @@
           <div class="oa-pill"><i class="fas fa-building-columns"></i> Head Office, Bengaluru</div>
           <div class="oa-pill" id="wfacebadge"><i class="fas fa-circle-notch spin"></i> <span id="wfacetext">Checking…</span></div>
           <div class="oa-pill" id="railLocFoot"><i class="fas fa-location-dot"></i> <span id="railLocText">Checking location…</span></div>
+          <div class="oa-pill" id="wDept" hidden><i class="fas fa-people-group"></i> <span></span></div>
+          <button class="oa-pill st-streak" id="wStreak" hidden onclick="goTab('stats')" title="See the leaderboard">🔥 <span></span></button>
         </div>
+      </div>
+
+      <!-- ── Still signed in? ── -->
+      <div class="st-nudge" id="signoutNudge" hidden>
+        <div class="ic">⏰</div>
+        <div class="bd">
+          <div class="t" id="nudgeTitle">You are still signed in</div>
+          <div class="s" id="nudgeSub">Sign out before you leave so today's hours are recorded.</div>
+        </div>
+        <button class="oa-btn oa-btn-primary oa-btn-sm" onclick="doNLogout()">Sign out now</button>
       </div>
 
       <!-- ── Check in + hours ── -->
@@ -434,6 +448,20 @@
         <div id="mgNote" style="font-size:.72rem;color:var(--t3);margin-top:8px"></div>
       </section>
 
+      <!-- Leaderboard -->
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h3>Leaderboard</h3>
+          <span class="oa-tag" id="lbMonth">This month</span>
+          <span class="spacer"></span>
+          <span class="oa-tag gold" id="lbMine" hidden></span>
+        </div>
+        <p class="oa-lede">Most days present this month. A streak is working days in a row; weekends, holidays and approved leave do not break it.</p>
+        <div class="lb-list" id="lbList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+      </section>
+
       <!-- Download your own report -->
       <section class="oa-card">
         <div class="oa-card-title"><i class="fas fa-file-excel"></i> My attendance report</div>
@@ -653,6 +681,8 @@
     </div>
   </div>
 </div>
+
+{% include "_password_sheet.html" %}
 
 <script src="{{ url_for('static', filename='js/oa-nav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/user-dashboard.js') }}"></script>

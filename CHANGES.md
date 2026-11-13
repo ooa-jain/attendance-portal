@@ -736,3 +736,60 @@ If the device reports only one camera, the Back button is disabled with a
 note rather than failing when pressed. On a desktop asking for the back
 camera usually just returns the only camera there is, which is why the count
 is checked instead of trusting the request.
+
+---
+
+## The Campus redesign and five additions
+
+### New look
+
+Every page was redrawn: soft grey page, white rounded blocks, pastel colour
+blocks for figures and status, black pill buttons. Students get a top
+navigation bar and a home screen that opens on the sign-in / sign-out block;
+the admin console keeps a side menu, drawn as a floating panel. The Luno and
+Packet skins are gone. Dark mode is token overrides in `oa-core.css` and works
+on every page.
+
+### Sign-out reminder
+
+* On the student home screen a yellow bar appears when someone is still signed
+  in and has either met the day's target or it is past `SIGNOUT_NUDGE_HOUR`
+  (default 18:00 IST). It never signs anyone out by itself.
+* `send_reminders.py` mails everyone still signed in — run it from cron.
+* **Notices → Email reports → Remind people still signed in** does the same
+  on demand. People with no email on file are listed, not mailed.
+
+### Change my own password
+
+Key icon in the student top bar (and the phone menu), and **Change password**
+in the admin side menu. Needs the current password; minimum 8 characters.
+Blocked while an admin is viewing as someone else.
+
+### Streaks and the leaderboard
+
+`GET /api/leaderboard` ranks the month by days present, then hours. Students
+see it on Statistics, with names, days and streaks but **not each other's
+hours**; the admin sees hours too and can narrow it to one department. A
+streak is working days in a row — weekends, holidays and approved leave do
+not break it. A streak of two or more shows as a badge by the person's name.
+
+### Departments
+
+A person can be given a department when created or from their card. The People
+tab filters by department and by name, Analysis can tick a whole department
+at once, and the leaderboard shows it.
+
+The **Save** button on each person's card called a function that did not
+exist, so name and role edits were never saved. It works now.
+
+### Holidays the office manages
+
+**Calendar → Holidays** lists the year's holidays; add or remove them there.
+The list in `app.py` is the starting point and edits are kept in the
+`holidays` collection, so next year needs no code change.
+
+Declared holidays now behave like one: a weekday holiday is **no longer
+counted as an absence** in a person's analysis, reports or attendance rate,
+and the day snapshot files no-shows under Off rather than Missed sign-in.
+Previously only Sundays were treated this way.
+

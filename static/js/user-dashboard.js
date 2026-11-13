@@ -833,6 +833,9 @@ async function loadDD(){
       document.getElementById('btnNLogin').disabled =false;
       document.getElementById('btnNLogout').disabled=true;
     }
+    updateSignoutNudge(d);
+    const deptEl = document.getElementById('wDept');
+    if(deptEl){ deptEl.hidden = !d.department; deptEl.querySelector('span').textContent = d.department || ''; }
 
     // Shift tab
     document.getElementById('sTotalDisp').textContent =d.total_hours_today.toFixed(1);
@@ -1128,6 +1131,24 @@ function closeNotice(dismissed){
   document.getElementById('noticeBD').classList.remove('show');
   if(dismissed) markNoticeSeen(true);
   ntCurrent=null;
+}
+
+// ─ Still signed in? Say so once the day is done ─
+// Shown when a session is open and either the target is met or it is past
+// the evening hour the office set. It is a reminder, never an automatic
+// sign-out: the work note still has to come from the person.
+function updateSignoutNudge(d){
+  const el = document.getElementById('signoutNudge');
+  if(!el) return;
+  const open = !!(d.active_session && d.active_session.login_type==='normal');
+  const done = d.total_hours_today >= d.work_hours_target;
+  const late = (d.ist_hour ?? new Date().getHours()) >= (d.signout_nudge_hour ?? 18);
+  el.hidden = !(open && (done || late));
+  if(el.hidden) return;
+  document.getElementById('nudgeTitle').textContent =
+    done ? 'Target met — you are still signed in' : 'You are still signed in';
+  document.getElementById('nudgeSub').textContent =
+    `Signed in since ${d.active_session.login_time}. Sign out before you leave so today's hours are recorded.`;
 }
 
 // ─ This month at a glance (+ the streak you're on) ─

@@ -55,6 +55,9 @@
       <button class="oa-navitem ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <div class="oa-dsep"></div>
+      <button type="button" class="oa-themeswitch" onclick="openPw()">
+        <i class="fas fa-key"></i><span>Change password</span>
+      </button>
       <button type="button" class="oa-themeswitch" onclick="toggleTheme()">
         <i class="fas fa-circle-half-stroke"></i>
         <span class="lbl-light">Dark mode</span>
@@ -199,8 +202,25 @@
           </table>
         </div>
       </section>
+
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Leaderboard</h2>
+          <span class="oa-tag" id="lbMonth">This month</span>
+          <span class="spacer"></span>
+          <select class="oa-input" id="lbDept" style="width:auto" onchange="loadLeaderboard()" aria-label="Department">
+            <option value="">Everyone</option>
+            {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+          </select>
+        </div>
+        <p class="ad-hint">Most days present this month, then most hours. People see this list on their Statistics page without each other's hours.</p>
+        <div class="lb-list" id="lbList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+      </section>
     </div>
 
+    <!-- (leaderboard sits at the foot of Overview) -->
     <!-- ════════ ANALYSIS (Power-BI style) ════════ -->
     <div id="analysis-tab" class="ad-panel">
       <section class="oa-card">
@@ -271,12 +291,18 @@
               <span>Users</span>
               <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(true)">Select all</button>
               <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(false)">Clear</button>
+              {% if departments %}
+              <select class="oa-input" id="anDept" style="width:auto;min-height:38px;padding:6px 12px" onchange="anPickDept(this.value)" aria-label="Pick a department">
+                <option value="">Pick a department…</option>
+                {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+              </select>
+              {% endif %}
               <span class="spacer"></span>
               <span id="anUsersCount" class="oa-tag">All users</span>
             </div>
             <div id="anUsers" class="ad-users-box">
               {% for u in users %}
-                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" onchange="anUsersChanged()"> {{ u.full_name or u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
+                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" data-dept="{{ u.department or '' }}" onchange="anUsersChanged()"> {{ u.full_name or u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
               {% endfor %}
             </div>
             <small class="ad-hint">Leave every box unchecked to include everyone.</small>
@@ -391,8 +417,31 @@
         </div>
         <div id="acDayList"></div>
       </section>
+
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Holidays</h2>
+          <span class="spacer"></span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="holShiftYear(-1)" aria-label="Previous year"><i class="fas fa-chevron-left"></i></button>
+          <span class="oa-tag" id="holYear">—</span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="holShiftYear(1)" aria-label="Next year"><i class="fas fa-chevron-right"></i></button>
+        </div>
+        <p class="ad-hint">
+          A holiday is never counted as an absence, shows on everyone's calendar, and cannot be applied for as leave.
+          Add next year's list here — no code change needed.
+        </p>
+        <form class="hol-add" onsubmit="holAdd(event)">
+          <div class="oa-field"><label for="holDate">Date</label><input type="date" id="holDate" required></div>
+          <div class="oa-field hol-name"><label for="holName">Name</label><input type="text" id="holName" maxlength="120" placeholder="e.g. Founders' Day" required></div>
+          <button type="submit" class="oa-btn oa-btn-primary"><i class="fas fa-plus"></i> Add holiday</button>
+        </form>
+        <div class="hol-list" id="holList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+      </section>
     </div>
 
+    <!-- (holidays card is appended to the Calendar tab by the block above) -->
     <!-- ════════ PEOPLE ════════ -->
     <div id="users-tab" class="ad-panel">
 
@@ -438,6 +487,9 @@
               </select>
             </div>
             <div class="oa-field"><label for="nh">Daily hours target</label><input type="number" id="nh" name="work_hours" step="0.5" value="8" required></div>
+            <div class="oa-field"><label for="nd">Department <span style="font-weight:400;color:var(--t3)">— optional</span></label>
+              <input type="text" id="nd" name="department" list="deptOptions" maxlength="60" placeholder="e.g. Admissions">
+            </div>
           </div>
           <p class="ad-hint" style="margin:-4px 0 12px">
             Keep the username short and lower-case — it is what they type to sign in, and it never
@@ -461,15 +513,26 @@
         </div>
       </div>
 
-      <div class="oa-rule"><span class="tick"></span><span class="lbl">All people ({{ users|length }})</span></div>
+      <datalist id="deptOptions">{% for d in departments %}<option value="{{ d }}">{% endfor %}</datalist>
+
+      <div class="oa-rule"><span class="tick"></span><span class="lbl">All people (<span id="peopleCount">{{ users|length }}</span>)</span></div>
+      <div class="ad-peoplebar">
+        <input type="search" class="oa-input" id="peopleSearch" placeholder="Search a name…" oninput="filterPeople()" aria-label="Search people">
+        <select class="oa-input" id="peopleDept" onchange="filterPeople()" aria-label="Department">
+          <option value="">All departments</option>
+          {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+          <option value="__none__">No department</option>
+        </select>
+      </div>
 
       <div class="ad-usergrid">
         {% for user in users %}
-        <div class="ad-user" id="ucard-{{ user._id }}">
-          {% set shown_name = user.full_name or user.username %}
+        {% set shown_name = user.full_name or user.username %}
+        <div class="ad-user" id="ucard-{{ user._id }}" data-dept="{{ user.department or '' }}"
+             data-name="{{ (shown_name ~ ' ' ~ user.username)|lower }}">
           <div class="ad-user-head">
             <div class="ad-user-av">{{ shown_name[0]|upper }}</div>
-            <span class="nm">{{ shown_name }}</span>
+            <span class="nm" data-name-of="{{ user._id }}">{{ shown_name }}</span>
             <span class="oa-tag {% if user.role == 'admin' %}gold{% endif %}" data-role-tag="{{ user._id }}">{{ user.role }}</span>
           </div>
 
@@ -477,10 +540,11 @@
             <div><i class="fas fa-at"></i> Signs in as <strong>{{ user.username }}</strong></div>
             <div><i class="fas fa-envelope"></i> {{ user.email or 'No email on file' }}</div>
             <div><i class="fas fa-clock"></i> Target {{ user.work_hours or 8 }} hours per day</div>
+            <div><i class="fas fa-people-group"></i> <span data-dept-of="{{ user._id }}">{{ user.department or 'No department' }}</span></div>
           </div>
 
           <div class="ad-control">
-            <div class="ad-control-title"><i class="fas fa-id-badge"></i> Name &amp; role</div>
+            <div class="ad-control-title"><i class="fas fa-id-badge"></i> Name, role &amp; department</div>
             <div class="ad-profile-row">
               <input type="text" class="oa-input" id="pfname-{{ user._id }}"
                      value="{{ user.full_name or '' }}" placeholder="Full name, e.g. Dr. Madhavi R">
@@ -489,6 +553,8 @@
                 <option value="employee" {% if user.role == 'employee' %}selected{% endif %}>Employee</option>
                 <option value="admin"    {% if user.role == 'admin'    %}selected{% endif %}>Admin</option>
               </select>
+              <input type="text" class="oa-input" id="pfdept-{{ user._id }}" list="deptOptions" maxlength="60"
+                     value="{{ user.department or '' }}" placeholder="Department" aria-label="Department">
               <button class="oa-btn oa-btn-primary oa-btn-sm"
                       onclick="saveUserProfile('{{ user._id }}')">
                 <i class="fas fa-check"></i> Save
@@ -673,6 +739,9 @@
           </div>
           <button class="oa-btn oa-btn-primary" onclick="sendMailReport()">
             <i class="fas fa-paper-plane"></i> Send it now
+          </button>
+          <button class="oa-btn oa-btn-ghost" id="remindBtn" onclick="remindSignout()">
+            <i class="fas fa-bell"></i> Remind people still signed in
           </button>
         </div>
         <p class="ad-hint" style="margin-top:10px">
@@ -951,6 +1020,8 @@
     </div>
   </div>
 </div>
+
+{% include "_password_sheet.html" %}
 
 <script>
   window.OA_MAPS_KEY = "{{ google_maps_api_key }}";
