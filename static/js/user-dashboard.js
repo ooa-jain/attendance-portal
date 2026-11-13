@@ -95,6 +95,53 @@ function goTab(t){
   if(di) di.classList.add('on');
   if(t==='calendar') renderCal();
   if(t==='stats'){ loadMonthGlance(); if(!document.getElementById('rpFrom').value) setReportRange('month'); }
+  if(t==='notices') loadAnnouncements(true);
+}
+
+// ─ Notices board: everything the office sent, and leave decisions ─
+const NB_KIND = {
+  feature:   ['New feature', 'nb-lilac'],
+  info:      ['Information', 'nb-sky'],
+  warning:   ['Important',   'nb-pink'],
+  'leave-ok':['Leave',       'nb-mint'],
+  'leave-no':['Leave',       'nb-pink'],
+};
+function nbSetUnread(n){
+  document.querySelectorAll('[data-unread]').forEach(el=>{ el.hidden=!n; el.textContent=n; });
+  document.querySelectorAll('[data-unread-dot]').forEach(el=>{ el.hidden=!n; });
+}
+async function loadAnnouncements(markRead){
+  const box=document.getElementById('nbList');
+  try{
+    const r=await fetch('/api/user/announcements');
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Could not load notices');
+    nbSetUnread(markRead?0:d.unread);
+    if(!box) return;
+    const items=d.items||[];
+    if(!items.length){
+      box.innerHTML='<div class="oa-empty"><i class="fas fa-bullhorn"></i><p>Nothing from the office yet. Notices and leave decisions will appear here.</p></div>';
+    } else {
+      box.innerHTML=items.map(it=>{
+        const [label,cls]=NB_KIND[it.kind]||NB_KIND.info;
+        const when=new Date(it.at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Kolkata'});
+        const cta=(it.cta_tab&&it.cta_label)?`<button class="oa-btn oa-btn-primary oa-btn-sm" onclick="goTab('${esc(it.cta_tab)}')">${esc(it.cta_label)}</button>`:'';
+        const icon=it.source==='leave'?(it.kind==='leave-ok'?'fa-circle-check':'fa-circle-xmark'):(it.kind==='warning'?'fa-triangle-exclamation':it.kind==='feature'?'fa-wand-magic-sparkles':'fa-circle-info');
+        return `<article class="nb-item ${cls}${it.unread?' unread':''}">
+          <div class="nb-ic"><i class="fas ${icon}"></i></div>
+          <div class="nb-bd">
+            <div class="nb-meta"><span class="nb-kind">${label}</span><span>${when}</span>${it.unread?'<span class="nb-new">New</span>':''}</div>
+            <h3>${esc(it.title)}</h3>
+            ${it.body?`<p>${esc(it.body)}</p>`:''}
+            ${cta}
+          </div>
+        </article>`;
+      }).join('');
+    }
+    if(markRead && d.unread) fetch('/api/user/announcements/read',{method:'POST'}).catch(()=>{});
+  }catch(e){
+    if(box) box.innerHTML=`<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>${esc(e.message)}</p></div>`;
+  }
 }
 function toggleDrawer(){ document.getElementById('drawer').classList.contains('show')?closeDrawer():openDrawer(); }
 function openDrawer(){
@@ -259,7 +306,7 @@ function updateLocBanners(state, addr, dist){
     if(coordsText){
       const addrStr = (locState.address && !locState.address.startsWith("Location:") && !locState.address.startsWith("Lat:")) ? locState.address : '';
       if(addrStr) {
-        coordsText.innerHTML = `<i class="fas fa-location-dot" style="color:var(--accent,#0071e3)"></i> <strong>${addrStr}</strong> <span style="opacity:0.75;margin-left:6px;">(${locState.lat.toFixed(6)}, ${locState.lng.toFixed(6)})</span>`;
+        coordsText.innerHTML = `<i class="fas fa-location-dot" style="color:var(--gold-600)"></i> <strong>${addrStr}</strong> <span style="opacity:0.75;margin-left:6px;">(${locState.lat.toFixed(6)}, ${locState.lng.toFixed(6)})</span>`;
       } else {
         coordsText.textContent = `Location: ${locState.lat.toFixed(6)}, ${locState.lng.toFixed(6)}`;
       }
@@ -295,8 +342,8 @@ function renderUserMap(lat, lng, officeLat, officeLng){
       const targetOffLat = officeLat || 12.9248224;
       const targetOffLng = officeLng || 77.5702351;
       L.circle([targetOffLat, targetOffLng], {
-        color: '#0071e3',
-        fillColor: '#0071e3',
+        color: '#2F6FE4',
+        fillColor: '#2F6FE4',
         fillOpacity: 0.1,
         radius: 500
       }).addTo(userLeafletMap).bindPopup('<strong>JAIN Head Office</strong><br>500m Campus Zone');
@@ -790,7 +837,7 @@ async function loadDD(){
       d.face_photo_count         || 0
     );
 
-    document.getElementById('wname').textContent  =d.username;
+    document.getElementById('wname').textContent  =d.name||d.username;
     document.getElementById('dname').textContent  =d.username;
     document.getElementById('davatar').textContent=d.username[0].toUpperCase();
 
@@ -833,6 +880,9 @@ async function loadDD(){
       document.getElementById('btnNLogin').disabled =false;
       document.getElementById('btnNLogout').disabled=true;
     }
+    updateSignoutNudge(d);
+    const deptEl = document.getElementById('wDept');
+    if(deptEl){ deptEl.hidden = !d.department; deptEl.querySelector('span').textContent = d.department || ''; }
 
     // Shift tab
     document.getElementById('sTotalDisp').textContent =d.total_hours_today.toFixed(1);
@@ -894,9 +944,9 @@ function renderHist(list,id){
           <span class="oa-tag ${h.at_office?'ok':''}" style="margin-left:6px">${h.at_office?'Head Office':'Off site'}</span>
         </div>
         <div class="times">${h.login_time} \u2192 ${open?'still on duty':h.logout_time}</div>
-        ${locStr ? `<div style="font-size:0.75rem;color:var(--t2);margin-top:3px;"><i class="fas fa-location-dot" style="color:var(--accent,#0071e3)"></i> <strong>Logged in Location:</strong> ${locStr}</div>` : ''}
+        ${locStr ? `<div class="loc"><i class="fas fa-location-dot"></i> ${locStr}</div>` : ''}
       </div>
-      <div class="hrs">${h.hours}h</div>
+      <div class="hrs">${open||h.hours==='N/A'||h.hours==null?'<span class="oa-tag info">On duty</span>':h.hours+'h'}</div>
     </div>`;
   }).join('');
 }
@@ -1080,12 +1130,72 @@ function setReportRange(which){
   document.getElementById('rpTo').value=to;
 }
 
-function downloadMyReport(){
+function downloadMyReport(kind){
   let from=document.getElementById('rpFrom').value, to=document.getElementById('rpTo').value;
   if(!from||!to){toast('Pick a From and To date','warn');return;}
   if(from>to)[from,to]=[to,from];
-  toast('Preparing your report…','info');
-  window.location.href=`/api/user/my-excel?from=${from}&to=${to}`;
+  const path = kind==='word' ? 'my-word' : 'my-excel';
+  toast(`Preparing your ${kind==='word'?'Word':'Excel'} report…`,'info');
+  window.location.href=`/api/user/${path}?from=${from}&to=${to}`;
+}
+
+// ─ Notices: what the office wants you to know, shown on sign-in ─
+let ntCurrent=null;
+
+async function loadNotice(){
+  try{
+    const r=await fetch('/api/user/notices');
+    const d=await r.json();
+    if(!r.ok||!d.notice)return;
+    ntCurrent=d.notice;
+    document.getElementById('ntBadge').textContent=
+      ({feature:'NEW',info:'NOTICE',warning:'IMPORTANT'})[d.notice.kind]||'NEW';
+    document.getElementById('ntTitle').textContent=d.notice.title;
+    document.getElementById('ntBody').textContent=d.notice.body;
+    const cta=document.getElementById('ntCta');
+    if(d.notice.cta_label){
+      cta.style.display='';
+      cta.innerHTML=`<i class="fas fa-arrow-right"></i> ${esc(d.notice.cta_label)}`;
+      cta.onclick=()=>{closeNotice(true); if(d.notice.cta_tab) goTab(d.notice.cta_tab);};
+    } else cta.style.display='none';
+    document.getElementById('noticeBD').classList.add('show');
+    // Count the showing straight away, so "first 2 sign-ins" means what it says
+    // even if they close the tab without touching a button.
+    markNoticeSeen(false);
+  }catch{}
+}
+
+async function markNoticeSeen(dismissed){
+  if(!ntCurrent)return;
+  try{
+    await fetch(`/api/user/notices/${ntCurrent.id}/seen`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dismissed:!!dismissed})});
+  }catch{}
+}
+
+function closeNotice(dismissed){
+  document.getElementById('noticeBD').classList.remove('show');
+  if(dismissed) markNoticeSeen(true);
+  ntCurrent=null;
+}
+
+// ─ Still signed in? Say so once the day is done ─
+// Shown when a session is open and either the target is met or it is past
+// the evening hour the office set. It is a reminder, never an automatic
+// sign-out: the work note still has to come from the person.
+function updateSignoutNudge(d){
+  const el = document.getElementById('signoutNudge');
+  if(!el) return;
+  const open = !!(d.active_session && d.active_session.login_type==='normal');
+  const done = d.total_hours_today >= d.work_hours_target;
+  const late = (d.ist_hour ?? new Date().getHours()) >= (d.signout_nudge_hour ?? 18);
+  el.hidden = !(open && (done || late));
+  if(el.hidden) return;
+  document.getElementById('nudgeTitle').textContent =
+    done ? 'Target met — you are still signed in' : 'You are still signed in';
+  document.getElementById('nudgeSub').textContent =
+    `Signed in since ${d.active_session.login_time}. Sign out before you leave so today's hours are recorded.`;
 }
 
 // ─ This month at a glance (+ the streak you're on) ─
@@ -1181,13 +1291,14 @@ function openConf(msg,cb){
 function closeConf(){document.getElementById('confBD').classList.remove('show');}
 
 // ─ Backdrop tap ─
-['faceBD','leaveBD','confBD','workBD','dayBD'].forEach(id=>{
+['faceBD','leaveBD','confBD','workBD','dayBD','noticeBD'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{
     if(e.target.id===id){
       if(id==='faceBD')closeFace();
       else if(id==='leaveBD')closeLeaveBD();
       else if(id==='workBD')closeWorkBD();
       else if(id==='dayBD')closeDayBD();
+      else if(id==='noticeBD')closeNotice(false);
       else closeConf();
     }
   });
@@ -1264,6 +1375,10 @@ Promise.all([loadDD(), loadTeamToday()]).then(() => {
 }).catch(() => {
   setTimeout(refreshLocation, 200);
 });
+// Let the dashboard paint first, then show anything the office has posted.
+setTimeout(loadNotice, 900);
 setInterval(loadDD, 60000);
 setInterval(loadTeamToday, 60000);
 
+// Unread count for the Notices tab badge.
+loadAnnouncements(false);

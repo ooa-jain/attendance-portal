@@ -2,6 +2,98 @@
 
     function logout() { window.location.href = '/logout'; }
 
+    /* ══ Luno dashboard chrome ═══════════════════════════════════════════
+       The top bar and the greeting row are plain markup; these are the
+       few behaviours behind them.                                        */
+
+    // Section names as they read in the breadcrumb and the search hints.
+    const LUNO_TABS = {
+        dashboard: 'Dashboard',   locations: 'Locations & Map',
+        early:     'Early sign-outs', analysis: 'Analysis',
+        calendar:  'Calendar',    export:    'Export',
+        users:     'People',      leaves:    'Leave requests',
+        notices:   'Notices',     face:      'Security',
+    };
+
+    // Go to a section from somewhere other than the rail — the top-bar
+    // icons, the breadcrumb, the quick actions. Clicking the rail button
+    // rather than calling switchTab directly keeps the moving highlight
+    // and the active state in step.
+    function goTab(tab) {
+        const btn = document.querySelector(
+            `.oa-rail-nav .ad-tab[onclick*="'${tab}'"]`);
+        if (btn) { btn.click(); return; }
+        switchTab(tab);                       // mobile, where there is no rail
+        lunoAfterTab(tab);
+    }
+
+    function lunoAfterTab(tab) {
+        const crumb = document.getElementById('lunoCrumb');
+        if (crumb) crumb.textContent = LUNO_TABS[tab] || 'Dashboard';
+    }
+
+    function lunoFullscreen() {
+        const d = document;
+        if (d.fullscreenElement) { d.exitFullscreen?.(); return; }
+        d.documentElement.requestFullscreen?.().catch(() => {});
+    }
+
+    // Search filters the rows of whichever section is open, and dims the
+    // rail items that do not match, so typing "leave" points at the right
+    // place even when you are looking at something else.
+    function lunoSearch(raw) {
+        const q = (raw || '').trim().toLowerCase();
+
+        document.querySelectorAll('.oa-rail-nav .ad-tab').forEach(b => {
+            b.style.opacity = (!q || b.textContent.toLowerCase().includes(q)) ? '' : '.35';
+        });
+
+        const panel = document.querySelector('.ad-panel.on');
+        if (!panel) return;
+        panel.querySelectorAll('table tbody tr').forEach(tr => {
+            if (tr.children.length === 1 && tr.children[0].colSpan > 1) return;  // "Loading…"
+            tr.hidden = !!q && !tr.textContent.toLowerCase().includes(q);
+        });
+    }
+
+    // The bar across the bottom of each tile: the figure as a share of a
+    // ceiling that means something for that tile.
+    function lunoPaintStats() {
+        const n = id => {
+            const el = document.getElementById(id);
+            return el ? (parseInt(el.textContent, 10) || 0) : 0;
+        };
+        const cards  = document.querySelectorAll('#lunoStats .stat-card');
+        if (!cards.length) return;
+        const people = parseInt(cards[0].querySelector('.value')?.textContent, 10) || 0;
+        const checks = n('faceLogs24h');
+        const share  = (v, of) => of > 0 ? Math.max(0, Math.min(100, (v / of) * 100)) : (v > 0 ? 100 : 0);
+
+        const pcts = [
+            people ? 100 : 0,
+            share(n('todayAttendance'), people),
+            share(n('pendingLeaves'),   people),
+            share(n('earlyLogouts'),    people),
+            checks ? 100 : 0,
+            share(n('faceFailures'),    checks),
+        ];
+        cards.forEach((c, i) => c.style.setProperty('--pct', pcts[i].toFixed(1) + '%'));
+
+        const dot = (id, on) => {
+            const el = document.getElementById(id);
+            if (el) el.hidden = !on;
+        };
+        dot('lunoLeaveDot',  n('pendingLeaves') > 0);
+    }
+
+    function lunoInit() {
+        const d = new Date();
+        const el = document.getElementById('lunoToday');
+        if (el) el.textContent = d.toLocaleDateString('en-GB',
+            { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    document.addEventListener('DOMContentLoaded', lunoInit);
+
     function showAlert(msg, type) {
         const c = document.getElementById('alertContainer');
         const el = document.createElement('div');
@@ -24,8 +116,437 @@
         if (tab === 'locations') loadLocations();
         if (tab === 'face') loadFaceLogs(1);
         if (tab === 'analysis') { loadAnalysisOverview(); loadShares(); }
-        if (tab === 'calendar') loadCalendarOverview();
+        if (tab === 'calendar') { loadCalendarOverview(); loadHolidays(); }
         if (tab === 'face') loadSecurityInsights();
+        if (tab === 'notices') { loadNotices(); loadMailSettings(); }
+        lunoAfterTab(tab);
+    }
+
+    // ── Email reports: what goes out, and a way to prove it works ─────────
+    async function loadMailSettings() {
+        const box = document.getElementById('mailSettings');
+        const tag = document.getElementById('mailStatusTag');
+        if (!box) return;
+        try {
+            const d = await ntFetchJson('/api/admin/mail-settings');
+            const rows = [
+                ['Goes to', (d.recipients || []).join(', ') || 'nobody — set REPORT_RECIPIENTS'],
+                ['Leave applications', d.leave_mail ? 'Mailed as they arrive' : 'Off'],
+                ['Spreadsheet', d.attach_excel ? 'Attached to the summary' : 'Not attached'],
+                ['Sign-out reminder', d.signout_reminder ? 'On — runs from cron (send_reminders.py)' : 'Off'],
+                ['Monthly reports', d.monthly_report ? 'On — runs on the 1st from cron (send_monthly.py)' : 'Off'],
+                ['Links in mails', d.public_base_url || 'From the address the admin used (set PUBLIC_BASE_URL to fix it)'],
+                ['Sent from', d.sender || '—'],
+                ['Mail server', `${d.server}:${d.port} · ${d.encryption}`],
+            ];
+            box.innerHTML = rows.map(([k, v]) =>
+                `<div class="ml-row"><div class="ml-k">${escapeHtml(k)}</div>
+                 <div class="ml-v">${escapeHtml(v)}</div></div>`).join('');
+            if (tag) {
+                const none = !(d.recipients || []).length;
+                tag.textContent = none ? 'No recipients' : 'Configured';
+                tag.className = 'oa-tag ' + (none ? 'warn' : 'ok');
+            }
+        } catch (err) {
+            box.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>'
+                          + escapeHtml(err.message) + '</p></div>';
+            if (tag) { tag.textContent = 'Unavailable'; tag.className = 'oa-tag warn'; }
+        }
+    }
+
+    // Mail everyone who signed in today and has not signed out.
+    async function remindSignout() {
+        const btn = document.getElementById('remindBtn');
+        if (btn) btn.disabled = true;
+        try {
+            const d = await ntFetchJson('/api/admin/remind-signout', { method: 'POST' });
+            const n = (d.people || []).length;
+            if (!n) showAlert('Nobody is signed in right now.', 'success');
+            else showAlert(`Still signed in: ${n}. Reminder mailed to ${d.sent}`
+                + ((d.no_email || []).length ? ` · no email on file: ${d.no_email.map(escapeHtml).join(', ')}` : ''), 'success');
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    // ── Monthly reports: send a month by hand (two taps, it mails everyone) ──
+    function lastMonthValue() {
+        const t = new Date(); const d = new Date(t.getFullYear(), t.getMonth() - 1, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    (function () {
+        const m = document.getElementById('mrMonth');
+        if (m && !m.value) m.value = lastMonthValue();
+    })();
+
+    async function sendMonthly(btn) {
+        const month = document.getElementById('mrMonth').value || lastMonthValue();
+        if (!btn.dataset.armed) {
+            btn.dataset.armed = '1';
+            const label = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Tap again to mail everyone';
+            btn.classList.add('oa-btn-bad');
+            setTimeout(() => { delete btn.dataset.armed; btn.innerHTML = label; btn.classList.remove('oa-btn-bad'); }, 4000);
+            return;
+        }
+        delete btn.dataset.armed;
+        btn.disabled = true;
+        btn.classList.remove('oa-btn-bad');
+        btn.innerHTML = '<i class="fas fa-circle-notch spin"></i> Sending…';
+        try {
+            const d = await ntFetchJson('/api/admin/monthly-reports', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ month }),
+            });
+            showAlert(`${escapeHtml(d.month)}: ${d.sent} report${d.sent === 1 ? '' : 's'} on the way`
+                + ((d.no_email || []).length ? ` · no email on file: ${d.no_email.map(escapeHtml).join(', ')}` : ''), 'success');
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send to everyone';
+        }
+    }
+
+    // ── Bulk add people: check the file, then create ─────────────────────
+    function impReset() { document.getElementById('impOut').innerHTML = ''; }
+
+    async function impRun(dry) {
+        const input = document.getElementById('impFile');
+        const out = document.getElementById('impOut');
+        if (!input.files.length) { showAlert('Choose a CSV or Excel file first.', 'danger'); return; }
+        const fd = new FormData();
+        fd.append('file', input.files[0]);
+        fd.append('dry_run', dry ? '1' : '0');
+        out.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>' + (dry ? 'Checking…' : 'Creating accounts…') + '</p></div>';
+        try {
+            const d = await ntFetchJson('/api/admin/users/import', { method: 'POST', body: fd });
+            if (dry) {
+                const rows = d.rows.map(r => `
+                  <tr class="${r.ok ? '' : 'bad'}">
+                    <td class="num">${r.row}</td>
+                    <td><strong>${escapeHtml(r.username || '—')}</strong></td>
+                    <td>${escapeHtml(r.full_name)}</td>
+                    <td>${escapeHtml(r.email || '—')}</td>
+                    <td>${escapeHtml(r.role)}</td>
+                    <td>${escapeHtml(r.department || '—')}</td>
+                    <td class="num">${r.work_hours}</td>
+                    <td>${r.ok ? `<span class="oa-tag ok">Ready</span>${r.has_password ? '' : ' <span class="oa-tag">Password made up</span>'}`
+                               : `<span class="oa-tag bad">${escapeHtml(r.problems.join('; '))}</span>`}</td>
+                  </tr>`).join('');
+                out.innerHTML = `
+                  <div class="imp-sum">
+                    <span class="oa-tag ok">${d.valid} ready</span>
+                    ${d.invalid ? `<span class="oa-tag bad">${d.invalid} with problems (skipped)</span>` : ''}
+                    <span class="spacer"></span>
+                    ${d.valid ? `<button class="oa-btn oa-btn-primary" onclick="impRun(false)"><i class="fas fa-user-plus"></i> Create ${d.valid} account${d.valid === 1 ? '' : 's'}</button>` : ''}
+                  </div>
+                  <div class="oa-tablewrap imp-table"><table class="oa-table">
+                    <thead><tr><th>Row</th><th>Username</th><th>Full name</th><th>Email</th><th>Role</th><th>Department</th><th>Hours</th><th>Check</th></tr></thead>
+                    <tbody>${rows}</tbody></table></div>`;
+            } else {
+                const made = d.created.filter(c => c.password);
+                const lines = made.map(c => `${c.username}\t${c.password}`).join('\n');
+                out.innerHTML = `
+                  <div class="imp-done">
+                    <div class="t"><i class="fas fa-circle-check"></i> Created ${d.created.length} account${d.created.length === 1 ? '' : 's'}</div>
+                    ${made.length ? `
+                      <p>These passwords were made up and are shown <strong>only now</strong>. Copy them before leaving this page.
+                         People with an email on file can also use “Forgot your password?” on the sign-in page.</p>
+                      <div class="oa-tablewrap imp-table"><table class="oa-table">
+                        <thead><tr><th>Username</th><th>Full name</th><th>Password</th></tr></thead>
+                        <tbody>${made.map(c => `<tr><td><strong>${escapeHtml(c.username)}</strong></td><td>${escapeHtml(c.full_name)}</td><td class="num"><code>${escapeHtml(c.password)}</code></td></tr>`).join('')}</tbody>
+                      </table></div>
+                      <textarea id="impCopy" class="oa-input" rows="1" readonly hidden>${escapeHtml(lines)}</textarea>` : ''}
+                    <div class="oa-inline" style="margin-top:12px">
+                      ${made.length ? '<button class="oa-btn oa-btn-ghost" onclick="impCopyAll(this)"><i class="fas fa-copy"></i> Copy usernames and passwords</button>' : ''}
+                      <button class="oa-btn oa-btn-primary" onclick="location.reload()"><i class="fas fa-rotate"></i> Reload to see them</button>
+                    </div>
+                  </div>`;
+                document.getElementById('impFile').value = '';
+            }
+        } catch (err) {
+            out.innerHTML = '<div class="oa-flash danger"><i class="fas fa-circle-info"></i><span>' + escapeHtml(err.message) + '</span></div>';
+        }
+    }
+
+    function impCopyAll(btn) {
+        const ta = document.getElementById('impCopy');
+        const text = ta ? ta.value : '';
+        const done = () => { btn.innerHTML = '<i class="fas fa-check"></i> Copied'; };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => { ta.hidden = false; ta.select(); });
+        } else { ta.hidden = false; ta.select(); }
+    }
+
+    // ── People: save name, role and department from a person's card ──────
+    async function saveUserProfile(uid) {
+        const name = document.getElementById('pfname-' + uid)?.value.trim() || '';
+        const role = document.getElementById('pfrole-' + uid)?.value || '';
+        const dept = document.getElementById('pfdept-' + uid)?.value.trim() || '';
+        try {
+            const d = await ntFetchJson(`/api/admin/user/${uid}/profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ full_name: name, role: role, department: dept }),
+            });
+            const nm = document.querySelector(`[data-name-of="${uid}"]`);
+            if (nm) nm.textContent = d.name;
+            const tag = document.querySelector(`[data-role-tag="${uid}"]`);
+            if (tag) { tag.textContent = d.role; tag.classList.toggle('gold', d.role === 'admin'); }
+            const dp = document.querySelector(`[data-dept-of="${uid}"]`);
+            if (dp) dp.textContent = d.department || 'No department';
+            const card = document.getElementById('ucard-' + uid);
+            if (card) card.dataset.dept = d.department || '';
+            showAlert('Saved. Reload the page to see new departments in the filters.', 'success');
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        }
+    }
+
+    // People tab: narrow the cards by name and department.
+    function filterPeople() {
+        const q = (document.getElementById('peopleSearch')?.value || '').trim().toLowerCase();
+        const dept = document.getElementById('peopleDept')?.value || '';
+        let shown = 0;
+        document.querySelectorAll('.ad-usergrid .ad-user').forEach(c => {
+            const okName = !q || (c.dataset.name || '').includes(q);
+            const d = c.dataset.dept || '';
+            const okDept = !dept || (dept === '__none__' ? !d : d === dept);
+            c.hidden = !(okName && okDept);
+            if (!c.hidden) shown++;
+        });
+        const n = document.getElementById('peopleCount');
+        if (n) n.textContent = shown;
+    }
+
+    // Analysis: tick everyone in one department.
+    function anPickDept(dept) {
+        if (!dept) return;
+        document.querySelectorAll('.an-user').forEach(c => { c.checked = c.dataset.dept === dept; });
+        anUsersChanged();
+    }
+
+    // ── Holidays the office manages itself ───────────────────────────────
+    let holYear = new Date().getFullYear();
+
+    function holShiftYear(delta) { holYear += delta; loadHolidays(); }
+
+    async function loadHolidays() {
+        const box = document.getElementById('holList');
+        if (!box) return;
+        document.getElementById('holYear').textContent = holYear;
+        try {
+            const d = await ntFetchJson('/api/admin/holidays?year=' + holYear);
+            const rows = d.holidays || [];
+            box.innerHTML = rows.length ? rows.map(h => `
+                <div class="hol-row">
+                  <div class="hol-date"><b>${escapeHtml(h.pretty)}</b><span>${escapeHtml(h.day)}</span></div>
+                  <div class="hol-nm">${escapeHtml(h.name)}
+                    ${h.custom ? '<span class="oa-tag info">Added by office</span>' : ''}</div>
+                  <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" title="Remove this holiday"
+                          onclick="holDelete('${h.date}', this)"><i class="fas fa-trash"></i></button>
+                </div>`).join('')
+              : `<div class="oa-empty"><i class="fas fa-calendar-plus"></i><p>No holidays listed for ${holYear} yet. Add the first one above.</p></div>`;
+        } catch (err) {
+            box.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>'
+                          + escapeHtml(err.message) + '</p></div>';
+        }
+    }
+
+    async function holAdd(ev) {
+        ev.preventDefault();
+        const date = document.getElementById('holDate').value;
+        const name = document.getElementById('holName').value.trim();
+        try {
+            await ntFetchJson('/api/admin/holidays', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date, name }),
+            });
+            document.getElementById('holName').value = '';
+            holYear = parseInt(date.slice(0, 4), 10) || holYear;
+            showAlert('Holiday added', 'success');
+            loadHolidays();
+            loadCalendarOverview();
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        }
+    }
+
+    // Two taps to remove: the first arms the button, the second deletes.
+    async function holDelete(day, btn) {
+        if (!btn.dataset.armed) {
+            btn.dataset.armed = '1';
+            btn.innerHTML = 'Remove?';
+            btn.classList.add('oa-btn-bad');
+            setTimeout(() => { delete btn.dataset.armed; btn.innerHTML = '<i class="fas fa-trash"></i>'; btn.classList.remove('oa-btn-bad'); }, 3500);
+            return;
+        }
+        try {
+            await ntFetchJson('/api/admin/holidays/' + day, { method: 'DELETE' });
+            showAlert('Holiday removed', 'success');
+            loadHolidays();
+            loadCalendarOverview();
+        } catch (err) {
+            showAlert(escapeHtml(err.message), 'danger');
+        }
+    }
+
+    async function sendMailReport() {
+        const day = document.getElementById('mailDate').value || '';
+        showAlert('Sending…', 'success');
+        try {
+            const d = await ntFetchJson('/api/admin/mail-report', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: day })
+            });
+            showAlert(`Summary for ${d.date} sent to ${escapeHtml((d.sent_to || []).join(', '))}.`, 'success');
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
+    // ── Notices: what people see when they open their dashboard ───────────
+
+    // A JSON call that says something useful when the reply isn't JSON —
+    // a 404 here almost always means the server is still running the old
+    // code (pulled, but not restarted), which is otherwise baffling to read.
+    async function ntFetchJson(url, options) {
+        const res  = await fetch(url, options);
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch {
+            if (res.status === 404) {
+                throw new Error('This feature is not on the server yet (404). '
+                              + 'Restart the app after pulling: sudo systemctl restart jain-intern');
+            }
+            if (res.status === 401 || res.status === 302 || /<form|<!DOCTYPE/i.test(text)) {
+                throw new Error('Your session has expired — sign in again.');
+            }
+            throw new Error(`Server returned ${res.status} (not JSON).`);
+        }
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        return data;
+    }
+    const NT_PRESET = {
+        title: 'New: download your attendance report in Excel and Word',
+        body: 'Your dashboard can now hand you your own attendance report.\n\n'
+            + 'Open Statistics, pick a date range (or tap "This month"), and download it as '
+            + 'Excel or Word. It lists every day — when you signed in and out, from where, your '
+            + 'hours and the note you left at sign-out — with absent days in red and Saturday '
+            + 'and Sunday in yellow, plus a summary of days worked on top.\n\n'
+            + 'It carries your name and the JAIN mark, so it is ready to hand in. '
+            + 'Do this at the end of every month for your records.',
+        kind: 'feature', days: 2, max_views: 2,
+        cta_label: 'Show me', cta_tab: 'stats',
+    };
+
+    function ntPreset() {
+        document.getElementById('ntfTitle').value  = NT_PRESET.title;
+        document.getElementById('ntfBody').value   = NT_PRESET.body;
+        document.getElementById('ntfKind').value   = NT_PRESET.kind;
+        document.getElementById('ntfDays').value   = NT_PRESET.days;
+        document.getElementById('ntfViews').value  = NT_PRESET.max_views;
+        document.getElementById('ntfCta').value    = NT_PRESET.cta_label;
+        document.getElementById('ntfTab').value    = NT_PRESET.cta_tab;
+        showAlert('Template loaded — edit the wording, then Start sending.', 'success');
+    }
+
+    function ntAudChanged() {
+        const some = document.querySelector('input[name="ntAud"]:checked').value === 'some';
+        document.getElementById('ntPeople').style.display = some ? 'block' : 'none';
+    }
+
+    function ntFilterPeople() {
+        const q = (document.getElementById('ntPeopleSearch').value || '').toLowerCase();
+        document.querySelectorAll('#ntPeople .nt-person').forEach(el => {
+            el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+        });
+    }
+
+    async function ntCreate(start) {
+        const some = document.querySelector('input[name="ntAud"]:checked').value === 'some';
+        const audience = some
+            ? Array.from(document.querySelectorAll('.nt-pick:checked')).map(c => c.value)
+            : [];
+        if (some && !audience.length) { showAlert('Pick at least one person, or choose Everyone.', 'danger'); return; }
+
+        const payload = {
+            title:     document.getElementById('ntfTitle').value.trim(),
+            body:      document.getElementById('ntfBody').value.trim(),
+            kind:      document.getElementById('ntfKind').value,
+            days:      parseInt(document.getElementById('ntfDays').value, 10) || 2,
+            max_views: parseInt(document.getElementById('ntfViews').value, 10) || 2,
+            cta_label: document.getElementById('ntfCta').value.trim(),
+            cta_tab:   document.getElementById('ntfTab').value,
+            audience, start,
+        };
+        if (!payload.title || !payload.body) { showAlert('A notice needs a title and a message.', 'danger'); return; }
+
+        try {
+            await ntFetchJson('/api/admin/notices', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            showAlert(start ? 'Notice is now going out.' : 'Saved — start it whenever you like.', 'success');
+            ['ntfTitle', 'ntfBody', 'ntfCta'].forEach(id => { document.getElementById(id).value = ''; });
+            document.querySelectorAll('.nt-pick:checked').forEach(c => { c.checked = false; });
+            loadNotices();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
+    }
+
+    async function loadNotices() {
+        const list = document.getElementById('ntList');
+        if (!list) return;
+        list.innerHTML = '<div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>';
+        try {
+            const data = await ntFetchJson('/api/admin/notices');
+            const items = data.notices || [];
+            list.innerHTML = items.length ? items.map(n => `
+                <div class="nt-row ${n.active ? 'on' : ''}">
+                    <div class="nt-row-main">
+                        <div class="nt-row-title">
+                            <span class="nt-state ${n.active ? 'on' : ''}">${n.active ? 'Sending' : 'Stopped'}</span>
+                            ${escapeHtml(n.title)}
+                        </div>
+                        <div class="nt-row-meta">
+                            ${n.everyone ? 'Everyone' : escapeHtml(n.audience.join(', '))}
+                            · ${n.days} day${n.days !== 1 ? 's' : ''}
+                            · up to ${n.max_views} sign-in${n.max_views !== 1 ? 's' : ''}
+                            · seen by ${n.seen_by}
+                            · by ${escapeHtml(n.created_by || '—')}
+                        </div>
+                    </div>
+                    <div class="nt-row-acts">
+                        ${n.active
+                            ? `<button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="ntAction('${n.id}','stop')"><i class="fas fa-stop"></i> Stop</button>`
+                            : `<button class="oa-btn oa-btn-primary oa-btn-sm" onclick="ntAction('${n.id}','start')"><i class="fas fa-paper-plane"></i> Start</button>`}
+                        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="ntAction('${n.id}','reset')" title="Show it again to everyone, from now"><i class="fas fa-rotate-left"></i> Show again</button>
+                        <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="ntAction('${n.id}','delete')"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>`).join('')
+                : '<div class="oa-empty"><i class="fas fa-bullhorn"></i><p>No notices yet. Write one above.</p></div>';
+        } catch (err) {
+            list.innerHTML = '<div class="oa-empty"><i class="fas fa-triangle-exclamation"></i><p>' + err.message + '</p></div>';
+        }
+    }
+
+    async function ntAction(id, action) {
+        if (action === 'delete' && !confirm('Delete this notice for good?')) return;
+        try {
+            await ntFetchJson(`/api/admin/notices/${id}/${action}`, { method: 'POST' });
+            showAlert({ start: 'Notice is now going out.', stop: 'Stopped — nobody new will see it.',
+                        reset: 'It will show again to everyone.', delete: 'Notice deleted.' }[action] || 'Done', 'success');
+            loadNotices();
+        } catch (err) {
+            showAlert(err.message, 'danger');
+        }
     }
 
     // ── Security & integrity: signals worth a second look, for one day ────
@@ -59,7 +580,7 @@
         const where = p.address ? ` · ${escapeHtml(p.address)}` : '';
         const dev   = [p.device, p.browser].filter(Boolean).map(escapeHtml).join(' · ');
         return `<div class="sec-item">
-            <div class="sec-item-top"><strong>${escapeHtml(p.username || '—')}</strong>
+            <div class="sec-item-top"><strong>${escapeHtml(p.name || p.username || '—')}</strong>
               <span class="oa-tag">${escapeHtml(p.shift_name || 'Normal')}</span>
               <span class="spacer"></span>
               <span class="sec-mono">${p.login_time || '—'}${p.logout_time ? ' → ' + p.logout_time : ''}${p.hours ? ' · ' + p.hours + 'h' : ''}</span>
@@ -95,7 +616,7 @@
                 'The photo taken at sign-in did not match the registered face.',
                 data.face_failures,
                 f => `<div class="sec-item">
-                        <div class="sec-item-top"><strong>${escapeHtml(f.username || '—')}</strong>
+                        <div class="sec-item-top"><strong>${escapeHtml(f.name || f.username || '—')}</strong>
                           <span class="oa-tag">${escapeHtml(f.shift_name || '')}</span>
                           <span class="spacer"></span>
                           <span class="sec-mono">${escapeHtml(f.time || '')}</span></div>
@@ -147,19 +668,20 @@
             const failRes = await fetch(`/api/admin/face-logs?match=false&date=${today}&per_page=1`);
             const failData = await failRes.json();
             document.getElementById('faceFailures').textContent = failData.total || 0;
+            lunoPaintStats();
 
             const allLoc = await fetch(`/api/admin/user-locations/${today}`);
             const allLocData = await allLoc.json();
             let html = '';
             (allLocData.locations || []).slice(0, 15).forEach(l => {
                 html += `<tr>
-                    <td><strong>${l.username}</strong></td>
+                    <td><strong>${l.name || l.username}</strong></td>
                     <td>${l.date}</td>
                     <td>${l.shift_name}</td>
                     <td>${l.login_time}</td>
-                    <td>${l.logout_time || '<span style="color:#34c759;">Active</span>'}</td>
+                    <td>${l.logout_time || '<span style="color:var(--ok);">Active</span>'}</td>
                     <td>${l.hours} hrs</td>
-                    <td style="font-size:0.8rem;color:#86868b;">${l.device_info?.device_name || '-'}</td>
+                    <td style="font-size:0.8rem;color:var(--t3);">${l.device_info?.device_name || '-'}</td>
                 </tr>`;
             });
             document.getElementById('recentActivity').innerHTML = html || '<tr><td colspan="7" style="text-align:center;">No activity today</td></tr>';
@@ -288,7 +810,7 @@
         if (date) url += `&date=${date}`;
         if (shift) url += `&shift=${shift}`;
 
-        document.getElementById('faceLogsGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:#86868b;"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i><br>Loading...</div>';
+        document.getElementById('faceLogsGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--t3);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i><br>Loading...</div>';
 
         try {
             const res = await fetch(url);
@@ -296,7 +818,7 @@
             document.getElementById('faceTotalBadge').textContent = `${data.total} Total Logs`;
 
             if (!data.logs || data.logs.length === 0) {
-                document.getElementById('faceLogsGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:#86868b;"><i class="fas fa-camera-slash" style="font-size:3rem;margin-bottom:16px;display:block;"></i>No face logs found</div>';
+                document.getElementById('faceLogsGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--t3);"><i class="fas fa-camera-slash" style="font-size:3rem;margin-bottom:16px;display:block;"></i>No face logs found</div>';
                 document.getElementById('facePagination').innerHTML = '';
                 return;
             }
@@ -314,12 +836,12 @@
                     <div class="face-log-body">
                         <div class="face-log-username">${log.username}</div>
                         <div class="face-log-time">${log.timestamp_ist || 'N/A'}</div>
-                        <div class="face-log-time" style="color: #0071e3; font-weight: bold; margin-top: 2px;">${log.shift_name || 'Normal Login'}</div>
+                        <div class="face-log-time" style="color: var(--info); font-weight: bold; margin-top: 2px;">${log.shift_name || 'Normal Login'}</div>
                         <div class="device-info-grid">
                             <span class="di-label">Device</span><span class="di-value">${di.device_name || 'Unknown'}</span>
                             <span class="di-label">Browser</span><span class="di-value">${di.browser || 'Unknown'}</span>
                             <span class="di-label">IP</span><span class="di-value">${log.ip_address || 'N/A'}</span>
-                            <span class="di-label">IMEI</span><span class="di-value" style="color:${di.imei && di.imei !== 'Not available (browser)' ? '#0071e3' : '#86868b'};">${di.imei || 'N/A'}</span>
+                            <span class="di-label">IMEI</span><span class="di-value" style="color:${di.imei && di.imei !== 'Not available (browser)' ? 'var(--info)' : 'var(--t3)'};">${di.imei || 'N/A'}</span>
                             <span class="di-label">Screen</span><span class="di-value">${di.screen || 'N/A'}</span>
                             <span class="di-label">Distance</span><span class="di-value">${log.match_distance ?? 'N/A'}</span>
                         </div>
@@ -346,7 +868,7 @@
             document.getElementById('facePagination').innerHTML = pag;
 
         } catch (err) {
-            document.getElementById('faceLogsGrid').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:#ff3b30;">Error loading face logs: ${err.message}</div>`;
+            document.getElementById('faceLogsGrid').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--bad);">Error loading face logs: ${err.message}</div>`;
         }
     }
 
@@ -361,7 +883,7 @@
             document.getElementById('fullFaceTitle').textContent = `${data.username} – ${data.timestamp_ist}`;
             document.getElementById('fullFaceContent').innerHTML = `
                 <div style="position:relative;border-radius:16px;overflow:hidden;background:#000;margin-bottom:20px;">
-                    ${data.face_image_b64 ? `<img src="data:image/jpeg;base64,${data.face_image_b64}" class="full-face-img" alt="Face capture">` : '<div style="height:200px;display:flex;align-items:center;justify-content:center;color:#86868b;font-size:3rem;"><i class="fas fa-user-circle"></i></div>'}
+                    ${data.face_image_b64 ? `<img src="data:image/jpeg;base64,${data.face_image_b64}" class="full-face-img" alt="Face capture">` : '<div style="height:200px;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:3rem;"><i class="fas fa-user-circle"></i></div>'}
                     <div style="position:absolute;top:14px;right:14px;padding:8px 18px;border-radius:30px;font-weight:700;background:${matched?'rgba(52,199,89,0.9)':'rgba(255,59,48,0.9)'};color:white;">
                         ${matched ? '✅ Face Matched' : '❌ Verification Failed'}
                     </div>
@@ -380,17 +902,17 @@
                     <div class="full-device-item"><div class="label">RAM</div><div class="value">${di.device_memory ? di.device_memory + ' GB' : 'N/A'}</div></div>
                     <div class="full-device-item"><div class="label">CPU Cores</div><div class="value">${di.hardware_concurrency || 'N/A'}</div></div>
                 </div>
-                <div style="margin-top:20px;padding:16px;background:#f5f5f7;border-radius:12px;font-size:0.85rem;color:#86868b;">
-                    <i class="fas fa-info-circle" style="color:#0071e3;"></i>
+                <div style="margin-top:20px;padding:16px;background:var(--paper);border-radius:12px;font-size:0.85rem;color:var(--t3);">
+                    <i class="fas fa-info-circle" style="color:var(--info);"></i>
                     <strong>User Agent:</strong> ${di.user_agent || 'N/A'}
                 </div>
                 ${data.lat && data.lng ? `
-                <div style="margin-top:16px;background:#f5f5f7;border-radius:14px;padding:16px;">
+                <div style="margin-top:16px;background:var(--paper);border-radius:14px;padding:16px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <strong><i class="fas fa-map-marked-alt" style="color:#0071e3;"></i> Verification Location & Google Map</strong>
-                        <a href="https://www.google.com/maps/search/?api=1&query=${data.lat},${data.lng}" target="_blank" style="font-size:0.8rem;color:#0071e3;font-weight:bold;text-decoration:none;">Open in Google Maps ➔</a>
+                        <strong><i class="fas fa-map-marked-alt" style="color:var(--info);"></i> Verification Location & Google Map</strong>
+                        <a href="https://www.google.com/maps/search/?api=1&query=${data.lat},${data.lng}" target="_blank" style="font-size:0.8rem;color:var(--info);font-weight:bold;text-decoration:none;">Open in Google Maps ➔</a>
                     </div>
-                    <div style="border-radius:10px;overflow:hidden;border:1px solid #e5e5e7;">
+                    <div style="border-radius:10px;overflow:hidden;border:1px solid var(--line);">
                         <iframe src="https://maps.google.com/maps?q=${data.lat},${data.lng}&z=16&output=embed" width="100%" height="160" style="border:0;display:block;" loading="lazy"></iframe>
                     </div>
                 </div>` : ''}
@@ -399,7 +921,7 @@
                     <button class="btn btn-ghost" onclick="closeFaceImageModal()">Close</button>
                 </div>`;
         } catch (err) {
-            document.getElementById('fullFaceContent').innerHTML = `<div style="text-align:center;padding:40px;color:#ff3b30;">Error: ${err.message}</div>`;
+            document.getElementById('fullFaceContent').innerHTML = `<div style="text-align:center;padding:40px;color:var(--bad);">Error: ${err.message}</div>`;
         }
     }
 
@@ -454,27 +976,27 @@
             if (data.shift_usage) {
                 shiftHtml = '<h4 style="margin:20px 0 10px;">Shift Usage</h4>';
                 Object.entries(data.shift_usage).forEach(([shift, stats]) => {
-                    shiftHtml += `<div style="background:#f5f5f7;padding:16px;border-radius:12px;margin-bottom:12px;"><div style="display:flex;justify-content:space-between;"><strong>${stats.name}</strong><span>${stats.count} sessions</span></div><div>Total Hours: ${stats.total_hours.toFixed(1)} hrs</div></div>`;
+                    shiftHtml += `<div style="background:var(--paper);padding:16px;border-radius:12px;margin-bottom:12px;"><div style="display:flex;justify-content:space-between;"><strong>${stats.name}</strong><span>${stats.count} sessions</span></div><div>Total Hours: ${stats.total_hours.toFixed(1)} hrs</div></div>`;
                 });
             }
 
             // Face status section
             let faceHtml = `
-                <div style="background:#f5f5f7;padding:16px;border-radius:12px;margin-top:16px;">
-                    <div style="font-size:0.8rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#86868b;margin-bottom:12px;">
-                        <i class="fas fa-camera" style="color:#0071e3;"></i> Face ID Status
+                <div style="background:var(--paper);padding:16px;border-radius:12px;margin-top:16px;">
+                    <div style="font-size:0.8rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:12px;">
+                        <i class="fas fa-camera" style="color:var(--info);"></i> Face ID Status
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                         <div>
-                            <div style="font-size:0.75rem;color:#86868b;">Registration</div>
+                            <div style="font-size:0.75rem;color:var(--t3);">Registration</div>
                             <div style="font-weight:700;">${data.face_registered ? '✅ Registered (' + (data.face_photo_count || 0) + ' photos)' : '❌ Not Registered'}</div>
                         </div>
                         <div>
-                            <div style="font-size:0.75rem;color:#86868b;">Face ID Required</div>
+                            <div style="font-size:0.75rem;color:var(--t3);">Face ID Required</div>
                             <div style="font-weight:700;">${data.face_required ? '🔒 Yes — enforced' : '🔓 No — optional'}</div>
                         </div>
                         <div>
-                            <div style="font-size:0.75rem;color:#86868b;">Registration Allowed</div>
+                            <div style="font-size:0.75rem;color:var(--t3);">Registration Allowed</div>
                             <div style="font-weight:700;">${data.face_registration_enabled ? '✅ Admin enabled' : '❌ Admin blocked'}</div>
                         </div>
                     </div>
@@ -487,7 +1009,7 @@
                     <div class="stat-card"><div class="value">${data.attendance_this_month||0}</div><div class="label">This Month</div></div>
                     <div class="stat-card"><div class="value">${data.leaves_this_month||0}</div><div class="label">Leaves</div></div>
                 </div>
-                <div style="margin:20px 0;background:#f5f5f7;padding:16px;border-radius:12px;">
+                <div style="margin:20px 0;background:var(--paper);padding:16px;border-radius:12px;">
                     <p><strong>Email:</strong> ${data.email||'N/A'}</p>
                     <p style="margin-top:8px;"><strong>Target:</strong> ${data.work_hours_target} hrs/day (${shiftTarget} hrs per shift)</p>
                 </div>
@@ -495,7 +1017,7 @@
                 <div style="margin-top:20px;">
                     <label><strong>Update Work Hours:</strong></label>
                     <div style="display:flex;gap:10px;margin-top:10px;">
-                        <input type="number" id="newWorkHours" value="${data.work_hours_target}" step="0.5" style="flex:1;padding:10px;border-radius:8px;border:1px solid #e5e5e7;">
+                        <input type="number" id="newWorkHours" value="${data.work_hours_target}" step="0.5" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--line);">
                         <button class="btn btn-primary" onclick="updateWorkHours('${userId}')">Update</button>
                     </div>
                 </div>
@@ -551,7 +1073,7 @@
             const mapContainer = document.getElementById('adminLocationsMap');
             
             if (!data.locations || !data.locations.length) {
-                html = '<div style="text-align:center;padding:40px;color:#86868b;"><i class="fas fa-map-marker-slash" style="font-size:3rem;margin-bottom:12px;display:block;"></i>No location records for this date</div>';
+                html = '<div style="text-align:center;padding:40px;color:var(--t3);"><i class="fas fa-map-marker-slash" style="font-size:3rem;margin-bottom:12px;display:block;"></i>No location records for this date</div>';
                 mapContainer.style.display = 'none';
             } else {
                 mapContainer.style.display = 'block';
@@ -574,8 +1096,8 @@
 
                 // Add JAIN Head Office Campus boundary circle (500m radius)
                 const campusCircle = L.circle([officeLat, officeLng], {
-                    color: '#0071e3',
-                    fillColor: '#0071e3',
+                    color: '#2F6FE4',
+                    fillColor: '#2F6FE4',
                     fillOpacity: 0.1,
                     radius: 500
                 }).addTo(adminMap).bindPopup('<strong>JAIN University Campus</strong><br>500m allowed radius zone');
@@ -592,11 +1114,11 @@
                         const marker = L.marker([l.login_lat, l.login_lng]).addTo(adminMap)
                             .bindPopup(`
                                 <div style="font-family:sans-serif;padding:4px;">
-                                    <strong style="color:#0071e3;font-size:0.95rem;">${l.username}</strong><br>
+                                    <strong style="color:var(--info);font-size:0.95rem;">${l.name || l.username}</strong><br>
                                     <span style="font-size:0.8rem;color:#555;">Shift: ${l.shift_name}</span><br>
                                     <span style="font-size:0.8rem;color:#555;">Login: ${l.login_time}</span><br>
                                     <div style="font-size:0.75rem;margin-top:4px;color:#333;">${l.login_address}</div>
-                                    <a href="https://www.google.com/maps/search/?api=1&query=${l.login_lat},${l.login_lng}" target="_blank" style="font-size:0.75rem;color:#0071e3;display:inline-block;margin-top:6px;font-weight:bold;text-decoration:none;">View in Google Maps ➔</a>
+                                    <a href="https://www.google.com/maps/search/?api=1&query=${l.login_lat},${l.login_lng}" target="_blank" style="font-size:0.75rem;color:var(--info);display:inline-block;margin-top:6px;font-weight:bold;text-decoration:none;">View in Google Maps ➔</a>
                                 </div>
                             `);
                         mapMarkers.push(marker);
@@ -606,43 +1128,43 @@
                     const googleMapsUrl = hasCoords ? `https://www.google.com/maps/search/?api=1&query=${l.login_lat},${l.login_lng}` : '#';
                     const googleEmbedUrl = hasCoords ? `https://www.openstreetmap.org/export/embed.html?bbox=${l.login_lng-0.004},${l.login_lat-0.004},${l.login_lng+0.004},${l.login_lat+0.004}&layer=mapnik&marker=${l.login_lat},${l.login_lng}` : null;
 
-                    html += `<div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);box-shadow:0 4px 15px rgba(0,0,0,0.03);border-radius:16px;padding:20px;margin-bottom:18px;">
+                    html += `<div class="loc-card">
                         <div style="display:flex;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;align-items:center;">
                             <div style="display:flex;align-items:center;gap:10px;">
-                                <strong style="font-size:1.05rem;">${l.username}</strong>
-                                <span class="badge" style="background:${l.at_office?'#34c759':'#ff9500'};color:white;">${l.at_office?'🏛️ On Campus':'📡 Remote'}</span>
+                                <strong style="font-size:1.05rem;">${l.name || l.username}</strong>
+                                <span class="badge ${l.at_office?'badge-hq':'badge-pending'}">${l.at_office?'🏛️ On Campus':'📡 Remote'}</span>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;">
-                                <span class="badge" style="background:${l.shift_type==='shift1'?'#0071e3':l.shift_type==='shift2'?'#ff9500':'#86868b'};color:white;">${l.shift_name}</span>
-                                ${faceRequired ? '<span class="badge" style="background:rgba(0,113,227,0.15);color:#0071e3;border:1px solid rgba(0,113,227,0.3);">🔒 Face ID</span>' : ''}
+                                <span class="badge">${l.shift_name}</span>
+                                ${faceRequired ? '<span class="badge" style="background:var(--info-bg);color:var(--info);">🔒 Face ID</span>' : ''}
                                 ${hasCoords ? `<a href="${googleMapsUrl}" target="_blank" class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:0.75rem;text-decoration:none;"><i class="fas fa-map-marked-alt"></i> Open Google Maps</a>` : ''}
                             </div>
                         </div>
 
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px;">
                             <div>
-                                <div style="font-size:0.78rem;color:#86868b;font-weight:700;">LOGIN LOCATION</div>
+                                <div style="font-size:0.78rem;color:var(--t3);font-weight:700;">LOGIN LOCATION</div>
                                 <div style="font-weight:600;margin-top:2px;">${l.login_time}</div>
-                                <div style="font-size:0.82rem;margin-top:4px;color:#444;"><i class="fas fa-location-dot" style="color:#0071e3;"></i> ${l.login_address}${hasCoords ? ` <span style="font-size:0.75rem;color:#888;">(${l.login_lat.toFixed(6)}, ${l.login_lng.toFixed(6)})</span>` : ''}</div>
+                                <div style="font-size:0.82rem;margin-top:4px;color:var(--t2);"><i class="fas fa-location-dot" style="color:var(--info);"></i> ${l.login_address}${hasCoords ? ` <span style="font-size:0.75rem;color:#888;">(${l.login_lat.toFixed(6)}, ${l.login_lng.toFixed(6)})</span>` : ''}</div>
                             </div>
                             ${l.logout_time ? `<div>
-                                <div style="font-size:0.78rem;color:#86868b;font-weight:700;">LOGOUT LOCATION</div>
+                                <div style="font-size:0.78rem;color:var(--t3);font-weight:700;">LOGOUT LOCATION</div>
                                 <div style="font-weight:600;margin-top:2px;">${l.logout_time}</div>
-                                <div style="font-size:0.82rem;margin-top:4px;color:#444;"><i class="fas fa-location-dot" style="color:#ff3b30;"></i> ${l.logout_address||'N/A'}${l.logout_lat && l.logout_lng ? ` <span style="font-size:0.75rem;color:#888;">(${l.logout_lat.toFixed(6)}, ${l.logout_lng.toFixed(6)})</span>` : ''}</div>
+                                <div style="font-size:0.82rem;margin-top:4px;color:var(--t2);"><i class="fas fa-location-dot" style="color:var(--bad);"></i> ${l.logout_address||'N/A'}${l.logout_lat && l.logout_lng ? ` <span style="font-size:0.75rem;color:#888;">(${l.logout_lat.toFixed(6)}, ${l.logout_lng.toFixed(6)})</span>` : ''}</div>
                             </div>` : ''}
                         </div>
 
                         ${googleEmbedUrl ? `
-                        <div style="margin-top:12px;border-radius:12px;overflow:hidden;border:1px solid #e5e5e7;">
+                        <div style="margin-top:12px;border-radius:12px;overflow:hidden;border:1px solid var(--line);">
                             <iframe src="${googleEmbedUrl}" width="100%" height="180" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
                         </div>` : ''}
 
-                        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.82rem;border-top:1px solid #f0f0f2;padding-top:12px;margin-top:12px;color:#666;">
-                            <span><i class="fas fa-mobile-alt" style="color:#0071e3;"></i> ${di.device_name||'Unknown'}</span>
+                        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.82rem;border-top:1px solid var(--line);padding-top:12px;margin-top:12px;color:var(--t2);">
+                            <span><i class="fas fa-mobile-alt" style="color:var(--info);"></i> ${di.device_name||'Unknown'}</span>
                             <span><i class="fas fa-globe"></i> ${di.browser||'-'}</span>
                             <span><i class="fas fa-network-wired"></i> ${di.ip_address||'-'}</span>
                             <span><i class="fas fa-barcode"></i> IMEI: ${di.imei||'N/A'}</span>
-                            <span style="margin-left:auto;font-weight:700;color:#0071e3;">${l.hours} hrs</span>
+                            <span style="margin-left:auto;font-weight:700;color:var(--info);">${l.hours} hrs</span>
                         </div>
                     </div>`;
                 });
@@ -659,14 +1181,14 @@
     // ── Analysis dashboard (Power-BI style) ───────────────────────────────
     const AN_CATS = {
         complete: { label: 'On track',       icon: 'fa-circle-check',        color: 'var(--ok)'   },
-        active:   { label: 'Still active',    icon: 'fa-circle-play',         color: 'var(--info)' },
+        active:   { label: 'Still active',    icon: 'fa-circle-play',         color: 'var(--an-active)' },
         early:    { label: 'Left early',      icon: 'fa-triangle-exclamation',color: 'var(--warn)' },
         absent:   { label: 'Missed sign-in',  icon: 'fa-user-xmark',          color: 'var(--bad)'  },
         on_leave: { label: 'On leave',        icon: 'fa-plane-departure',     color: 'var(--t3)'   },
         off:      { label: 'Off / weekend',   icon: 'fa-mug-hot',             color: 'var(--t3)'   },
     };
     // Concrete colours for the donut/legend (conic-gradient can't read CSS vars reliably).
-    const AN_HEX = { complete:'#2E7D46', active:'#0071e3', early:'#C77700', absent:'#C0362C', on_leave:'#8F98A6', off:'#B8BEC7' };
+    const AN_HEX = { complete:'var(--an-complete)', active:'var(--an-active)', early:'var(--an-early)', absent:'var(--an-absent)', on_leave:'var(--an-leave)', off:'var(--an-off)' };
 
     async function loadAnalysisOverview() {
         const dateEl = document.getElementById('analysisDate');
@@ -746,10 +1268,10 @@
         const timeline = (cat === 'complete' || cat === 'early' || cat === 'active')
             ? `<div class="an-u-time">${p.login_time || '—'} → ${p.logout_time || (cat === 'active' ? 'active' : '—')} · ${p.hours}h${cat === 'early' ? ` (−${p.shortfall}h)` : ''}</div>`
             : '';
-        const barColor = p.progress_pct >= 80 ? '#2E7D46' : p.progress_pct >= 50 ? '#C77700' : '#C0362C';
+        const barColor = p.progress_pct >= 80 ? 'var(--an-complete)' : p.progress_pct >= 50 ? 'var(--an-early)' : 'var(--an-absent)';
         return `<div class="an-u">
             <div class="an-u-top">
-              <span class="an-u-name">${p.username}</span>
+              <span class="an-u-name">${p.name || p.username}</span>
               <span class="an-u-prog">${p.progress_pct}%</span>
             </div>
             ${timeline}
@@ -787,13 +1309,14 @@
         document.getElementById('calendarModal').classList.remove('active');
     }
 
-    // The same range the calendar is showing, downloaded as a formatted workbook.
-    function downloadUserExcel() {
+    // The same range the calendar is showing, as a workbook or a Word document.
+    function downloadUserReport(kind) {
         let from = document.getElementById('calFrom').value;
         let to   = document.getElementById('calTo').value;
         if (!calUserId || !from || !to) { showAlert('Pick a From and To date', 'danger'); return; }
         if (from > to) [from, to] = [to, from];
-        window.location.href = `/api/admin/user-excel/${calUserId}?from=${from}&to=${to}`;
+        const path = kind === 'word' ? 'user-word' : 'user-excel';
+        window.location.href = `/api/admin/${path}/${calUserId}?from=${from}&to=${to}`;
     }
 
     const CAL_STATUS_LABEL = {
@@ -904,12 +1427,12 @@
     function renderCalendar(data) {
         const s = data.summary || {};
         const tiles = [
-            { n: s.present ?? 0,  l: 'Days worked', c: '#1E7D46' },
-            { n: s.absent ?? 0,   l: 'Absent',      c: '#C0362C' },
-            { n: s.leave ?? 0,    l: 'On leave',    c: '#8F98A6' },
+            { n: s.present ?? 0,  l: 'Days worked', c: 'var(--ok)' },
+            { n: s.absent ?? 0,   l: 'Absent',      c: 'var(--bad)' },
+            { n: s.leave ?? 0,    l: 'On leave',    c: 'var(--mute)' },
             { n: (s.total_hours ?? 0) + 'h', l: 'Total hours', c: 'var(--ink-800)' },
             { n: (s.avg_hours ?? 0) + 'h',   l: 'Avg / day',   c: 'var(--ink-800)' },
-            { n: (s.attendance_rate ?? 0) + '%', l: 'Attendance', c: '#B0740A' },
+            { n: (s.attendance_rate ?? 0) + '%', l: 'Attendance', c: 'var(--warn)' },
         ];
         document.getElementById('calSummary').innerHTML = tiles.map(t =>
             `<div class="cal-stat"><div class="n" style="color:${t.c}">${t.n}</div><div class="l">${t.l}</div></div>`
@@ -1000,7 +1523,7 @@
             document.getElementById('acDayList').innerHTML = locs.length ? locs.map(l => `
                 <div class="ac-day-item">
                     <div class="ac-day-item-head">
-                        <strong>${escapeHtml(l.username)}</strong>
+                        <strong>${escapeHtml(l.name || l.username)}</strong>
                         <span class="oa-tag ${l.at_office ? 'ok' : 'warn'}">${l.at_office ? 'On campus' : 'Remote'}</span>
                         <span class="oa-tag">${escapeHtml(l.shift_name)}</span>
                         <span class="spacer"></span>

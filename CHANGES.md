@@ -333,3 +333,508 @@ Then **hard-refresh once** (Ctrl/Cmd-Shift-R) or clear site data. The old
 service worker will be replaced by `ooa-attendance-v3`, which deletes stale
 caches on activate — but the first load needs to get past whatever the browser
 already holds.
+
+---
+
+## Admin sign-in codes (OTP)
+
+Every admin sign-in now has to be confirmed with a six-digit code mailed to one
+supervising mailbox. Staff (intern / employee) sign in exactly as before.
+
+Settings, all read from the environment:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ADMIN_OTP_ENABLED` | `1` | Set to `0` to turn the step off — the way back in if the mail account ever stops working. |
+| `ADMIN_OTP_RECIPIENT` | `santosh.ks@jainuniversity.ac.in` | Where the code is sent. |
+| `ADMIN_OTP_TTL_MIN` | `10` | How long a code stays valid. |
+
+How it behaves:
+
+* The admin is **not** signed in until the code is entered — the password step
+  only holds a pending id in the session.
+* Codes are stored bcrypt-hashed in `admin_otps`, so the database never holds a
+  usable code. They are single-use and retired once accepted.
+* Five wrong attempts voids the code and sends the person back to the start.
+* "Send another code" is rate-limited to once a minute and retires the previous
+  code, so only the newest one works.
+* If the mail cannot be sent, sign-in is **refused** rather than waved through.
+  Without working SMTP credentials, nobody can reach the admin console — set
+  `ADMIN_OTP_ENABLED=0` if you need to get in while mail is broken.
+* The sign-in form now answers "Incorrect username or password" for both an
+  unknown username and a wrong password, so it can no longer be used to find
+  out which usernames exist.
+
+---
+
+## Email: leave requests and the daily summary
+
+Two things now arrive by mail, both to `REPORT_RECIPIENTS`:
+
+* **Leave applications**, the moment someone applies — person, date, type,
+  reason. Best-effort: if the mail fails the application is still filed.
+* **A daily summary** — who signed in and out with times, hours and whether
+  they were on campus; who did not sign in; who was on leave; and every leave
+  request still awaiting a decision. The day's spreadsheet is attached.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `REPORT_RECIPIENTS` | `ooa.connect@jainuniversity.ac.in` | Comma-separated list. |
+| `LEAVE_MAIL_ENABLED` | `1` | Set `0` to stop the per-application mails. |
+| `DAILY_DIGEST_ATTACH_EXCEL` | `1` | Set `0` to send the summary without the attachment. |
+| `MAIL_SERVER` or `SMTP_SERVER` | `smtp.gmail.com` | |
+| `MAIL_PORT` or `SMTP_PORT` | `587` | `465` is assumed to mean implicit SSL. |
+| `MAIL_USE_SSL` | follows the port | Only needed to override that assumption. |
+| `MAIL_USERNAME` or `SMTP_EMAIL` | built-in fallback | Set this; do not rely on the fallback. |
+| `MAIL_PASSWORD` or `SMTP_PASSWORD` | built-in fallback | As above. |
+| `MAIL_SENDER` or `SMTP_SENDER` | the username | The From address. |
+
+Both spellings are read, `MAIL_*` first, because the deployment's `.env`
+already used `SMTP_*`. Setting the port to 465 switches to implicit SSL on its
+own; 587 uses STARTTLS.
+
+**Sending the summary on a schedule** — `send_digest.py` is built for cron:
+
+```
+5 21 * * *  cd /var/www/jain-intern && venv/bin/python send_digest.py >> /var/log/jain-digest.log 2>&1
+```
+
+It takes `today` (default), `yesterday`, or a date, and exits non-zero on
+failure so cron reports it. Admin → Notices → **Email reports** shows what is
+configured and has a **Send it now** button for any date.
+
+**Diagnosing mail** — `test_mail.py` probes ports 587, 465 and 25, then tries a
+real authenticated send, and prints the actual SMTP error:
+
+```
+cd /var/www/jain-intern && venv/bin/python test_mail.py
+```
+
+A server closing the connection on every port means the host blocks outbound
+SMTP; the fix is to have them open it, or to send through an email API over
+HTTPS instead.
+
+### Choosing where the sign-in code goes
+
+Admin sign-in is now: password → pick a mailbox → enter the code. The
+mailboxes live in `otp_recipients` and are managed under Notices → **Admin
+sign-in codes** (add, turn off, remove). `ADMIN_OTP_RECIPIENT` seeds the list
+the first time, so an existing deployment carries on unchanged, and with only
+one address on the list the chooser is skipped.
+
+Only a listed address can be chosen, and the chooser posts the record's id
+rather than the address, so the page never contains a mailbox. The last active
+address cannot be turned off or removed — that would lock everyone out.
+
+Two bugs fixed at the same time:
+
+* Entering the sixth digit auto-submitted the form, so an auto-submit plus a
+  click sent the code twice. The first succeeded; the second hit the
+  now-used code and redirected to `/login`, which looked like the sign-in had
+  failed. Both pages now submit once.
+* `/login` rendered the sign-in form even when already signed in. It, and
+  both code pages, now send an authenticated user to their dashboard.
+
+### Why the console was slow
+
+Three things, all on the path you hit after entering the sign-in code — the
+"Checking…" button stays up until the dashboard that follows has rendered.
+
+* **The admin dashboard loaded every user in full**, including `face_features`
+  (the recognition embeddings) and `face_thumbs` (a list of base64 JPEGs), plus
+  the password hash. The page only needs the single small `face_thumb`. Those
+  fields are now left in the database.
+* **It also ran `attendance.find().sort("date", -1).limit(100)` whose result was
+  never used** — the Recent activity table is filled by JavaScript. An unindexed
+  sort makes Mongo order the whole collection to produce rows nobody reads. The
+  query is gone.
+* **There were no indexes.** `date`, `user_id + date` and `username + date` on
+  attendance, status and user on leave applications, date on the face log, and
+  username on users are now created at start-up (idempotent; set `SKIP_INDEXES=1`
+  to skip). Nearly every query in the app filters on one of these.
+
+The same projection now applies to the day overview, which runs on the Analysis
+tab and in the nightly digest.
+
+### The two-second sign-in
+
+Sending the code was done inside the request, so the password step waited on a
+full SMTP round trip — about two seconds of the wait, with the rest of the app
+answering in milliseconds. The send now runs in a background thread and the
+page comes back at once.
+
+Losing the "mail failed, so refuse the sign-in" guarantee would have left
+someone staring at a code page for a code that never left, so the outcome is
+tracked instead. The code record carries a `send_state`, and a failure is
+caught in both places it can land:
+
+* **before the page loads** — `/login/verify` refuses outright and returns to
+  sign-in saying the code could not be sent;
+* **after the page loads** — the page polls `/login/verify/status` and shows a
+  red banner, disabling the field.
+
+A code whose send failed is never accepted either way.
+
+### Sign-in codes removed
+
+Admin sign-in is a password again. The code step, the mailbox chooser, the
+`/login/verify` pages and the admin card that managed the addresses are all
+gone, along with the `ADMIN_OTP_*` settings — those lines can come out of
+`.env`, though leaving them does no harm.
+
+What stays: leave applications and the daily summary still go out by email,
+and the sign-in form still answers "Incorrect username or password" for both
+an unknown user and a wrong password.
+
+The code is in git history if it is ever wanted back.
+
+---
+
+## Admin console: Luno-style dashboard chrome
+
+You sent the Luno admin template and asked for the **admin page only** to look
+like it. Everything here is confined to `admin_dashboard.html` and a stylesheet
+only that page links, so the intern dashboard, the login page and the public
+share links are untouched.
+
+**New files**
+
+| File | What it does |
+|---|---|
+| `static/css/oa-admin-luno.css` | The dashboard chrome: top bar, breadcrumb, greeting row, stat tiles |
+| `static/css/oa-admin-dark.css` | Dark theme for the console, toggled from the rail or the top bar |
+
+**What is different**
+
+- **Top bar is white**, not navy, and now carries a search field, quick-action
+  icons (full screen, notices, leave requests, theme) and an avatar with your
+  initials. The rail already carries the brand; a second dark band above it
+  boxed the page in.
+- **Breadcrumb** — `Home / <section>` above the content, tracking whichever
+  section is open.
+- **Greeting row** — "Welcome back, <name>!" with today's date and four
+  shortcuts (mail, export, calendar, share) in the dark cluster Luno uses.
+- **Stat tiles rebuilt** to Luno's reading order: label, then figure, then the
+  caption, with a tinted icon in the corner and a progress bar across the
+  bottom. The bar is the figure as a share of something real — present today
+  against the headcount, face failures against face checks — not decoration.
+  Six tiles now sit three across instead of wrapping four-then-two.
+- **Cooler canvas and squarer corners** (8px) to match the template.
+
+The brand accent stays JAIN gold and navy rather than Luno's teal, so the
+console still matches the logo and the rest of the portal.
+
+**Search** filters the rows of whichever section is open and dims the rail
+items that do not match, so typing "leave" points at Leave requests.
+
+### Bugs found while building this
+
+- The search input was given `id="lunoSearch"` inside a `<form>`. A form
+  exposes its controls by name to handlers nested in it, so `lunoSearch(...)`
+  in the inline `oninput` resolved to the input element rather than the
+  function, and every keystroke threw. The form became a `<div>` and the id
+  became `lunoQ`.
+- The greeting took the **last** word of the full name, so "Santosh K S" was
+  greeted as "S". It now takes the first real name, stepping over an honorific
+  so "Dr. Madhavi R" is greeted as Madhavi.
+- Jinja's `truncate()` has a five-character leeway, so `truncate(2)` let the
+  three-letter initials "SKS" through whole. Replaced with a slice.
+
+---
+
+## Admin console: a second skin, "Packet"
+
+You sent the Packet demo and asked to try that style. The console now has
+**two skins**, switched from the rail (above Dark mode) and remembered per
+browser:
+
+| Skin | Look |
+|---|---|
+| **Luno** (default) | soft cards, rounded corners, navy/gold, vertical stat tiles |
+| **Packet** | flat, square (2px), crimson masthead, sideways stat rows |
+
+Both work in light and dark. The skin and the theme are independent, so
+there are four combinations and all four were checked.
+
+**What Packet changes** (`static/css/oa-admin-packet.css`, scoped entirely to
+`data-skin="packet"` so it costs nothing when off):
+
+- **Solid crimson masthead** with a lowercase `admin console ·` wordmark,
+  the search dropped into it as a translucent field.
+- **Flat everything** — shadows removed, corners down to 2px.
+- **Title band** — the greeting becomes Packet's light, large heading over a
+  small lowercase subtitle.
+- **Stat rows read sideways**: tinted icon cell │ label and caption │ figure,
+  butted together with hairlines, instead of Luno's vertical tiles. Same
+  markup, laid out on the other axis.
+- **Rail flattened**, with a full-height crimson edge on the active item.
+
+**The masthead colour is one token.** In `oa-admin-packet.css`:
+
+```css
+--pk-bar: #C0392B;          /* Packet's crimson */
+--pk-bar: var(--ink-800);   /* JAIN navy instead */
+```
+
+Both are rendered in the screenshots — crimson is closer to the demo, navy
+keeps the console matching the logo.
+
+**Fonts.** Packet uses Lato and Raleway. They are fetched only when the skin
+is switched on, so the Luno skin carries no extra requests — worth having
+given the load-time complaints.
+
+### Scope, honestly
+
+The skin covers the console **chrome**: masthead, rail, title band, stat
+rows, cards and tables. Deeper components — the gold "Enable for everyone"
+button, the amber advisory panels, section rules — still wear JAIN gold under
+Packet. Restyling every one of those is a much larger job; say the word if
+you want it carried all the way through.
+
+### Bugs found while building it
+
+- The dark theme loads after the skin, so it won **every** overlap: the
+  welcome band came out white with white text on it, the icon cells wore the
+  dark theme's per-metric tints, and the crimson masthead went dark. Fixed by
+  giving the dark sheet a `[data-theme="dark"][data-skin="packet"]` section
+  that re-points the skin's tokens rather than fighting rule by rule.
+- `Sign out` lost its red. The flat rail colour and the base `.danger` rule
+  have equal specificity, so the later one won; the skin rule is now
+  `:not(.danger)`.
+
+---
+
+## Why changes looked like they never landed
+
+You pulled, restarted, and saw nothing different. Two separate reasons, both
+now fixed.
+
+### 1. Static files were cached for 12 hours with no way to bust them
+
+Every stylesheet and script was served from a plain URL:
+
+```
+/static/css/oa-admin.css
+```
+
+Flask caches static files for **12 hours** by default, and nothing in that URL
+changes when the file does. So after a deploy your browser kept serving the
+**old** CSS and JS for up to half a day. This affected every change made to
+this app, not just the recent ones — and a stale script running against a
+fresh template is its own class of bug, which may well be behind the blank
+admin console.
+
+`app.py` now versions every static URL by the file's modification time:
+
+```
+/static/css/oa-admin.css?v=1793360519
+```
+
+It is a `url_defaults` hook, so it applies to every `url_for('static', ...)`
+in every template without any of them being touched. The version changes
+exactly when the file changes, and never otherwise. Caching is now set to a
+year, which also makes repeat visits faster — the `?v=` is what keeps them
+correct.
+
+Verified: URLs come out versioned, the version moves when the file is
+touched, and a missing file still 404s rather than crashing.
+
+**After this deploy you should not need to hard-refresh again.** For this one
+deploy you still might, because the fix itself is in the file being cached.
+
+### 2. The Packet skin was off by default
+
+It shipped as opt-in behind the rail switch, so loading the console showed
+the Luno skin — which you already had. You asked to *use* that style, so
+**Packet is now the default**. The rail switch still flips to Luno and the
+choice sticks across reloads.
+
+---
+
+## Prototype: password gate, shareable link, object detection
+
+The face prototype is now reachable from the server, behind a password, and
+can be shared with people who have no account.
+
+### Getting in
+
+| | |
+|---|---|
+| Sign in | `https://your-domain/admin/prototype/login` |
+| Password | `12345678s` |
+| The page | `/admin/prototype` |
+| Share a link | button on the page → `/share/prototype/<token>` |
+
+The password is read from `PROTOTYPE_PASSWORD` in `.env` and falls back to
+the one above. **Because that fallback sits in the repository, treat it as
+public** — anyone who can read the code can read the password. Set
+`PROTOTYPE_PASSWORD` in `.env` to something else before this is on a public
+domain for long.
+
+### It cannot reach the admin console
+
+Passing this password sets one session flag that unlocks this page and
+nothing else. It is not a Flask-Login session, carries no role, and reaches
+no attendance data. Tested: a client holding the prototype session, and a
+stranger holding only a share link, both get bounced to `/login` when they
+try `/admin/dashboard`.
+
+The page also moved from `static/` to `templates/`. Left in `static/`, Flask
+would have served it at `/static/face-prototype.html` to anyone who guessed
+the name, and the password would have been decoration.
+
+### Object detection
+
+The prototype now runs **CenterNet** alongside the face pipeline — 80 COCO
+classes. Hold up a book and the Scene panel reads **book**; a phone reads
+**cell phone**. People are detected as **person** whether or not they face
+the camera, which the face detector alone cannot do. Strongest detection is
+listed first.
+
+It runs on a one-second timer rather than every frame, because the model is
+heavy and a scene does not change thirty times a second.
+
+On "most powerful": CenterNet is the strongest detector this library ships
+and it runs in the browser with no server. A YOLO model served from Python
+would beat it on accuracy, at the cost of sending every frame to the server.
+For a demo that runs on someone's phone from a link, this is the right side
+of that trade.
+
+### Tested
+
+Routes driven end to end against the real `app.py` with Mongo and OpenCV
+stubbed: the gate rejects a wrong password (401), redirects when unlocked,
+mints a working share link, refuses an invented token (404), hides the share
+button on a shared view, and blocks both session types from the admin
+console.
+
+Not tested: the camera and the models themselves. This session has no camera
+and the model CDN is blocked here.
+
+### Front and back camera
+
+A **Front / Back** switch sits next to Start camera. Pick one before
+starting, or switch while it is running — the old stream is stopped and a new
+one opened, so the camera light goes out on the one you left.
+
+The back camera is the useful one for the Scene panel: hold the phone over a
+book or a desk rather than turning the book around to face a laptop.
+
+Two details that matter:
+
+- **Only the front view is mirrored.** An unmirrored selfie view is
+  disorienting, but flipping the whole canvas in CSS would mirror Human's
+  labels too and print them backwards. Instead `filter.flip` tells Human to
+  analyse a flipped frame, and the page draws `result.canvas` — the frame
+  Human actually worked on. The boxes land in the right place and the text
+  reads the right way round. The back camera is never mirrored, which is
+  correct for reading anything with writing on it.
+- **Resolution is requested at 1280×720** rather than 640×480. A phone's
+  back camera has it to give, and small text on a book needs it.
+
+If the device reports only one camera, the Back button is disabled with a
+note rather than failing when pressed. On a desktop asking for the back
+camera usually just returns the only camera there is, which is why the count
+is checked instead of trusting the request.
+
+---
+
+## The Campus redesign and five additions
+
+### New look
+
+Every page was redrawn: soft grey page, white rounded blocks, pastel colour
+blocks for figures and status, black pill buttons. Students get a top
+navigation bar and a home screen that opens on the sign-in / sign-out block;
+the admin console keeps a side menu, drawn as a floating panel. The Luno and
+Packet skins are gone. Dark mode is token overrides in `oa-core.css` and works
+on every page.
+
+### Sign-out reminder
+
+* On the student home screen a yellow bar appears when someone is still signed
+  in and has either met the day's target or it is past `SIGNOUT_NUDGE_HOUR`
+  (default 18:00 IST). It never signs anyone out by itself.
+* `send_reminders.py` mails everyone still signed in — run it from cron.
+* **Notices → Email reports → Remind people still signed in** does the same
+  on demand. People with no email on file are listed, not mailed.
+
+### Change my own password
+
+Key icon in the student top bar (and the phone menu), and **Change password**
+in the admin side menu. Needs the current password; minimum 8 characters.
+Blocked while an admin is viewing as someone else.
+
+### Streaks and the leaderboard
+
+`GET /api/leaderboard` ranks the month by days present, then hours. Students
+see it on Statistics, with names, days and streaks but **not each other's
+hours**; the admin sees hours too and can narrow it to one department. A
+streak is working days in a row — weekends, holidays and approved leave do
+not break it. A streak of two or more shows as a badge by the person's name.
+
+### Departments
+
+A person can be given a department when created or from their card. The People
+tab filters by department and by name, Analysis can tick a whole department
+at once, and the leaderboard shows it.
+
+The **Save** button on each person's card called a function that did not
+exist, so name and role edits were never saved. It works now.
+
+### Holidays the office manages
+
+**Calendar → Holidays** lists the year's holidays; add or remove them there.
+The list in `app.py` is the starting point and edits are kept in the
+`holidays` collection, so next year needs no code change.
+
+Declared holidays now behave like one: a weekday holiday is **no longer
+counted as an absence** in a person's analysis, reports or attendance rate,
+and the day snapshot files no-shows under Off rather than Missed sign-in.
+Previously only Sundays were treated this way.
+
+---
+
+## Forgot password, monthly reports, bulk import, notices board
+
+### Forgot password
+
+**Forgot your password?** on the sign-in page. Enter a username or the email
+on file; a link valid for one hour, usable once, is mailed. The page answers the
+same whether or not the account exists, and sends at most one mail per account
+every two minutes. Only a hash of the link's token is stored, and expired
+tokens delete themselves (TTL index). People with no email on file are told to
+ask the office. **Set `PUBLIC_BASE_URL`** so the link points at the real address.
+
+### Monthly report
+
+Each intern and employee is mailed their own month on the 1st — days worked,
+absences, leave, attendance rate, hours, their leaderboard place — with their
+day-by-day Excel attached. Cron runs `send_monthly.py`; **Notices → Email
+reports → Monthly reports** sends any past month by hand (tap twice, because it
+mails everyone).
+
+### Add many people at once
+
+**People → Add many people at once**: upload a CSV or Excel file (template
+provided). **Check file** lists every row as ready or with its problem
+(username taken, twice in the file, bad role, hours, email, short password);
+nothing is created until **Create N accounts**. Rows with problems are skipped.
+Blank passwords are made up and shown once, with a copy button. Header names
+are forgiving (`Name`, `Dept`, `Hours`, `E-mail` all work). Up to 500 rows, 2 MB.
+
+### Notices tab
+
+Students have a **Notices** tab listing every notice sent to them (drafts
+excluded, targeted ones only to their audience) and decisions on their own leave
+from the last 60 days, newest first, with an unread count on the tab. Opening
+the tab marks them read; it does not use up a notice's pop-up showings.
+
+### Leaderboard removed
+
+The monthly leaderboard is gone: the card on the student Statistics page and on
+the admin Overview, the streak badge by the student's name, the
+`/api/leaderboard` route, and the leaderboard place in the monthly email. The
+"Day streak" figure in *This month at a glance* stays — it only ever showed the
+person their own streak.
+

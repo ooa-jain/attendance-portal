@@ -13,7 +13,10 @@ import os
 import re
 import random
 import secrets
+import hmac
+import hashlib
 import json
+import threading
 import requests
 import base64
 import numpy as np
@@ -24,18 +27,85 @@ from config import Config
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# ── Static files: cache hard, but bust on change ──────────────────────
+# Until now every stylesheet and script was served from a plain
+# /static/... URL with Flask's default 12-hour cache. After a deploy the
+# browser kept serving the old CSS and JS for up to half a day, so changes
+# looked like they had not landed — and a stale script running against a
+# fresh template is its own class of bug.
+#
+# url_defaults fires for every url_for('static', ...) in every template,
+# so this versions the lot without touching one of them. The value is the
+# file's modification time: it changes exactly when the file does.
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000      # a year; the ?v= handles freshness
+
+
+@app.url_defaults
+def _static_cache_bust(endpoint, values):
+    if endpoint != 'static' or 'filename' not in values:
+        return
+    try:
+        values['v'] = int(os.stat(os.path.join(app.static_folder,
+                                               values['filename'])).st_mtime)
+    except OSError:
+        pass                                            # missing file: let Flask 404 it
+
 if not app.config.get("MONGO_URI"):
     raise RuntimeError("MONGO_URI not set in .env (see README)")
 
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'info.loginpanel@gmail.com')
-app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD', 'wedbfepklgtwtugf')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME', 'info.loginpanel@gmail.com')
+def _env(*names, default=None):
+    """First of these environment variables that is set.
+
+    The deployment's .env uses SMTP_* names, so both spellings are accepted
+    rather than making the file match the code.
+    """
+    for n in names:
+        v = os.environ.get(n)
+        if v not in (None, ""):
+            return v
+    return default
+
+
+_mail_port = int(_env('MAIL_PORT', 'SMTP_PORT', default='587'))
+# Port 465 is implicit SSL, 587 is STARTTLS. Follow the port unless told otherwise.
+_mail_ssl_env = _env('MAIL_USE_SSL', 'SMTP_USE_SSL')
+_mail_ssl = (_mail_ssl_env.lower() in ('1', 'true', 'yes', 'on')) if _mail_ssl_env else (_mail_port == 465)
+
+app.config['MAIL_SERVER'] = _env('MAIL_SERVER', 'SMTP_SERVER', default='smtp.gmail.com')
+app.config['MAIL_PORT'] = _mail_port
+app.config['MAIL_USE_SSL'] = _mail_ssl
+app.config['MAIL_USE_TLS'] = not _mail_ssl
+app.config['MAIL_USERNAME'] = _env('MAIL_USERNAME', 'SMTP_EMAIL', 'SMTP_USERNAME',
+                                   default='info.loginpanel@gmail.com')
+app.config['MAIL_PASSWORD'] = _env('MAIL_PASSWORD', 'SMTP_PASSWORD',
+                                   default='wedbfepklgtwtugf')
+app.config['MAIL_DEFAULT_SENDER'] = _env('MAIL_SENDER', 'SMTP_SENDER',
+                                         'MAIL_USERNAME', 'SMTP_EMAIL',
+                                         default='info.loginpanel@gmail.com')
+app.config['MAIL_TIMEOUT'] = int(_env('MAIL_TIMEOUT', default='20'))
 
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 ADMIN_EMAIL = 'admin@jainuniversity.ac.in'
+
+# ── Where the office copies go ───────────────────────────────
+# Leave applications as they come in, and the daily sign-in digest.
+REPORT_RECIPIENTS = [a.strip() for a in _env(
+    'REPORT_RECIPIENTS', default='ooa.connect@jainuniversity.ac.in').split(',') if a.strip()]
+LEAVE_MAIL_ENABLED = _env('LEAVE_MAIL_ENABLED', default='1').lower() not in ('0', 'false', 'no', 'off')
+DAILY_DIGEST_ATTACH_EXCEL = _env('DAILY_DIGEST_ATTACH_EXCEL', default='1').lower() not in ('0', 'false', 'no', 'off')
+# Evening nudge to anyone who signed in and has not signed out.
+SIGNOUT_REMINDER_ENABLED = _env('SIGNOUT_REMINDER_ENABLED', default='1').lower() not in ('0', 'false', 'no', 'off')
+# From this hour (IST, 24h) the dashboard itself reminds a person still signed in.
+SIGNOUT_NUDGE_HOUR = int(_env('SIGNOUT_NUDGE_HOUR', default='18'))
+MIN_PASSWORD_LENGTH = 8
+# Links in mails (password reset) are built from this when set, e.g.
+# https://attendance.example.edu — otherwise from the address the request came in on.
+PUBLIC_BASE_URL = (_env('PUBLIC_BASE_URL', default='') or '').rstrip('/')
+RESET_LINK_MINUTES = 60
+MONTHLY_REPORT_ENABLED = _env('MONTHLY_REPORT_ENABLED', default='1').lower() not in ('0', 'false', 'no', 'off')
+
+
+
 
 mongo_uri = app.config.get("MONGO_URI", "")
 if mongo_uri and "connectTimeoutMS" not in mongo_uri:
@@ -59,6 +129,26 @@ bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 mail = Mail(app)
+
+# Almost every query filters attendance by date, or by person and date, and
+# the leave list by status. Without these Mongo scans the whole collection,
+# which is what makes the console feel slow once there is real history.
+# create_index is idempotent, so this is safe on every start.
+if os.environ.get("SKIP_INDEXES", "").lower() not in ("1", "true", "yes"):
+    try:
+        mongo.db.attendance.create_index("date")
+        mongo.db.attendance.create_index([("user_id", 1), ("date", 1)])
+        mongo.db.attendance.create_index([("username", 1), ("date", 1)])
+        mongo.db.leave_applications.create_index([("status", 1), ("applied_at", -1)])
+        mongo.db.leave_applications.create_index([("user_id", 1), ("date", 1)])
+        mongo.db.face_security_logs.create_index([("date", 1), ("match_result", 1)])
+        mongo.db.users.create_index("username")
+        mongo.db.password_resets.create_index("token_hash")
+        # Expired reset links remove themselves.
+        mongo.db.password_resets.create_index("expires_at", expireAfterSeconds=0)
+    except Exception as e:
+        print(f"[MONGO WARNING] Could not ensure indexes: {e}")
+
 
 # ─────────────────────────────────────────────────────────────
 #  PRIMARY DUTY STATION
@@ -112,6 +202,29 @@ UNIVERSITY_HOLIDAYS_2026 = {
     "2026-11-27": {"name": "Kanakadasa Jayanthi", "type": "general"},
     "2026-12-25": {"name": "Christmas", "type": "general"},
 }
+
+
+def holiday_map():
+    """Every holiday the portal knows about, as {date: {name, type, custom}}.
+
+    The list above is the starting point. Administrators add to it — or
+    strike a date out of it — from the Calendar tab, and those edits live in
+    the `holidays` collection so nobody has to change code each year.
+    """
+    hm = {d: {**info, "custom": False} for d, info in UNIVERSITY_HOLIDAYS_2026.items()}
+    try:
+        for h in mongo.db.holidays.find({}):
+            d = h.get("date")
+            if not d:
+                continue
+            if h.get("removed"):
+                hm.pop(d, None)
+            else:
+                hm[d] = {"name": h.get("name") or "Holiday",
+                         "type": h.get("type") or "general", "custom": True}
+    except Exception as e:                      # a database hiccup must not hide the built-in list
+        print(f"[HOLIDAYS] could not read custom holidays: {e}")
+    return hm
 
 
 # ─────────────────────────────────────────────────────────────
@@ -279,13 +392,48 @@ def img_to_b64_jpeg(img_bgr, quality: int = 75) -> str:
 #  USER MODEL
 # ─────────────────────────────────────────────────────────────
 
+# Roles. "username" stays the login handle and the key attendance records are
+# filed under; "full_name" is only ever what people read on screen.
+STAFF_ROLES = ("intern", "employee")     # these record attendance
+ALL_ROLES   = ("intern", "employee", "admin")
+
+
+def is_staff(role):
+    """Does this role sign in and out, and use the staff dashboard?"""
+    return role in STAFF_ROLES
+
+
+def display_name(doc):
+    """The name to show for a person, falling back to their login name.
+    A blank or whitespace-only full name falls back too, so nobody renders
+    as an empty string."""
+    if not doc:
+        return ""
+    return (doc.get("full_name") or "").strip() or (doc.get("username") or "").strip()
+
+
+# Face data (embeddings and base64 thumbnails) makes a user document large.
+# Pages that only list people must not drag it across the wire, nor the
+# password hash. face_thumb — the single small preview — is kept.
+USER_LIST_FIELDS = {"face_features": 0, "face_thumbs": 0, "password": 0}
+
+
+def name_map():
+    """login name -> display name, for lists built from attendance records
+    (which are filed under the login name, not the display one)."""
+    return {u.get("username"): display_name(u)
+            for u in mongo.db.users.find({}, {"username": 1, "full_name": 1})}
+
+
 class User(UserMixin):
     def __init__(self, user_doc):
         self.id         = str(user_doc["_id"])
         self.username   = user_doc["username"]
+        self.full_name  = display_name(user_doc)
         self.role       = user_doc.get("role", "intern")
         self.email      = user_doc.get("email")
         self.work_hours = user_doc.get("work_hours", DEFAULT_WORK_HOURS)
+        self.department = (user_doc.get("department") or "").strip()
 
 
 @login_manager.user_loader
@@ -437,7 +585,7 @@ def _get_lat_lng_from_request():
 @app.route("/")
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for("user_dashboard") if current_user.role == "intern" else url_for("admin_dashboard"))
+        return redirect(url_for("user_dashboard") if is_staff(current_user.role) else url_for("admin_dashboard"))
     return redirect(url_for("login"))
 
 
@@ -445,8 +593,11 @@ def index():
 def register():
     if request.method == "POST":
         username   = request.form["username"].strip()
+        full_name  = (request.form.get("full_name") or "").strip()[:120]
         password   = request.form["password"]
-        role       = request.form.get("role", "intern")
+        # Self sign-up is always an intern. Never take the role from the form —
+        # an admin promotes people from the People tab.
+        role       = "intern"
         email      = request.form.get("email", "")
         work_hours = float(request.form.get("work_hours", DEFAULT_WORK_HOURS))
 
@@ -456,7 +607,8 @@ def register():
 
         hashed = bcrypt.generate_password_hash(password).decode("utf-8")
         mongo.db.users.insert_one({
-            "username": username, "password": hashed, "role": role,
+            "username": username, "full_name": full_name or username,
+            "password": hashed, "role": role,
             "email": email, "work_hours": work_hours,
             "created_at": datetime.utcnow(), "face_registered": False,
             "face_required": False,             # admin must enable this
@@ -468,21 +620,262 @@ def register():
     return render_template("register.html")
 
 
+# ─────────────────────────────────────────────────────────────
+#  OFFICE MAIL  —  leave applications and the daily digest
+#
+#  Everything here is best-effort: a mail that cannot be sent is logged
+#  and the request carries on. The one exception is the admin sign-in
+#  code below, where failing to send has to block the sign-in.
+# ─────────────────────────────────────────────────────────────
+
+def send_mail_async(subject, recipients, body, html=None, attachments=()):
+    """Hand a mail off to a background thread and return at once.
+
+    For mail nobody is waiting on. An SMTP round trip costs a couple of
+    seconds, which has no business sitting inside someone's request — but it
+    also means the outcome is only visible in the log, so anything whose
+    success the caller must know (the sign-in code) still uses send_mail.
+    """
+    def run():
+        with app.app_context():
+            send_mail(subject, recipients, body, html, attachments)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def send_mail(subject, recipients, body, html=None, attachments=()):
+    """Send one mail. Returns (ok, error). Never raises into a request."""
+    recipients = [r for r in (recipients or []) if r]
+    if not recipients:
+        return False, "No recipients configured"
+    try:
+        msg = Message(subject=subject, recipients=recipients, body=body)
+        if html:
+            msg.html = html
+        for filename, mimetype, data in attachments:
+            msg.attach(filename, mimetype, data)
+        mail.send(msg)
+        return True, ""
+    except Exception as e:
+        app.logger.error("Mail failed (%s -> %s): %s", subject, ", ".join(recipients), e)
+        return False, str(e)
+
+
+def _mail_shell(title, subtitle, inner):
+    """The house style for an office mail — plain tables, no webfonts."""
+    return f"""<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<div style="background:#F6F4EF;padding:22px 0;font-family:
+          -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr><td align="center">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="640"
+           style="max-width:640px;background:#fff;border:1px solid #E6E1D7;border-radius:12px;overflow:hidden">
+      <tr><td style="background:#0A1324;padding:18px 24px">
+        <div style="color:#EEBD1B;font-size:10px;font-weight:800;letter-spacing:2px">OFFICE OF ACADEMICS</div>
+        <div style="color:#fff;font-size:18px;font-weight:700;margin-top:3px">{title}</div>
+        <div style="color:#A9B4C7;font-size:12px;margin-top:3px">{subtitle}</div>
+      </td></tr>
+      <tr><td style="padding:22px 24px">{inner}</td></tr>
+      <tr><td style="padding:14px 24px;border-top:1px solid #EFEBE2;color:#8A8578;font-size:11px">
+        JAIN Attendance Portal · Head Office, Bengaluru. This mail was sent automatically.
+      </td></tr>
+    </table>
+  </td></tr></table>
+</div>"""
+
+
+def notify_leave_application(leave_doc, user_doc):
+    """Tell the office a leave application has come in."""
+    if not LEAVE_MAIL_ENABLED:
+        return
+    who = display_name(user_doc) or leave_doc.get("username", "")
+    try:
+        pretty = datetime.strptime(leave_doc["date"], "%Y-%m-%d").strftime("%A, %d %B %Y")
+    except Exception:
+        pretty = leave_doc.get("date", "")
+
+    rows = [("Person", who), ("Date", pretty), ("Type", leave_doc.get("type", "")),
+            ("Reason", leave_doc.get("comments") or "— none given —"),
+            ("Applied", format_ist_time(datetime.utcnow(), "%d %b %Y, %I:%M %p") + " IST")]
+    body = "A leave application is waiting for a decision.\n\n" + \
+           "\n".join(f"{k:9}: {v}" for k, v in rows) + \
+           "\n\nApprove or decline it under Leave requests in the admin console."
+    inner = ("<p style='margin:0 0 14px;color:#4A4A4A;font-size:14px'>"
+             "A leave application is waiting for a decision.</p>"
+             "<table cellpadding='0' cellspacing='0' width='100%' style='font-size:14px;color:#1A1A1A'>")
+    for k, v in rows:
+        inner += (f"<tr><td style='padding:7px 0;color:#8A8578;font-size:12px;width:92px;"
+                  f"vertical-align:top'>{k}</td>"
+                  f"<td style='padding:7px 0'>{_html_escape(str(v))}</td></tr>")
+    inner += ("</table><p style='margin:16px 0 0;color:#8A8578;font-size:12px'>"
+              "Approve or decline it under <strong>Leave requests</strong> in the admin console.</p>")
+
+    send_mail_async(f"Leave request · {who} · {leave_doc.get('date','')}",
+                    REPORT_RECIPIENTS, body,
+                    _mail_shell("Leave request", f"{who} · {pretty}", inner))
+
+
+def _html_escape(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def build_daily_digest(day=None):
+    """The day's sign-in summary as (subject, text, html, attachments)."""
+    day = day or date.today().isoformat()
+    data = compute_day_overview(day)
+    t, b = data.get("totals", {}), data.get("buckets", {})
+    try:
+        pretty = datetime.strptime(day, "%Y-%m-%d").strftime("%A, %d %B %Y")
+    except Exception:
+        pretty = day
+
+    signed_in = sorted([*b.get("complete", []), *b.get("active", []), *b.get("early", [])],
+                       key=lambda p: p.get("login_time") or "")
+    missing   = b.get("absent", [])
+    on_leave  = b.get("on_leave", [])
+
+    # ── plain text, for clients that want it ──
+    lines = [f"Attendance summary · {pretty}", "",
+             f"Signed in : {len(signed_in)} of {t.get('registered', 0)}   ({data.get('rate', 0)}% of those due in)",
+             f"Not in    : {len(missing)}",
+             f"On leave  : {len(on_leave)}", ""]
+    if signed_in:
+        lines.append("WHO SIGNED IN")
+        for p in signed_in:
+            out = p.get("logout_time") or "still on duty"
+            lines.append(f"  {p.get('name') or p.get('username')}: "
+                         f"{p.get('login_time') or '—'} -> {out} · {p.get('hours', 0)}h"
+                         f" · {'on campus' if p.get('at_office') else 'off campus'}")
+        lines.append("")
+    if missing:
+        lines.append("DID NOT SIGN IN")
+        lines += [f"  {p.get('name') or p.get('username')}" for p in missing]
+        lines.append("")
+    if on_leave:
+        lines.append("ON LEAVE")
+        lines += [f"  {p.get('name') or p.get('username')}" for p in on_leave]
+        lines.append("")
+
+    pending = list(mongo.db.leave_applications.find({"status": "pending"}).sort("applied_at", -1).limit(25))
+    if pending:
+        lines.append(f"LEAVE REQUESTS AWAITING A DECISION ({len(pending)})")
+        for l in pending:
+            lines.append(f"  {l.get('username')} · {l.get('date')} · {l.get('type')}"
+                         f" · {l.get('comments') or 'no reason given'}")
+
+    # ── html ──
+    def tile(n, label, colour):
+        return (f"<td align='center' style='padding:10px;border:1px solid #E6E1D7;border-radius:8px'>"
+                f"<div style='font-size:22px;font-weight:700;color:{colour}'>{n}</div>"
+                f"<div style='font-size:10px;letter-spacing:1px;color:#8A8578;"
+                f"text-transform:uppercase;margin-top:3px'>{label}</div></td>")
+
+    inner = ("<table cellpadding='0' cellspacing='6' width='100%'><tr>"
+             + tile(len(signed_in), "Signed in", "#1E7D46")
+             + tile(len(missing), "Not in", "#C0362C")
+             + tile(len(on_leave), "On leave", "#6B7480")
+             + tile(f"{data.get('rate', 0)}%", "Turnout", "#B0740A")
+             + "</tr></table>")
+
+    if signed_in:
+        inner += ("<div style='margin:20px 0 8px;font-size:12px;font-weight:700;letter-spacing:1px;"
+                  "color:#8A8578;text-transform:uppercase'>Who signed in</div>"
+                  "<table cellpadding='0' cellspacing='0' width='100%' style='font-size:13px;"
+                  "border-collapse:collapse'>"
+                  "<tr style='background:#0A1324;color:#fff'>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Person</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>In</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Out</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Hours</th>"
+                  "<th align='left' style='padding:7px 9px;font-size:11px'>Where</th></tr>")
+        cell = "padding:7px 9px;border-top:1px solid #EFEBE2"
+        on_duty = "<em style='color:#B0740A'>on duty</em>"
+        for i, p in enumerate(signed_in):
+            bg    = "#FBFAF7" if i % 2 else "#fff"
+            name  = _html_escape(p.get("name") or p.get("username"))
+            tin   = p.get("login_time") or "—"
+            tout  = p.get("logout_time") or on_duty
+            where = "On campus" if p.get("at_office") else "Off campus"
+            inner += (f"<tr style='background:{bg}'>"
+                      f"<td style='{cell}'>{name}</td>"
+                      f"<td style='{cell}'>{tin}</td>"
+                      f"<td style='{cell}'>{tout}</td>"
+                      f"<td style='{cell}'>{p.get('hours', 0)}h</td>"
+                      f"<td style='{cell};color:#6B7480'>{where}</td></tr>")
+        inner += "</table>"
+
+    def chips(title, people, colour, bg):
+        if not people:
+            return ""
+        out = (f"<div style='margin:20px 0 8px;font-size:12px;font-weight:700;letter-spacing:1px;"
+               f"color:#8A8578;text-transform:uppercase'>{title}</div><div>")
+        for p in people:
+            out += (f"<span style='display:inline-block;margin:0 5px 5px 0;padding:4px 10px;"
+                    f"border-radius:99px;background:{bg};color:{colour};font-size:12px'>"
+                    f"{_html_escape(p.get('name') or p.get('username'))}</span>")
+        return out + "</div>"
+
+    inner += chips("Did not sign in", missing, "#8A3833", "#FCEBEA")
+    inner += chips("On leave", on_leave, "#5D6470", "#EEF0F3")
+
+    if pending:
+        inner += ("<div style='margin:22px 0 8px;font-size:12px;font-weight:700;letter-spacing:1px;"
+                  "color:#8A8578;text-transform:uppercase'>Leave requests awaiting a decision</div>"
+                  "<table cellpadding='0' cellspacing='0' width='100%' style='font-size:13px;border-collapse:collapse'>")
+        for l in pending:
+            inner += (f"<tr><td style='padding:7px 9px;border-top:1px solid #EFEBE2'>"
+                      f"<strong>{_html_escape(l.get('username'))}</strong><br>"
+                      f"<span style='color:#8A8578;font-size:12px'>{_html_escape(l.get('date'))} · "
+                      f"{_html_escape(l.get('type'))} · {_html_escape(l.get('comments') or 'no reason given')}"
+                      f"</span></td></tr>")
+        inner += "</table>"
+
+    attachments = []
+    if DAILY_DIGEST_ATTACH_EXCEL:
+        try:
+            mem = build_analysis_workbook([day], title=f"Attendance {day}")
+            attachments.append((f"attendance_{day}.xlsx", XLSX_MIME, mem.getvalue()))
+        except Exception as e:
+            app.logger.error("Digest workbook failed for %s: %s", day, e)
+
+    subject = (f"Attendance {day} · {len(signed_in)} in, {len(missing)} not in"
+               + (f", {len(pending)} leave request{'s' if len(pending) != 1 else ''}" if pending else ""))
+    html = _mail_shell("Daily attendance summary", pretty, inner)
+    return subject, "\n".join(lines), html, attachments
+
+
+def send_daily_digest(day=None, recipients=None):
+    subject, text, html, attachments = build_daily_digest(day)
+    return send_mail(subject, recipients or REPORT_RECIPIENTS, text, html, attachments)
+
+
+def _home_for(role):
+    return url_for("user_dashboard") if is_staff(role) else url_for("admin_dashboard")
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    # Already signed in? Send them where they belong rather than showing a
+    # form that looks like the sign-in failed.
+    if current_user.is_authenticated:
+        return redirect(_home_for(current_user.role))
+
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
         user     = mongo.db.users.find_one({"username": username})
-        if not user:
-            flash("No such user", "danger")
+
+        # One message for both cases, so the form can't be used to find out
+        # which usernames exist.
+        if not user or not bcrypt.check_password_hash(user["password"], password):
+            flash("Incorrect username or password", "danger")
             return redirect(url_for("login"))
-        if bcrypt.check_password_hash(user["password"], password):
-            user_obj = User(user)
-            login_user(user_obj)
-            flash("Logged in", "success")
-            return redirect(url_for("user_dashboard") if user_obj.role == "intern" else url_for("admin_dashboard"))
-        flash("Invalid credentials", "danger")
+
+        user_obj = User(user)
+
+        login_user(user_obj)
+        flash("Logged in", "success")
+        return redirect(_home_for(user_obj.role))
+
     return render_template("login.html")
 
 
@@ -881,8 +1274,8 @@ def _extract_browser(ua: str) -> str:
 @app.route("/attendance/login", methods=["POST"])
 @login_required
 def attendance_login():
-    if current_user.role != "intern":
-        return jsonify({"error": "Only interns can record attendance"}), 403
+    if not is_staff(current_user.role):
+        return jsonify({"error": "Only staff accounts can record attendance"}), 403
 
     data = request.get_json() if request.is_json else {}
     lat, lng = _get_lat_lng_from_request()
@@ -1120,8 +1513,8 @@ def attendance_login():
 @app.route("/attendance/logout", methods=["POST"])
 @login_required
 def attendance_logout():
-    if current_user.role != "intern":
-        return jsonify({"error": "Only interns can record attendance"}), 403
+    if not is_staff(current_user.role):
+        return jsonify({"error": "Only staff accounts can record attendance"}), 403
 
     data         = request.get_json() if request.is_json else {}
     lat, lng     = _get_lat_lng_from_request()
@@ -1307,6 +1700,182 @@ def purge_old_face_logs():
         return jsonify({"error": str(e)}), 500
 
 
+# ─────────────────────────────────────────────────────────────
+#  NOTICES  —  what people see when they sign in
+#
+#  An admin writes a notice once, chooses who gets it (everyone or
+#  named people) and how long it should keep appearing — a number of
+#  days, and a number of sign-ins per person. It shows on the intern's
+#  dashboard until either limit is spent or they dismiss it. Start and
+#  stop are just a flag, so a notice can be paused and resumed without
+#  losing who has already seen it.
+# ─────────────────────────────────────────────────────────────
+
+def _notice_public(n, seen_count=0):
+    return {
+        "id":         str(n["_id"]),
+        "title":      n.get("title", ""),
+        "body":       n.get("body", ""),
+        "kind":       n.get("kind", "feature"),
+        "audience":   n.get("audience", []),
+        "everyone":   not n.get("audience"),
+        "days":       n.get("days", 2),
+        "max_views":  n.get("max_views", 2),
+        "active":     bool(n.get("active")),
+        "cta_label":  n.get("cta_label", ""),
+        "cta_tab":    n.get("cta_tab", ""),
+        "created_by": n.get("created_by", ""),
+        "created_at": n.get("created_at").isoformat() if n.get("created_at") else None,
+        "started_at": n.get("started_at").isoformat() if n.get("started_at") else None,
+        "seen_by":    seen_count,
+    }
+
+
+@app.route("/api/user/notices")
+@login_required
+def user_notices():
+    """The notice this person should see right now, if any.
+
+    A notice qualifies while it is running, they are in its audience, it is
+    within its day window, they have not dismissed it, and they have seen it
+    fewer than `max_views` times.
+    """
+    try:
+        uid  = ObjectId(current_user.id)
+        now  = datetime.utcnow()
+        name = current_user.username
+        for n in mongo.db.notices.find({"active": True}).sort("started_at", -1):
+            audience = n.get("audience") or []
+            if audience and name not in audience:
+                continue
+            started = n.get("started_at")
+            if started and (now - started).days >= int(n.get("days", 2) or 2):
+                continue
+            view = mongo.db.notice_views.find_one({"notice_id": n["_id"], "user_id": uid})
+            if view and (view.get("dismissed") or view.get("views", 0) >= int(n.get("max_views", 2) or 2)):
+                continue
+            return jsonify({"notice": _notice_public(n)})
+        return jsonify({"notice": None})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/user/notices/<notice_id>/seen", methods=["POST"])
+@login_required
+def user_notice_seen(notice_id):
+    """Count one showing — and, if asked, stop showing it to this person."""
+    try:
+        dismissed = bool((request.get_json(silent=True) or {}).get("dismissed"))
+        update = {"$inc": {"views": 1},
+                  "$set": {"last_seen": datetime.utcnow(), "username": current_user.username},
+                  "$setOnInsert": {"first_seen": datetime.utcnow()}}
+        if dismissed:
+            update["$set"]["dismissed"] = True
+        mongo.db.notice_views.update_one(
+            {"notice_id": ObjectId(notice_id), "user_id": ObjectId(current_user.id)},
+            update, upsert=True)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/notices", methods=["GET", "POST"])
+@login_required
+def admin_notices():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        title = (body.get("title") or "").strip()[:120]
+        text  = (body.get("body") or "").strip()[:2000]
+        if not title or not text:
+            return jsonify({"error": "A notice needs a title and a message."}), 400
+        doc = {
+            "title":      title,
+            "body":       text,
+            "kind":       body.get("kind") if body.get("kind") in ("feature", "info", "warning") else "feature",
+            "audience":   parse_users_arg(body.get("audience")),
+            "days":       max(1, min(int(body.get("days") or 2), 60)),
+            "max_views":  max(1, min(int(body.get("max_views") or 2), 20)),
+            "cta_label":  (body.get("cta_label") or "").strip()[:40],
+            "cta_tab":    (body.get("cta_tab") or "").strip()[:20],
+            "active":     bool(body.get("start")),
+            "created_by": current_user.username,
+            "created_at": datetime.utcnow(),
+            "started_at": datetime.utcnow() if body.get("start") else None,
+        }
+        res = mongo.db.notices.insert_one(doc)
+        doc["_id"] = res.inserted_id
+        return jsonify({"ok": True, "notice": _notice_public(doc)})
+
+    out = []
+    for n in mongo.db.notices.find().sort("created_at", -1).limit(50):
+        seen = mongo.db.notice_views.count_documents({"notice_id": n["_id"]})
+        out.append(_notice_public(n, seen))
+    return jsonify({"notices": out})
+
+
+@app.route("/api/admin/notices/<notice_id>/<action>", methods=["POST", "DELETE"])
+@login_required
+def admin_notice_action(notice_id, action):
+    """start / stop / reset / delete a notice."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        oid = ObjectId(notice_id)
+    except Exception:
+        return jsonify({"error": "Unknown notice"}), 404
+
+    if action == "start":
+        mongo.db.notices.update_one({"_id": oid}, {"$set": {"active": True, "started_at": datetime.utcnow()}})
+    elif action == "stop":
+        mongo.db.notices.update_one({"_id": oid}, {"$set": {"active": False, "stopped_at": datetime.utcnow()}})
+    elif action == "reset":
+        # Show it afresh to everyone, without rewriting the notice itself.
+        mongo.db.notice_views.delete_many({"notice_id": oid})
+        mongo.db.notices.update_one({"_id": oid}, {"$set": {"started_at": datetime.utcnow()}})
+    elif action == "delete":
+        mongo.db.notices.delete_one({"_id": oid})
+        mongo.db.notice_views.delete_many({"notice_id": oid})
+    else:
+        return jsonify({"error": "Unknown action"}), 400
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/mail-report", methods=["POST"])
+@login_required
+def admin_mail_report():
+    """Send the daily summary now — the button that proves mail works."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    body = request.get_json(silent=True) or {}
+    day  = body.get("date") or date.today().isoformat()
+    to   = parse_users_arg(body.get("to")) or REPORT_RECIPIENTS
+    ok, err = send_daily_digest(day, to)
+    if not ok:
+        return jsonify({"error": f"Could not send: {err}"}), 502
+    return jsonify({"ok": True, "sent_to": to, "date": day})
+
+
+@app.route("/api/admin/mail-settings")
+@login_required
+def admin_mail_settings():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    return jsonify({
+        "recipients":     REPORT_RECIPIENTS,
+        "leave_mail":     LEAVE_MAIL_ENABLED,
+        "attach_excel":   DAILY_DIGEST_ATTACH_EXCEL,
+        "server":         app.config.get("MAIL_SERVER"),
+        "port":           app.config.get("MAIL_PORT"),
+        "encryption":     "SSL" if app.config.get("MAIL_USE_SSL") else "STARTTLS",
+        "sender":         app.config.get("MAIL_DEFAULT_SENDER"),
+        "signout_reminder": SIGNOUT_REMINDER_ENABLED,
+        "monthly_report":   MONTHLY_REPORT_ENABLED,
+        "public_base_url":  PUBLIC_BASE_URL,
+    })
+
+
 @app.route("/api/admin/security-insights")
 @login_required
 def admin_security_insights():
@@ -1320,8 +1889,9 @@ def admin_security_insights():
     if current_user.role != "admin":
         return jsonify({"error": "Admin access required"}), 403
     try:
-        day  = request.args.get("date") or date.today().isoformat()
-        recs = list(mongo.db.attendance.find({"date": day}))
+        day   = request.args.get("date") or date.today().isoformat()
+        recs  = list(mongo.db.attendance.find({"date": day}))
+        names = name_map()
 
         def _fingerprint(di):
             ua = (di.get("user_agent") or "").strip()
@@ -1342,6 +1912,7 @@ def admin_security_insights():
 
             entry = {
                 "username":    uname,
+                "name":        names.get(uname) or uname,
                 "shift_name":  r.get("shift_name", "Normal"),
                 "login_time":  format_ist_time(lt) if lt else "N/A",
                 "logout_time": format_ist_time(lot) if lot else None,
@@ -1372,6 +1943,7 @@ def admin_security_insights():
 
         face_fails = [{
             "username":   f.get("username"),
+            "name":       names.get(f.get("username")) or f.get("username"),
             "time":       f.get("timestamp_ist"),
             "distance":   f.get("match_distance"),
             "at_office":  f.get("at_office"),
@@ -1479,7 +2051,7 @@ def admin_user_stats(user_id):
 @app.route("/api/dashboard-data")
 @login_required
 def get_dashboard_data():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can access this dashboard"}), 403
     try:
         ist_now = get_ist_now()
@@ -1594,6 +2166,8 @@ def get_dashboard_data():
 
         return jsonify({
             "username":               current_user.username,
+            "name":                   display_name(user),
+            "role":                   current_user.role,
             "face_registered":        bool(user.get("face_registered")),
             "face_required":          bool(user.get("face_required", False)),
             "face_registration_enabled": bool(user.get("face_registration_enabled", False)),
@@ -1621,7 +2195,10 @@ def get_dashboard_data():
             "history":                all_formatted,
             "leaves":                 leave_dates,
             "shifts":                 SHIFT_TIMINGS,
-            "min_hours_warning":      MIN_WORK_HOURS
+            "min_hours_warning":      MIN_WORK_HOURS,
+            "signout_nudge_hour":     SIGNOUT_NUDGE_HOUR,
+            "ist_hour":               ist_now.hour,
+            "department":             getattr(current_user, "department", "")
         })
     except Exception as e:
         print(f"Error in dashboard data API: {e}")
@@ -1635,7 +2212,7 @@ def get_dashboard_data():
 @app.route("/api/statistics", methods=["POST"])
 @login_required
 def get_statistics():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can access statistics"}), 403
     try:
         data       = request.get_json()
@@ -1672,7 +2249,7 @@ def get_statistics():
 @app.route("/api/leave/apply", methods=["POST"])
 @login_required
 def apply_leave():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can apply for leave"}), 403
     try:
         if not request.is_json:
@@ -1694,16 +2271,24 @@ def apply_leave():
             if existing.get("status") in ("pending", "approved"):
                 return jsonify({"error": f"You already have a {existing['status']} leave for this date"}), 400
             mongo.db.leave_applications.delete_one({"_id": existing["_id"]})
-        if leave_date in UNIVERSITY_HOLIDAYS_2026:
-            return jsonify({"error": f"Already a holiday: {UNIVERSITY_HOLIDAYS_2026[leave_date]['name']}"}), 400
+        _hols = holiday_map()
+        if leave_date in _hols:
+            return jsonify({"error": f"Already a holiday: {_hols[leave_date]['name']}"}), 400
         if datetime.strptime(leave_date, "%Y-%m-%d").weekday() in [6]:
             return jsonify({"error": "Cannot apply for leave on Sundays"}), 400
-        result = mongo.db.leave_applications.insert_one({
+        leave_doc = {
             "user_id": ObjectId(current_user.id), "username": current_user.username,
             "user_email": current_user.email or "", "date": leave_date,
             "type": leave_type, "comments": comments, "status": "pending",
             "applied_at": datetime.utcnow(), "updated_at": datetime.utcnow(), "user_notified": False
-        })
+        }
+        result = mongo.db.leave_applications.insert_one(leave_doc)
+        # Copy the office in. Best-effort: a mail problem must not stop the
+        # application being filed.
+        try:
+            notify_leave_application(leave_doc, mongo.db.users.find_one({"_id": ObjectId(current_user.id)}))
+        except Exception as e:
+            app.logger.error("Leave notification failed: %s", e)
         return jsonify({"ok": True, "message": "Leave application submitted", "leave_id": str(result.inserted_id)})
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
@@ -1712,7 +2297,7 @@ def apply_leave():
 @app.route("/api/leaves", methods=["GET"])
 @login_required
 def get_all_leaves():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns can access leave data"}), 403
     try:
         cutoff = (date.today() - timedelta(days=365)).isoformat()
@@ -1725,10 +2310,10 @@ def get_all_leaves():
 @app.route("/api/holidays")
 def get_holidays():
     try:
-        year  = request.args.get('year', type=int, default=2026)
+        year  = request.args.get('year', type=int, default=date.today().year)
         month = request.args.get('month', type=int, default=None)
         result = {}
-        for date_str, info in UNIVERSITY_HOLIDAYS_2026.items():
+        for date_str, info in holiday_map().items():
             hd = datetime.strptime(date_str, "%Y-%m-%d")
             if hd.year != year: continue
             if month and hd.month != month: continue
@@ -1741,7 +2326,7 @@ def get_holidays():
 @app.route("/api/notifications")
 @login_required
 def get_notifications():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return jsonify({"error": "Only interns"}), 403
     try:
         notifications = list(mongo.db.leave_applications.find({"user_id": ObjectId(current_user.id), "status": {"$in": ["approved","denied"]}, "user_notified": {"$ne": True}}).sort("updated_at",-1))
@@ -1796,6 +2381,43 @@ def update_leave_status(leave_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/user/<user_id>/profile", methods=["POST"])
+@login_required
+def admin_update_user_profile(user_id):
+    """Set a person's display name and role. The login name is left alone —
+    attendance records are filed under it, so renaming it would orphan them.
+    """
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        data      = request.get_json(silent=True) or {}
+        updates   = {}
+        full_name = (data.get("full_name") or "").strip()[:120]
+        role      = data.get("role")
+
+        if full_name:
+            updates["full_name"] = full_name
+        if role:
+            if role not in ALL_ROLES:
+                return jsonify({"error": "Unknown role"}), 400
+            if str(user_id) == str(current_user.id) and role != "admin":
+                return jsonify({"error": "You cannot take away your own admin access."}), 400
+            updates["role"] = role
+        if "department" in data:              # an empty value clears it
+            updates["department"] = (data.get("department") or "").strip()[:60]
+        if not updates:
+            return jsonify({"error": "Nothing to change"}), 400
+
+        res = mongo.db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
+        if not res.matched_count:
+            return jsonify({"error": "User not found"}), 404
+        doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+        return jsonify({"ok": True, "name": display_name(doc), "role": doc.get("role", "intern"),
+                        "department": doc.get("department", "")})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/admin/update-user-work-hours", methods=["POST"])
 @login_required
 def update_user_work_hours():
@@ -1820,6 +2442,7 @@ def admin_user_locations(date_str):
         return jsonify({"error": "Admin access required"}), 403
     try:
         records = list(mongo.db.attendance.find({"date": date_str}).sort("login_time", 1))
+        names = name_map()
         locations = []
         for r in records:
             lt  = r.get("login_time")
@@ -1828,6 +2451,7 @@ def admin_user_locations(date_str):
             logout_loc = r.get("logout_location", {})
             locations.append({
                 "username":      r.get("username"),
+                "name":          names.get(r.get("username")) or r.get("username"),
                 "date":          r.get("date"),
                 "shift_type":    r.get("shift_type", "normal"),
                 "shift_name":    r.get("shift_name", "Normal"),
@@ -2013,7 +2637,7 @@ def compute_day_overview(day, usernames=None):
     user_query = {"role": {"$ne": "admin"}}
     if usernames:
         user_query["username"] = {"$in": list(usernames)}
-    users = list(mongo.db.users.find(user_query))
+    users = list(mongo.db.users.find(user_query, USER_LIST_FIELDS))
 
     if True:
         # This day's sessions, grouped by user.
@@ -2039,7 +2663,8 @@ def compute_day_overview(day, usernames=None):
         # Sunday = holiday, Saturday = optional: on those days a no-show is "off",
         # not "absent".
         day_wd  = day_date.weekday()   # 0=Mon … 5=Sat, 6=Sun
-        weekend = day_wd in (5, 6)
+        day_holiday = holiday_map().get(day)
+        weekend = day_wd in (5, 6) or bool(day_holiday)
 
         buckets = {k: [] for k in ("complete", "active", "early", "absent", "on_leave", "off")}
         totals  = {"registered": 0, "complete": 0, "active": 0, "early": 0,
@@ -2095,7 +2720,9 @@ def compute_day_overview(day, usernames=None):
             buckets[status].append({
                 "user_id":       uid,
                 "username":      uname,
+                "name":          display_name(u),
                 "role":          u.get("role", "intern"),
+                "department":    u.get("department", ""),
                 "status":        status,
                 "target_hours":  round(target, 2),
                 "hours":         round(total_hours, 2),
@@ -2126,7 +2753,8 @@ def compute_day_overview(day, usernames=None):
         return {
             "date":       day,
             "weekend":    weekend,
-            "day_label":  "Sunday · holiday" if day_wd == 6 else ("Saturday · optional" if day_wd == 5 else ""),
+            "day_label":  (f"Holiday · {day_holiday['name']}" if day_holiday else
+                           "Sunday · holiday" if day_wd == 6 else ("Saturday · optional" if day_wd == 5 else "")),
             "totals":     totals,
             "signed_in":  signed_in,
             "expected":   expected,
@@ -2206,6 +2834,7 @@ def compute_user_analysis(user_doc, start, end):
 
     today = date.today()
     present_set = set(days.keys())
+    holidays = holiday_map()
     timeline = []
     # working = compulsory Mon–Fri days; Sunday is a holiday, Saturday is optional
     # (a Saturday sign-in counts as worked, but a missed Saturday is never absent).
@@ -2228,6 +2857,11 @@ def compute_user_analysis(user_doc, start, end):
                 status, hrs, met = "present", days[iso]["hours"], days[iso]["met_target"]
             else:
                 status, hrs, met = "optional", 0, False
+        elif iso in holidays and not is_present:   # declared holiday — not a working day
+            status, hrs, met = "holiday", 0, False
+        elif iso in holidays:                      # came in on a holiday: counts as worked
+            present += 1; optional_worked += 1
+            status, hrs, met = "present", days[iso]["hours"], days[iso]["met_target"]
         else:                               # Mon–Fri — compulsory
             working += 1
             if is_present:
@@ -2308,6 +2942,7 @@ def my_analysis():
     start, end = _resolve_user_range()
     data = compute_user_analysis(user_doc, start, end)
     data.update({"username": user_doc.get("username", ""),
+                 "name": display_name(user_doc),
                  "start": start.isoformat(), "end": end.isoformat()})
     return jsonify(data)
 
@@ -2325,6 +2960,36 @@ def my_excel():
     return send_file(mem, as_attachment=True,
                      download_name=person_download_name(user_doc.get("username", ""), start, end),
                      mimetype=XLSX_MIME)
+
+
+@app.route("/api/user/my-word")
+@login_required
+def my_word():
+    """The signed-in person's own report as a Word document."""
+    user_doc = mongo.db.users.find_one({"_id": ObjectId(current_user.id)})
+    if not user_doc:
+        return ("User not found", 404)
+    start, end = _resolve_user_range()
+    mem = build_person_docx(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end, "docx"),
+                     mimetype=DOCX_MIME)
+
+
+@app.route("/api/admin/user-word/<user_id>")
+@login_required
+def admin_user_word(user_id):
+    """One person's day-by-day report as a Word document (admin only)."""
+    if current_user.role != "admin":
+        return redirect(url_for("admin_dashboard"))
+    user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+    if not user_doc:
+        return ("User not found", 404)
+    start, end = _resolve_user_range()
+    mem = build_person_docx(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end, "docx"),
+                     mimetype=DOCX_MIME)
 
 
 @app.route("/api/admin/user-excel/<user_id>")
@@ -2360,6 +3025,7 @@ def admin_user_calendar(user_id):
         data.update({
             "user_id":  user_id,
             "username": user_doc.get("username", ""),
+            "name":     display_name(user_doc),
             "role":     user_doc.get("role", "intern"),
             "email":    user_doc.get("email", ""),
             "start":    start.isoformat(),
@@ -2377,7 +3043,7 @@ def admin_user_calendar(user_id):
 @app.route("/user/dashboard")
 @login_required
 def user_dashboard():
-    if current_user.role != "intern":
+    if not is_staff(current_user.role):
         return redirect(url_for("admin_dashboard"))
     return render_template("user_dashboard.html")
 
@@ -2387,13 +3053,13 @@ def user_dashboard():
 def admin_dashboard():
     if current_user.role != "admin":
         return redirect(url_for("user_dashboard"))
-    users_raw = list(mongo.db.users.find())
+    users_raw = list(mongo.db.users.find({}, USER_LIST_FIELDS))
     users     = [{**u, '_id': str(u['_id'])} for u in users_raw]
-    recent    = list(mongo.db.attendance.find().sort("date", -1).limit(100))
     cutoff    = (date.today() - timedelta(days=90)).isoformat()
     leaves    = list(mongo.db.leave_applications.find({"date": {"$gte": cutoff}}).sort("applied_at", -1))
     leaves_data = [{"id":str(l["_id"]),"username":l.get("username"),"user_email":l.get("user_email"),"date":l.get("date"),"type":l.get("type"),"comments":l.get("comments",""),"status":l.get("status","pending"),"admin_comments":l.get("admin_comments",""),"applied_at":l.get("applied_at"),"updated_at":l.get("updated_at")} for l in leaves]
-    return render_template("admin_dashboard.html", users=users, recent=recent, leaves=leaves_data, shifts=SHIFT_TIMINGS, today_date=date.today().isoformat(), google_maps_api_key=GOOGLE_MAPS_API_KEY)
+    departments = sorted({(u.get("department") or "").strip() for u in users} - {""}, key=str.lower)
+    return render_template("admin_dashboard.html", users=users, leaves=leaves_data, departments=departments, shifts=SHIFT_TIMINGS, today_date=date.today().isoformat(), google_maps_api_key=GOOGLE_MAPS_API_KEY)
 
 
 @app.route("/admin/export", methods=["GET"])
@@ -2725,7 +3391,7 @@ def write_person_sheet(ws, user_doc, start, end, data=None):
     data  = data or compute_user_analysis(user_doc, start, end)
     rows  = build_person_rows(data)
     s     = data.get("summary", {})
-    uname = user_doc.get("username", "")
+    uname = display_name(user_doc)
     ncols = len(PERSON_COLUMNS)
     navy, paper = "0A1324", "F6F4EF"
 
@@ -2871,7 +3537,7 @@ def build_people_report_workbook(user_docs, start, end):
     wb.remove(wb.active)
     taken = set()
     for u in user_docs:
-        ws = wb.create_sheet(title=_safe_sheet_name(u.get("username"), taken))
+        ws = wb.create_sheet(title=_safe_sheet_name(display_name(u), taken))
         write_person_sheet(ws, u, start, end)
 
     if not wb.sheetnames:
@@ -2886,8 +3552,136 @@ def build_people_report_workbook(user_docs, start, end):
     return mem
 
 
-def person_download_name(username, start, end):
-    return f"{slugify_title(username) or 'person'}_{start.isoformat()}_to_{end.isoformat()}.xlsx"
+def person_download_name(username, start, end, ext="xlsx"):
+    return f"{slugify_title(username) or 'person'}_{start.isoformat()}_to_{end.isoformat()}.{ext}"
+
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+# Row tints, shared with the workbook so both reports read the same.
+DOCX_FILLS = {
+    "absent": "FCEBEA", "holiday": "FCF7EA", "optional": "FCF7EA",
+    "leave": "EEF0F3", "met": "E8F5EC", "short": "FCF3E2",
+}
+
+
+def _docx_shade(cell, fill):
+    """Tint a table cell. 'clear' + fill — 'solid' renders as black in Word."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill)
+    cell._tc.get_or_add_tcPr().append(shd)
+
+
+def build_person_docx(user_doc, start, end, data=None):
+    """The same report as a Word document: logo, summary, then every day
+    colour-shaded (absent red, Sat/Sun yellow, leave grey)."""
+    from docx import Document
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.section import WD_ORIENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    data  = data or compute_user_analysis(user_doc, start, end)
+    rows  = build_person_rows(data)
+    s     = data.get("summary", {})
+    uname = display_name(user_doc)
+    target = float(data.get("target_hours") or 0)
+
+    doc = Document()
+    sec = doc.sections[0]
+    sec.orient = WD_ORIENT.LANDSCAPE
+    sec.page_width, sec.page_height = sec.page_height, sec.page_width
+    for side in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
+        setattr(sec, side, Inches(0.5))
+
+    # Letterhead: the JAIN mark, then who and when.
+    logo = os.path.join(app.static_folder, "images", "jain.png")
+    if os.path.exists(logo):
+        try:
+            doc.add_picture(logo, height=Inches(0.42))
+        except Exception:
+            pass
+
+    h = doc.add_paragraph()
+    run = h.add_run(f"{uname} · Attendance report")
+    run.bold = True
+    run.font.size = Pt(18)
+    run.font.color.rgb = RGBColor(0x0A, 0x13, 0x24)
+
+    sub = doc.add_paragraph()
+    srun = sub.add_run(f"{start.isoformat()} to {end.isoformat()}   ·   "
+                       f"generated {format_ist_time(datetime.utcnow(), '%Y-%m-%d %I:%M %p')} IST")
+    srun.font.size = Pt(9)
+    srun.font.color.rgb = RGBColor(0x5A, 0x5A, 0x5A)
+
+    # Summary — label row over value row.
+    pairs = [
+        ("Days worked",      s.get("present", 0)),
+        ("Absent",           s.get("absent", 0)),
+        ("On leave",         s.get("leave", 0)),
+        ("Saturdays worked", s.get("saturdays_worked", 0)),
+        ("Total hours",      s.get("total_hours", 0)),
+        ("Avg / day",        s.get("avg_hours", 0)),
+        ("Working days",     s.get("working_days", 0)),
+        ("Attendance",       f"{s.get('attendance_rate', 0)}%"),
+    ]
+    st = doc.add_table(rows=2, cols=len(pairs))
+    st.style = "Table Grid"
+    for i, (label, value) in enumerate(pairs):
+        lc, vc = st.cell(0, i), st.cell(1, i)
+        lp = lc.paragraphs[0]; lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        lr = lp.add_run(label); lr.bold = True; lr.font.size = Pt(7)
+        lr.font.color.rgb = RGBColor(0x6B, 0x74, 0x80)
+        vp = vc.paragraphs[0]; vp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        vr = vp.add_run(str(value)); vr.bold = True; vr.font.size = Pt(12)
+        vr.font.color.rgb = RGBColor(0x0A, 0x13, 0x24)
+        _docx_shade(vc, "F6F4EF")
+
+    doc.add_paragraph()
+
+    # Day-by-day table.
+    headers = [h for _, h in PERSON_COLUMNS]
+    tbl = doc.add_table(rows=1, cols=len(headers))
+    tbl.style = "Table Grid"
+    for i, header in enumerate(headers):
+        cell = tbl.rows[0].cells[i]
+        run = cell.paragraphs[0].add_run(header)
+        run.bold = True
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        _docx_shade(cell, "0A1324")
+
+    for row in rows:
+        status = row.get("status")
+        key = status if status in DOCX_FILLS else None
+        if status == "present":
+            key = "met" if (row.get("hours", 0) or 0) + 1e-6 >= target else "short"
+        cells = tbl.add_row().cells
+        for i, (col, _) in enumerate(PERSON_COLUMNS):
+            val = row.get(col)
+            run = cells[i].paragraphs[0].add_run("" if val is None else str(val))
+            run.font.size = Pt(8)
+            if status == "absent":
+                run.bold = True
+            if key:
+                _docx_shade(cells[i], DOCX_FILLS[key])
+
+    if not rows:
+        doc.add_paragraph("No days in the selected range.")
+
+    foot = doc.add_paragraph()
+    frun = foot.add_run("Absent days are shaded red, Saturday and Sunday yellow, "
+                        "approved leave grey. Generated by the JAIN Attendance Portal.")
+    frun.font.size = Pt(8)
+    frun.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+
+    mem = io.BytesIO()
+    doc.save(mem)
+    mem.seek(0)
+    return mem
 
 
 @app.route("/admin/analysis/excel")
@@ -3024,7 +3818,7 @@ def shared_analysis_view(token):
         expected_users = sorted(set(users), key=lambda x: x.lower())
     else:
         expected_users = sorted(
-            (u.get("username", "") for u in mongo.db.users.find({"role": {"$ne": "admin"}})),
+            (u.get("username", "") for u in mongo.db.users.find({"role": {"$ne": "admin"}}, {"username": 1})),
             key=lambda x: x.lower())
     expected_set = set(expected_users)
 
@@ -3127,7 +3921,7 @@ def shared_analysis_excel(token):
             uq = {"role": {"$ne": "admin"}}
             if users:
                 uq["username"] = {"$in": users}
-            docs = sorted(mongo.db.users.find(uq),
+            docs = sorted(mongo.db.users.find(uq, USER_LIST_FIELDS),
                           key=lambda u: (u.get("username") or "").lower())
             mem = build_people_report_workbook(docs, start, end)
             name = (person_download_name(users[0], start, end) if len(users) == 1
@@ -3208,8 +4002,26 @@ def shared_user_calendar(token, user_id):
     start, end = _resolve_user_range()
     data = compute_user_analysis(user_doc, start, end)
     data.update({"user_id": user_id, "username": user_doc.get("username", ""),
+                 "name": display_name(user_doc),
                  "start": start.isoformat(), "end": end.isoformat()})
     return jsonify(data)
+
+
+def _shared_person_or_error(token, user_id):
+    """Resolve a person inside an 'overall' share, or an (message, status) pair."""
+    share = _get_live_share(token)
+    if not share or share.get("kind") != "overall":
+        return None, ("This share link is no longer available.", 404)
+    try:
+        user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id), "role": {"$ne": "admin"}})
+    except Exception:
+        user_doc = None
+    if not user_doc:
+        return None, ("User not found", 404)
+    scoped = share.get("users")
+    if scoped and user_doc.get("username") not in scoped:
+        return None, ("Not in this share", 403)
+    return user_doc, None
 
 
 @app.route("/share/analysis/<token>/user-excel/<user_id>")
@@ -3217,23 +4029,27 @@ def shared_user_excel(token, user_id):
     """Public, no-login .xlsx of one person's day-by-day report, for an
     'overall' share. Same scoping rule as the per-person calendar above.
     """
-    share = _get_live_share(token)
-    if not share or share.get("kind") != "overall":
-        return ("This share link is no longer available.", 404)
-    try:
-        user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id), "role": {"$ne": "admin"}})
-    except Exception:
-        user_doc = None
-    if not user_doc:
-        return ("User not found", 404)
-    scoped = share.get("users")
-    if scoped and user_doc.get("username") not in scoped:
-        return ("Not in this share", 403)
+    user_doc, err = _shared_person_or_error(token, user_id)
+    if err:
+        return err
     start, end = _resolve_user_range()
     mem = build_person_workbook(user_doc, start, end)
     return send_file(mem, as_attachment=True,
                      download_name=person_download_name(user_doc.get("username", ""), start, end),
                      mimetype=XLSX_MIME)
+
+
+@app.route("/share/analysis/<token>/user-word/<user_id>")
+def shared_user_word(token, user_id):
+    """The same report as a Word document, for an 'overall' share."""
+    user_doc, err = _shared_person_or_error(token, user_id)
+    if err:
+        return err
+    start, end = _resolve_user_range()
+    mem = build_person_docx(user_doc, start, end)
+    return send_file(mem, as_attachment=True,
+                     download_name=person_download_name(user_doc.get("username", ""), start, end, "docx"),
+                     mimetype=DOCX_MIME)
 
 
 @app.route("/admin/create_user", methods=["POST"])
@@ -3242,16 +4058,22 @@ def admin_create_user():
     if current_user.role != "admin":
         return redirect(url_for("user_dashboard"))
     username   = request.form.get("username").strip()
+    full_name  = (request.form.get("full_name") or "").strip()[:120]
     password   = request.form.get("password")
     role       = request.form.get("role", "intern")
+    if role not in ALL_ROLES:
+        role = "intern"
     email      = request.form.get("email", "")
+    department = (request.form.get("department") or "").strip()[:60]
     work_hours = float(request.form.get("work_hours", DEFAULT_WORK_HOURS))
     if mongo.db.users.find_one({"username": username}):
         flash("User exists", "danger"); return redirect(url_for("admin_dashboard"))
     hashed = bcrypt.generate_password_hash(password).decode("utf-8")
     mongo.db.users.insert_one({
-        "username": username, "password": hashed, "role": role,
+        "username": username, "full_name": full_name or username,
+        "password": hashed, "role": role,
         "email": email, "work_hours": work_hours,
+        "department": department,
         "created_at": datetime.utcnow(),
         "face_registered": False,
         "face_required": False,
@@ -3279,6 +4101,662 @@ def admin_delete_user(user_id):
         return jsonify({"ok": True, "message": f"User {user['username']} deleted."})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  FACE / OBJECT PROTOTYPE — password-gated, separately shareable
+#
+#  Deliberately kept apart from Flask-Login. Passing this password gives a
+#  session flag that unlocks this one page and nothing else: it is not an
+#  admin session, grants no role, and cannot reach attendance data. The
+#  template lives under templates/ rather than static/ so the only way in is
+#  through these routes.
+# ══════════════════════════════════════════════════════════════════════
+
+# Override with PROTOTYPE_PASSWORD in .env. The fallback is the one asked
+# for; because it sits in the repository, treat it as public.
+PROTOTYPE_PASSWORD = os.environ.get("PROTOTYPE_PASSWORD", "12345678s")
+PROTOTYPE_SESSION_KEY = "proto_ok"
+
+
+def _prototype_unlocked():
+    return bool(session.get(PROTOTYPE_SESSION_KEY))
+
+
+@app.route("/admin/prototype/login", methods=["GET", "POST"])
+def prototype_login():
+    if request.method == "POST":
+        supplied = request.form.get("password", "")
+        # compare_digest keeps the check constant-time.
+        if hmac.compare_digest(supplied, PROTOTYPE_PASSWORD):
+            session[PROTOTYPE_SESSION_KEY] = True
+            return redirect(url_for("prototype_view"))
+        return render_template("prototype_login.html",
+                               error="That password is not right."), 401
+    if _prototype_unlocked():
+        return redirect(url_for("prototype_view"))
+    return render_template("prototype_login.html", error=None)
+
+
+@app.route("/admin/prototype/logout")
+def prototype_logout():
+    session.pop(PROTOTYPE_SESSION_KEY, None)
+    return redirect(url_for("prototype_login"))
+
+
+@app.route("/admin/prototype")
+def prototype_view():
+    if not _prototype_unlocked():
+        return redirect(url_for("prototype_login"))
+    return render_template("prototype.html", shared=False)
+
+
+@app.route("/api/admin/prototype/share", methods=["POST"])
+def prototype_create_share():
+    """Mint a no-login link to the prototype.
+
+    Open to whoever already holds the password, which is the point: the page
+    demonstrates a camera pipeline and carries no attendance data.
+    """
+    if not _prototype_unlocked():
+        return jsonify({"error": "Sign in to the prototype first."}), 403
+    token = secrets.token_urlsafe(24)
+    mongo.db.prototype_shares.insert_one({
+        "token":      token,
+        "created_by": current_user.username if current_user.is_authenticated else "prototype",
+        "created_at": datetime.utcnow(),
+        "revoked":    False,
+    })
+    return jsonify({"ok": True, "token": token,
+                    "url": url_for("shared_prototype_view", token=token, _external=True)})
+
+
+@app.route("/share/prototype/<token>")
+def shared_prototype_view(token):
+    share = mongo.db.prototype_shares.find_one({"token": token, "revoked": {"$ne": True}})
+    if not share:
+        return render_template("prototype_login.html",
+                               error="That share link is not valid any more."), 404
+    return render_template("prototype.html", shared=True)
+
+
+# ─────────────────────────────────────────────────────────────
+#  CHANGE MY OWN PASSWORD
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/user/change-password", methods=["POST"])
+@login_required
+def change_my_password():
+    """Anyone signed in can change their own password, given the current one."""
+    if session.get("impersonator_id"):
+        return jsonify({"error": "Not while viewing as someone else. Return to admin first."}), 403
+    data    = request.get_json(silent=True) or {}
+    current = data.get("current") or ""
+    new     = data.get("new") or ""
+    doc = mongo.db.users.find_one({"_id": ObjectId(current_user.id)})
+    if not doc:
+        return jsonify({"error": "Account not found"}), 404
+    if not bcrypt.check_password_hash(doc["password"], current):
+        return jsonify({"error": "Your current password is not right."}), 400
+    if len(new) < MIN_PASSWORD_LENGTH:
+        return jsonify({"error": f"Use at least {MIN_PASSWORD_LENGTH} characters."}), 400
+    if new == current:
+        return jsonify({"error": "The new password is the same as the current one."}), 400
+    mongo.db.users.update_one({"_id": doc["_id"]}, {"$set": {
+        "password": bcrypt.generate_password_hash(new).decode("utf-8"),
+        "password_changed_at": datetime.utcnow(),
+    }})
+    return jsonify({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────
+#  SIGN-OUT REMINDERS
+# ─────────────────────────────────────────────────────────────
+
+def open_sessions(day=None):
+    """Sessions with a sign-in and no sign-out on `day` (default: today, IST)."""
+    day = day or get_ist_now().date().isoformat()
+    return list(mongo.db.attendance.find({"date": day, "logout_time": {"$exists": False}}))
+
+
+def send_signout_reminders(day=None, background=False):
+    """Mail everyone still signed in. Returns {sent, no_email, failed, people}.
+
+    One mail per person however many sessions they left open. With
+    background=True the mails are handed to a thread and counted as sent.
+    """
+    sessions = open_sessions(day)
+    by_user = {}
+    for r in sessions:
+        by_user.setdefault(r.get("user_id"), r)
+    out = {"sent": 0, "no_email": [], "failed": [], "people": []}
+    if not by_user:
+        return out
+    docs = {u["_id"]: u for u in mongo.db.users.find({"_id": {"$in": list(by_user)}},
+                                                     {"username": 1, "full_name": 1, "email": 1})}
+    for uid, rec in by_user.items():
+        u = docs.get(uid)
+        if not u:
+            continue
+        name  = display_name(u)
+        email = (u.get("email") or "").strip()
+        out["people"].append(name)
+        if not email:
+            out["no_email"].append(name)
+            continue
+        since = format_ist_time(rec.get("login_time")) if rec.get("login_time") else "earlier today"
+        text = (f"Hello {name},\n\nYou signed in at {since} and have not signed out yet.\n"
+                "If you have finished for the day, open the Attendance Portal and sign out "
+                "so your hours are recorded correctly.\n\nOffice of Academics · JAIN (Deemed-to-be University)")
+        inner = (f'<p style="font-size:15px;color:#16161D;margin:0 0 12px">Hello {_html_escape(name)},</p>'
+                 f'<p style="font-size:14px;line-height:1.6;color:#555766;margin:0 0 12px">You signed in at '
+                 f'<strong style="color:#16161D">{_html_escape(since)}</strong> and have not signed out yet.</p>'
+                 '<p style="font-size:14px;line-height:1.6;color:#555766;margin:0">If you have finished for the day, '
+                 'open the Attendance Portal and sign out so your hours are recorded correctly.</p>')
+        html = _mail_shell("You are still signed in", "Sign-out reminder", inner)
+        subject = "Reminder: you are still signed in"
+        if background:
+            send_mail_async(subject, [email], text, html)
+            out["sent"] += 1
+        else:
+            ok, err = send_mail(subject, [email], text, html)
+            if ok:
+                out["sent"] += 1
+            else:
+                out["failed"].append(f"{name}: {err}")
+    return out
+
+
+@app.route("/api/admin/remind-signout", methods=["POST"])
+@login_required
+def admin_remind_signout():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    res = send_signout_reminders(background=True)
+    return jsonify({"ok": True, **res})
+
+
+# ─────────────────────────────────────────────────────────────
+#  DEPARTMENTS AND HOLIDAYS — administrator-managed lists
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/departments")
+@login_required
+def admin_departments():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    counts = {}
+    for u in mongo.db.users.find({"role": {"$ne": "admin"}}, {"department": 1}):
+        d = (u.get("department") or "").strip()
+        counts[d] = counts.get(d, 0) + 1
+    return jsonify({"departments": [{"name": k, "people": v}
+                                    for k, v in sorted(counts.items(), key=lambda kv: kv[0].lower()) if k],
+                    "unassigned": counts.get("", 0)})
+
+
+@app.route("/api/admin/holidays", methods=["GET", "POST"])
+@login_required
+def admin_holidays():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        d    = (data.get("date") or "").strip()
+        name = (data.get("name") or "").strip()[:120]
+        try:
+            datetime.strptime(d, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Pick a date."}), 400
+        if not name:
+            return jsonify({"error": "Give the holiday a name."}), 400
+        mongo.db.holidays.update_one({"date": d}, {"$set": {
+            "date": d, "name": name, "type": "general", "removed": False,
+            "updated_at": datetime.utcnow(), "updated_by": current_user.username,
+        }}, upsert=True)
+        return jsonify({"ok": True})
+    year = request.args.get("year", type=int, default=date.today().year)
+    rows = []
+    for d, info in sorted(holiday_map().items()):
+        if not d.startswith(f"{year}-"):
+            continue
+        hd = datetime.strptime(d, "%Y-%m-%d")
+        rows.append({"date": d, "name": info["name"], "custom": bool(info.get("custom")),
+                     "day": hd.strftime("%a"), "pretty": hd.strftime("%d %b")})
+    return jsonify({"year": year, "holidays": rows})
+
+
+@app.route("/api/admin/holidays/<day>", methods=["DELETE"])
+@login_required
+def admin_delete_holiday(day):
+    """Remove a holiday. A built-in one is struck out rather than deleted, so
+    it stays gone after the next deploy."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Bad date"}), 400
+    if day in UNIVERSITY_HOLIDAYS_2026:
+        mongo.db.holidays.update_one({"date": day}, {"$set": {
+            "date": day, "removed": True, "updated_at": datetime.utcnow(),
+            "updated_by": current_user.username}}, upsert=True)
+    else:
+        mongo.db.holidays.delete_one({"date": day})
+    return jsonify({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────
+#  FORGOT PASSWORD — a one-hour link by email
+# ─────────────────────────────────────────────────────────────
+
+
+def _hash_token(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _external_url(endpoint, **values):
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL + url_for(endpoint, **values)
+    return url_for(endpoint, _external=True, **values)
+
+
+def _find_account(identifier):
+    """A username, or an email address on file (any letter case)."""
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    doc = mongo.db.users.find_one({"username": ident})
+    if doc:
+        return doc
+    if "@" in ident:
+        return mongo.db.users.find_one(
+            {"email": {"$regex": "^" + re.escape(ident) + "$", "$options": "i"}})
+    return None
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(_home_for(current_user.role))
+    if request.method == "POST":
+        user = _find_account(request.form.get("identifier"))
+        email = (user.get("email") or "").strip() if user else ""
+        if user and email:
+            now = datetime.utcnow()
+            # One mail every two minutes per account, so the form cannot be
+            # used to flood someone's inbox.
+            recent = mongo.db.password_resets.find_one(
+                {"user_id": user["_id"], "created_at": {"$gte": now - timedelta(minutes=2)}})
+            if not recent:
+                token = secrets.token_urlsafe(32)
+                mongo.db.password_resets.insert_one({
+                    "user_id": user["_id"], "token_hash": _hash_token(token),
+                    "created_at": now, "expires_at": now + timedelta(minutes=RESET_LINK_MINUTES),
+                    "used": False, "ip": request.remote_addr,
+                })
+                link = _external_url("reset_password", token=token)
+                name = display_name(user)
+                text = (f"Hello {name},\n\nSomeone asked to reset the password for the Attendance Portal "
+                        f"account '{user['username']}'. To choose a new password, open this link within "
+                        f"{RESET_LINK_MINUTES} minutes:\n\n{link}\n\n"
+                        "If you did not ask for this, ignore this mail. Your password stays the same.")
+                inner = (f'<p style="font-size:15px;color:#16161D;margin:0 0 12px">Hello {_html_escape(name)},</p>'
+                         '<p style="font-size:14px;line-height:1.6;color:#555766;margin:0 0 18px">Someone asked to reset '
+                         f'the password for the account <strong style="color:#16161D">{_html_escape(user["username"])}</strong>. '
+                         f'The link works once, for {RESET_LINK_MINUTES} minutes.</p>'
+                         f'<p style="margin:0 0 18px"><a href="{_html_escape(link)}" style="display:inline-block;'
+                         'background:#16161D;color:#fff;text-decoration:none;font-weight:700;font-size:14px;'
+                         'padding:12px 22px;border-radius:999px">Choose a new password</a></p>'
+                         '<p style="font-size:12px;line-height:1.6;color:#8B8D9C;margin:0">If you did not ask for this, '
+                         'ignore this mail. Your password stays the same.</p>')
+                send_mail_async("Reset your Attendance Portal password", [email], text,
+                                _mail_shell("Reset your password", "Attendance Portal", inner))
+        # The same answer whether or not the account exists, so the form
+        # cannot be used to find out who has an account.
+        return render_template("forgot_password.html", sent=True)
+    return render_template("forgot_password.html", sent=False)
+
+
+def _live_reset(token):
+    if not token:
+        return None
+    return mongo.db.password_resets.find_one({
+        "token_hash": _hash_token(token), "used": False,
+        "expires_at": {"$gt": datetime.utcnow()},
+    })
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    rec = _live_reset(token)
+    if not rec:
+        return render_template("reset_password.html", invalid=True), 400
+    user = mongo.db.users.find_one({"_id": rec["user_id"]})
+    if not user:
+        return render_template("reset_password.html", invalid=True), 400
+    if request.method == "POST":
+        new   = request.form.get("password") or ""
+        again = request.form.get("again") or ""
+        error = None
+        if len(new) < MIN_PASSWORD_LENGTH:
+            error = f"Use at least {MIN_PASSWORD_LENGTH} characters."
+        elif new != again:
+            error = "The two passwords do not match."
+        if error:
+            return render_template("reset_password.html", invalid=False,
+                                   username=user["username"], error=error), 400
+        mongo.db.users.update_one({"_id": user["_id"]}, {"$set": {
+            "password": bcrypt.generate_password_hash(new).decode("utf-8"),
+            "password_changed_at": datetime.utcnow(),
+        }})
+        # This link and any other outstanding ones stop working.
+        mongo.db.password_resets.update_many({"user_id": user["_id"], "used": False},
+                                             {"$set": {"used": True, "used_at": datetime.utcnow()}})
+        flash("Password changed. Sign in with the new one.", "success")
+        return redirect(url_for("login"))
+    return render_template("reset_password.html", invalid=False, username=user["username"])
+
+
+# ─────────────────────────────────────────────────────────────
+#  MONTHLY REPORT — each person's month, by email, with their Excel
+# ─────────────────────────────────────────────────────────────
+
+def previous_month(today=None):
+    today = today or get_ist_now().date()
+    end = today.replace(day=1) - timedelta(days=1)
+    return end.replace(day=1), end
+
+
+def month_bounds(ym):
+    """'2026-10' -> (date(2026,10,1), date(2026,10,31)); None on a bad value."""
+    try:
+        start = datetime.strptime(ym, "%Y-%m").date().replace(day=1)
+    except (ValueError, TypeError):
+        return None
+    nxt = date(start.year + 1, 1, 1) if start.month == 12 else date(start.year, start.month + 1, 1)
+    return start, nxt - timedelta(days=1)
+
+
+def _monthly_mail(user_doc, start, end, data):
+    s = data["summary"]
+    name = display_name(user_doc)
+    month = start.strftime("%B %Y")
+    rate = s.get("attendance_rate", 0)
+    tiles = [("Days worked", s.get("present", 0), "#D9F6E6"), ("Absent", s.get("absent", 0), "#FFE0EA"),
+             ("On leave", s.get("leave", 0), "#FFF0B8"), ("Attendance", f"{rate}%", "#DDEBFF"),
+             ("Total hours", s.get("total_hours", 0), "#EAE4FF"), ("Average a day", f"{s.get('avg_hours', 0)}h", "#FFE6D5")]
+    cells = "".join(
+        f'<td width="33%" style="padding:5px"><div style="background:{bg};border-radius:14px;padding:14px">'
+        f'<div style="font-size:24px;font-weight:800;color:#16161D">{_html_escape(str(v))}</div>'
+        f'<div style="font-size:12px;color:#555766;margin-top:2px">{_html_escape(k)}</div></div></td>'
+        + ("</tr><tr>" if i == 2 else "")
+        for i, (k, v, bg) in enumerate(tiles))
+    note = ("A full month without an absence. Well done." if not s.get("absent") and s.get("present")
+            else f'{s.get("absent")} working day{"s" if s.get("absent") != 1 else ""} without a sign-in.'
+            if s.get("absent") else "")
+    inner = (f'<p style="font-size:15px;color:#16161D;margin:0 0 12px">Hello {_html_escape(name)},</p>'
+             f'<p style="font-size:14px;line-height:1.6;color:#555766;margin:0 0 14px">Here is your attendance for '
+             f'<strong style="color:#16161D">{month}</strong>. The day-by-day sheet is attached.</p>'
+             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>{cells}</tr></table>'
+             + (f'<p style="font-size:14px;color:#555766;margin:14px 0 0">{_html_escape(note)}</p>' if note else "")
+             +
+             '<p style="font-size:12px;color:#8B8D9C;margin:18px 0 0">Saturdays are optional and Sundays and declared '
+             'holidays are not counted. If something looks wrong, tell the Office of Academics.</p>')
+    text = (f"Hello {name},\n\nYour attendance for {month}:\n"
+            f"Days worked {s.get('present', 0)} · Absent {s.get('absent', 0)} · On leave {s.get('leave', 0)} · "
+            f"Attendance {rate}% · Hours {s.get('total_hours', 0)}\n\nThe day-by-day sheet is attached.")
+    return (f"Your attendance for {month}", text,
+            _mail_shell(f"Your attendance · {month}", "Monthly summary", inner))
+
+
+def send_monthly_reports(start=None, end=None, background=False):
+    """Mail every intern and employee their own month. Returns counts."""
+    if not start:
+        start, end = previous_month()
+    users = list(mongo.db.users.find({"role": {"$in": list(STAFF_ROLES)}}, USER_LIST_FIELDS))
+    out = {"month": start.strftime("%B %Y"), "sent": 0, "no_email": [], "failed": []}
+    for u in users:
+        email = (u.get("email") or "").strip()
+        if not email:
+            out["no_email"].append(display_name(u))
+            continue
+        try:
+            data = compute_user_analysis(u, start, end)
+            subject, text, html = _monthly_mail(u, start, end, data)
+            xlsx = build_person_workbook(u, start, end, data).getvalue()
+            att = [(person_download_name(u.get("username", ""), start, end),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx)]
+        except Exception as e:
+            out["failed"].append(f"{display_name(u)}: {e}")
+            continue
+        if background:
+            send_mail_async(subject, [email], text, html, att)
+            out["sent"] += 1
+        else:
+            ok, err = send_mail(subject, [email], text, html, att)
+            if ok:
+                out["sent"] += 1
+            else:
+                out["failed"].append(f"{display_name(u)}: {err}")
+    return out
+
+
+@app.route("/api/admin/monthly-reports", methods=["POST"])
+@login_required
+def admin_monthly_reports():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    body = request.get_json(silent=True) or {}
+    rng = month_bounds(body.get("month")) if body.get("month") else previous_month()
+    if not rng:
+        return jsonify({"error": "Pick a month."}), 400
+    if rng[0] > get_ist_now().date():
+        return jsonify({"error": "That month has not started yet."}), 400
+    res = send_monthly_reports(*rng, background=True)
+    return jsonify({"ok": True, **res})
+
+
+# ─────────────────────────────────────────────────────────────
+#  BULK ADD PEOPLE — from a CSV or Excel file
+# ─────────────────────────────────────────────────────────────
+
+IMPORT_MAX_ROWS = 500
+IMPORT_COLUMNS = ["username", "full_name", "email", "role", "department", "work_hours", "password"]
+_IMPORT_ALIASES = {
+    "user": "username", "login": "username", "user_name": "username", "username": "username",
+    "name": "full_name", "full_name": "full_name", "fullname": "full_name",
+    "email": "email", "e-mail": "email", "email_address": "email", "mail": "email",
+    "role": "role", "type": "role",
+    "department": "department", "dept": "department", "team": "department", "batch": "department",
+    "work_hours": "work_hours", "hours": "work_hours", "daily_hours": "work_hours", "daily_hours_target": "work_hours",
+    "password": "password",
+}
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{2,40}$")
+_EMAIL_RE    = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PW_CHARS    = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+
+
+def _generated_password():
+    return "".join(secrets.choice(_PW_CHARS) for _ in range(10))
+
+
+def _read_people_file(storage):
+    """Rows from an uploaded .csv or .xlsx, keyed by our column names."""
+    name = (storage.filename or "").lower()
+    raw = storage.read(2 * 1024 * 1024 + 1)
+    if len(raw) > 2 * 1024 * 1024:
+        raise ValueError("The file is larger than 2 MB.")
+    buf = io.BytesIO(raw)
+    if name.endswith(".csv"):
+        df = pd.read_csv(buf, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    elif name.endswith((".xlsx", ".xlsm")):
+        df = pd.read_excel(buf, dtype=str, keep_default_na=False)
+    else:
+        raise ValueError("Upload a .csv or .xlsx file.")
+    cols = {}
+    for c in df.columns:
+        key = re.sub(r"[\s]+", "_", str(c).strip().lower())
+        if key in _IMPORT_ALIASES:
+            cols[c] = _IMPORT_ALIASES[key]
+    if "username" not in cols.values():
+        raise ValueError("The file needs a 'username' column. Download the template to see the layout.")
+    df = df[list(cols)].rename(columns=cols)
+    rows = []
+    for rec in df.to_dict("records"):
+        row = {k: str(rec.get(k, "") or "").strip() for k in IMPORT_COLUMNS}
+        if any(row.values()):
+            rows.append(row)
+    if len(rows) > IMPORT_MAX_ROWS:
+        raise ValueError(f"At most {IMPORT_MAX_ROWS} people per file; this one has {len(rows)}.")
+    return rows
+
+
+def _check_people_rows(rows):
+    existing = {u["username"].lower() for u in mongo.db.users.find({}, {"username": 1}) if u.get("username")}
+    seen, out = set(), []
+    for i, r in enumerate(rows, start=2):           # row 1 is the header in the file
+        problems = []
+        u = r["username"]
+        if not u:
+            problems.append("no username")
+        elif not _USERNAME_RE.match(u):
+            problems.append("username may use letters, digits, . _ - (2–40 characters)")
+        elif u.lower() in existing:
+            problems.append("username already taken")
+        elif u.lower() in seen:
+            problems.append("username appears twice in the file")
+        role = (r["role"] or "intern").lower()
+        if role not in ALL_ROLES:
+            problems.append("role must be intern, employee or admin")
+        try:
+            hours = float(r["work_hours"]) if r["work_hours"] else float(DEFAULT_WORK_HOURS)
+            if not 1 <= hours <= 16:
+                problems.append("daily hours must be between 1 and 16")
+        except ValueError:
+            hours = DEFAULT_WORK_HOURS
+            problems.append("daily hours is not a number")
+        if r["email"] and not _EMAIL_RE.match(r["email"]):
+            problems.append("email does not look right")
+        if r["password"] and len(r["password"]) < MIN_PASSWORD_LENGTH:
+            problems.append(f"password shorter than {MIN_PASSWORD_LENGTH} characters")
+        if u:
+            seen.add(u.lower())
+        out.append({"row": i, "username": u, "full_name": r["full_name"] or u, "email": r["email"],
+                    "role": role, "department": r["department"][:60], "work_hours": hours,
+                    "password": r["password"], "ok": not problems, "problems": problems})
+    return out
+
+
+@app.route("/api/admin/users/import", methods=["POST"])
+@login_required
+def admin_import_users():
+    """Check a file (dry_run=1) or create every valid row in it."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "Choose a file first."}), 400
+    try:
+        rows = _check_people_rows(_read_people_file(f))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Could not read the file: {e}"}), 400
+    good = [r for r in rows if r["ok"]]
+    summary = {"total": len(rows), "valid": len(good), "invalid": len(rows) - len(good)}
+    if request.form.get("dry_run") == "1":
+        return jsonify({"ok": True, "dry_run": True, **summary,
+                        "rows": [{k: v for k, v in r.items() if k != "password"} | {"has_password": bool(r["password"])}
+                                 for r in rows]})
+    created = []
+    for r in good:
+        pw = r["password"] or _generated_password()
+        mongo.db.users.insert_one({
+            "username": r["username"], "full_name": r["full_name"],
+            "password": bcrypt.generate_password_hash(pw).decode("utf-8"),
+            "role": r["role"], "email": r["email"], "work_hours": r["work_hours"],
+            "department": r["department"], "created_at": datetime.utcnow(),
+            "created_by": current_user.username, "imported": True,
+            "face_registered": False, "face_required": False,
+            "face_registration_enabled": False, "shift_login_enabled": False,
+        })
+        created.append({"username": r["username"], "full_name": r["full_name"],
+                        "password": "" if r["password"] else pw})
+    return jsonify({"ok": True, "dry_run": False, **summary, "created": created})
+
+
+@app.route("/api/admin/users/import-template")
+@login_required
+def admin_import_template():
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    body = ("username,full_name,email,role,department,work_hours,password\n"
+            "ananya.r,Ananya Rao,ananya.r@example.edu,intern,Admissions,8,\n"
+            "rohan.i,Rohan Iyer,,employee,Examinations,7.5,\n")
+    return app.response_class(body, mimetype="text/csv", headers={
+        "Content-Disposition": "attachment; filename=people_template.csv"})
+
+
+# ─────────────────────────────────────────────────────────────
+#  NOTICES BOARD — everything sent to this person, kept readable
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/user/announcements")
+@login_required
+def user_announcements():
+    """Every notice this person was sent, newest first, plus decisions on
+    their own leave requests from the last 60 days."""
+    uid, name = ObjectId(current_user.id), current_user.username
+    sent = [n for n in mongo.db.notices.find({"started_at": {"$ne": None}}).sort("started_at", -1).limit(100)
+            if not n.get("audience") or name in n.get("audience")]
+    views = {v["notice_id"]: v for v in mongo.db.notice_views.find(
+        {"user_id": uid, "notice_id": {"$in": [n["_id"] for n in sent]}})}
+    items = []
+    for n in sent:
+        items.append({
+            "id": str(n["_id"]), "source": "notice", "kind": n.get("kind", "info"),
+            "title": n.get("title", ""), "body": n.get("body", ""),
+            "cta_label": n.get("cta_label", ""), "cta_tab": n.get("cta_tab", ""),
+            "at": n["started_at"].isoformat() + "Z",
+            "unread": n["_id"] not in views,
+        })
+    since = (get_ist_now().date() - timedelta(days=60)).isoformat()
+    for l in mongo.db.leave_applications.find({"user_id": uid, "status": {"$in": ["approved", "denied"]},
+                                               "date": {"$gte": since}}).sort("updated_at", -1):
+        try:
+            pretty = datetime.strptime(l.get("date"), "%Y-%m-%d").strftime("%a %d %b")
+        except (ValueError, TypeError):
+            pretty = l.get("date", "")
+        approved = l.get("status") == "approved"
+        when = l.get("updated_at") or l.get("applied_at") or datetime.utcnow()
+        items.append({
+            "id": str(l["_id"]), "source": "leave", "kind": "leave-ok" if approved else "leave-no",
+            "title": f"Leave on {pretty} {'approved' if approved else 'not approved'}",
+            "body": (l.get("admin_comments") or "").strip() or f"{l.get('type', 'Leave')} · {l.get('comments') or 'no reason given'}",
+            "at": when.isoformat() + "Z", "unread": not l.get("user_notified"),
+        })
+    items.sort(key=lambda x: x["at"], reverse=True)
+    return jsonify({"items": items, "unread": sum(1 for i in items if i["unread"])})
+
+
+@app.route("/api/user/announcements/read", methods=["POST"])
+@login_required
+def user_announcements_read():
+    """Mark everything on the board as read. A notice read here still pops
+    up as before — reading the board does not use up its showings."""
+    uid = ObjectId(current_user.id)
+    now = datetime.utcnow()
+    for n in mongo.db.notices.find({"started_at": {"$ne": None}}, {"_id": 1, "audience": 1}):
+        if n.get("audience") and current_user.username not in n["audience"]:
+            continue
+        mongo.db.notice_views.update_one(
+            {"notice_id": n["_id"], "user_id": uid},
+            {"$set": {"read_on_board": now, "username": current_user.username},
+             "$setOnInsert": {"views": 0, "first_seen": now}}, upsert=True)
+    mongo.db.leave_applications.update_many(
+        {"user_id": uid, "status": {"$in": ["approved", "denied"]}, "user_notified": {"$ne": True}},
+        {"$set": {"user_notified": True}})
+    return jsonify({"ok": True})
 
 
 @app.route("/health")

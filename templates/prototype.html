@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face check v2 — prototype</title>
+<style>
+  :root {
+    --ink:#0A1324; --gold:#EEBD1B; --paper:#F6F4EF; --card:#fff; --line:#E3DED4;
+    --t1:#101828; --t2:#5B6472; --t3:#8F98A6;
+    --ok:#157F52; --ok-bg:#E7F3ED; --bad:#B7302A; --bad-bg:#F8E9E8; --warn:#C2790B;
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--paper); color:var(--t1);
+    font:15px/1.55 'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  .wrap { max-width:1060px; margin:0 auto; padding:24px 16px 60px; }
+  header { margin-bottom:20px; }
+  h1 { font-size:1.4rem; margin:0 0 4px; letter-spacing:-.02em; }
+  .sub { color:var(--t2); font-size:.86rem; }
+  .grid { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+  @media (min-width:900px){ .grid { grid-template-columns:minmax(0,520px) minmax(0,1fr); } }
+  .card {
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:16px; min-width:0;
+  }
+  .card h2 { font-size:.95rem; margin:0 0 12px; letter-spacing:-.01em; }
+  #stage { position:relative; background:#000; border-radius:8px; overflow:hidden; aspect-ratio:4/3; }
+  #stage canvas, #stage video { width:100%; height:100%; object-fit:cover; display:block; }
+  #video { position:absolute; inset:0; opacity:0; pointer-events:none; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  button {
+    font:inherit; font-size:.85rem; font-weight:600; padding:9px 14px; border-radius:8px;
+    border:1px solid var(--line); background:var(--card); color:var(--t1); cursor:pointer;
+  }
+  button.primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+  button.gold { background:var(--gold); color:var(--ink); border-color:var(--gold); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .meters { display:grid; gap:9px; margin-top:4px; }
+  .meter .top { display:flex; justify-content:space-between; font-size:.76rem; margin-bottom:3px; }
+  .meter .top b { font-family:var(--mono); font-weight:500; }
+  .meter .track { height:7px; background:var(--paper); border-radius:4px; overflow:hidden; border:1px solid var(--line); }
+  .meter .fill { height:100%; width:0%; background:var(--t3); transition:width .18s linear, background .18s; }
+  .verdict { margin-top:14px; padding:13px 14px; border-radius:9px; border:1px solid var(--line);
+             background:var(--paper); font-size:.88rem; }
+  .verdict.ok  { background:var(--ok-bg);  border-color:#BFE0CF; color:var(--ok); }
+  .verdict.bad { background:var(--bad-bg); border-color:#EFC9C7; color:var(--bad); }
+  .verdict b { display:block; font-size:1rem; margin-bottom:2px; }
+  dl.kv { margin:0; display:grid; grid-template-columns:auto 1fr; gap:5px 14px; font-size:.82rem; }
+  dl.kv dt { color:var(--t2); }
+  dl.kv dd { margin:0; font-family:var(--mono); font-size:.79rem; }
+  label.slider { display:block; font-size:.78rem; color:var(--t2); margin-top:14px; }
+  label.slider input { width:100%; margin-top:5px; }
+  .note { font-size:.78rem; color:var(--t2); margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+  .pill { display:inline-block; font-size:.68rem; font-weight:800; letter-spacing:.06em;
+          text-transform:uppercase; padding:3px 7px; border-radius:5px; background:var(--paper);
+          color:var(--t2); border:1px solid var(--line); }
+  .pill.on { background:var(--ok-bg); color:var(--ok); border-color:#BFE0CF; }
+  #boot { font-size:.82rem; color:var(--t2); font-family:var(--mono); }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button {
+    border:0; border-radius:0; padding:9px 15px; font-size:.82rem; font-weight:600;
+    background:var(--card); color:var(--t2); cursor:pointer;
+  }
+  .seg button + button { border-left:1px solid var(--line); }
+  .seg button.on { background:var(--ink); color:#fff; }
+  .seg button:disabled { opacity:.4; cursor:not-allowed; }
+  .objlist { display:flex; flex-wrap:wrap; gap:8px; min-height:34px; align-items:flex-start; }
+  .objempty { color:var(--t3); font-size:.84rem; }
+  .obj {
+    display:inline-flex; align-items:baseline; gap:7px; padding:6px 11px;
+    border:1px solid var(--line); border-radius:7px; background:var(--paper); font-size:.84rem;
+  }
+  .obj b { font-weight:700; }
+  .obj span { font-family:var(--mono); font-size:.74rem; color:var(--t2); }
+  .obj.person { background:var(--ok-bg); border-color:#BFE0CF; }
+  .obj.person b { color:var(--ok); }
+  #shareOut {
+    font-size:.82rem; padding:11px 13px; border:1px solid var(--line);
+    border-radius:8px; background:var(--card);
+  }
+  #shareOut input {
+    width:100%; margin-top:7px; font-family:var(--mono); font-size:.76rem;
+    padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--paper);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Face check v2 — prototype</h1>
+    <div class="sub">
+      Face identity, two anti-spoofing models and 80-class object detection —
+      all in the browser. No frame is uploaded anywhere.
+    </div>
+    <div class="row" style="margin-top:10px">
+      {% if shared %}
+        <span class="pill on">shared link</span>
+        <span class="pill">read-only session</span>
+      {% else %}
+        <button id="btnShare">Create shareable link</button>
+        <a href="{{ url_for('prototype_logout') }}" style="text-decoration:none"><button>Sign out</button></a>
+      {% endif %}
+    </div>
+    <div id="shareOut" hidden style="margin-top:10px"></div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Camera</h2>
+      <div id="stage">
+        <video id="video" playsinline muted autoplay></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="row">
+        <div class="seg" id="camSeg">
+          <button type="button" class="on" data-mode="user">Front</button>
+          <button type="button" data-mode="environment">Back</button>
+        </div>
+        <button id="btnStart" class="primary">Start camera</button>
+        <button id="btnEnrol" class="gold" disabled>Enrol this face (3 shots)</button>
+        <button id="btnVerify" disabled>Verify</button>
+        <button id="btnClear" disabled>Clear enrolment</button>
+      </div>
+      <div id="boot" style="margin-top:10px">Idle. Press Start camera — models load on first use (~10 MB, then cached).</div>
+    </div>
+
+    <div class="card">
+      <h2>Live signals</h2>
+      <div class="meters">
+        <div class="meter" id="m-face">
+          <div class="top"><span>Face detected</span><b>—</b></div>
+          <div class="track"><div class="fill"></div></div>
+        </div>
+        <div class="meter" id="m-real">
+          <div class="top"><span>Real (anti-spoof)</span><b>—</b></div>
+          <div class="track"><div class="fill"></div></div>
+        </div>
+        <div class="meter" id="m-live">
+          <div class="top"><span>Live (liveness)</span><b>—</b></div>
+          <div class="track"><div class="fill"></div></div>
+        </div>
+        <div class="meter" id="m-sim">
+          <div class="top"><span>Similarity to enrolled</span><b>—</b></div>
+          <div class="track"><div class="fill"></div></div>
+        </div>
+      </div>
+
+      <label class="slider">
+        Match threshold — <b id="thLbl">0.50</b>
+        <input id="th" type="range" min="0.20" max="0.90" step="0.01" value="0.50">
+      </label>
+      <label class="slider">
+        Minimum “real” score to accept — <b id="spLbl">0.55</b>
+        <input id="sp" type="range" min="0.10" max="0.95" step="0.01" value="0.55">
+      </label>
+
+      <div class="verdict" id="verdict"><b>No enrolment yet</b>Enrol a face, then press Verify.</div>
+
+      <dl class="kv" style="margin-top:14px">
+        <dt>Enrolled samples</dt><dd id="kEnrolled">0</dd>
+        <dt>Embedding size</dt><dd id="kDims">1024-d</dd>
+        <dt>Detector</dt><dd>BlazeFace</dd>
+        <dt>Embedding</dt><dd>FaceRes</dd>
+        <dt>Anti-spoof</dt><dd>antispoof + liveness</dd>
+        <dt>Frame time</dt><dd id="kMs">—</dd>
+      </dl>
+
+      <div class="note">
+        <span class="pill" id="pillSpoof">spoof gate</span>
+        A match is refused when the “real” score is below the slider, even if the
+        face matches. Hold a photo on your phone up to the camera: similarity stays
+        high, “real” collapses, and the result is rejected. That is the check the
+        current portal has no equivalent of.
+      </div>
+    </div>
+
+    <div class="card" style="grid-column:1/-1">
+      <h2>Scene — what else is in frame</h2>
+      <div class="sub" style="font-size:.8rem;margin:-6px 0 12px">
+        80 COCO classes. Hold a book up and it reads <b>book</b>; a phone reads
+        <b>cell phone</b>. People are detected as <b>person</b> whether or not
+        they are facing the camera, which the face detector alone cannot do.
+      </div>
+      <div id="objects" class="objlist"><span class="objempty">Nothing detected yet.</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/dist/human.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const MODELS = 'https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/models/';
+  const STORE  = 'facePrototypeEnrolment';
+
+  // Only the face pipeline is switched on. Every other Human module (body, hand,
+  // object, gesture) is weight we would download and never use.
+  // The UMD build exposes the module namespace as window.Human, which carries
+  // both the named class and the default export. Take whichever is there.
+  const HumanCtor = Human.Human || Human.default || Human;
+  const human = new HumanCtor({
+    modelBasePath: MODELS,
+    cacheSensitivity: 0,
+    filter:  { enabled: true, equalization: true },  // helps in poor office light
+    face: {
+      enabled: true,
+      detector:    { rotation: true, maxDetected: 1, minConfidence: 0.3 },
+      mesh:        { enabled: true },    // alignment — the embedding needs it
+      description: { enabled: true },    // the 1024-d identity vector
+      antispoof:   { enabled: true },    // "is this a flat reproduction?"
+      liveness:    { enabled: true },    // "is this a live person?"
+      iris:        { enabled: false },
+      emotion:     { enabled: false },
+    },
+    // 80 COCO classes — person, book, cell phone, laptop and the rest.
+    // It runs on a timer rather than every frame; the model is heavy and a
+    // scene does not change 30 times a second.
+    object: { enabled: true, minConfidence: 0.25, maxDetected: 10, skipTime: 1000 },
+    body: { enabled: false }, hand: { enabled: false }, gesture: { enabled: false },
+  });
+
+  const $ = id => document.getElementById(id);
+  const video = $('video'), overlay = $('overlay'), boot = $('boot');
+  const btnStart = $('btnStart'), btnEnrol = $('btnEnrol'),
+        btnVerify = $('btnVerify'), btnClear = $('btnClear'), camSeg = $('camSeg');
+
+  let running = false, lastFace = null, enrolled = [];
+
+  // ── enrolment lives in this browser only; it is a prototype, not a store ──
+  try {
+    const raw = localStorage.getItem(STORE);
+    if (raw) enrolled = JSON.parse(raw) || [];
+  } catch (e) { enrolled = []; }
+
+  function persist() {
+    try { localStorage.setItem(STORE, JSON.stringify(enrolled)); } catch (e) {}
+    $('kEnrolled').textContent = enrolled.length;
+    btnClear.disabled = enrolled.length === 0;
+    btnVerify.disabled = enrolled.length === 0 || !running;
+  }
+
+  function meter(id, value, good) {
+    const el = $(id);
+    const pct = Math.max(0, Math.min(100, value * 100));
+    el.querySelector('b').textContent = value === null ? '—' : value.toFixed(3);
+    const fill = el.querySelector('.fill');
+    fill.style.width = pct + '%';
+    fill.style.background = good === null ? 'var(--t3)'
+                          : good ? 'var(--ok)' : 'var(--bad)';
+  }
+
+  function say(kind, title, body) {
+    const v = $('verdict');
+    v.className = 'verdict' + (kind ? ' ' + kind : '');
+    v.innerHTML = '<b></b>';
+    v.firstChild.textContent = title;
+    v.appendChild(document.createTextNode(body));
+  }
+
+  // 'user' is the selfie camera, 'environment' the one on the back of a phone.
+  let facing = 'user';
+  let stream = null;
+
+  function stopStream() {
+    if (!stream) return;
+    for (const t of stream.getTracks()) t.stop();
+    stream = null;
+  }
+
+  async function openCamera(mode) {
+    stopStream();
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await video.play();
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+
+    facing = mode;
+    // Mirror the selfie view only. Human flips the frame it analyses, so the
+    // boxes land on the right place and the labels stay the right way round —
+    // which a CSS flip of the whole canvas would not do.
+    human.config.filter.flip = (mode === 'user');
+
+    const track = stream.getVideoTracks()[0];
+    const settings = track ? track.getSettings() : {};
+    boot.textContent = 'Running — ' + (mode === 'user' ? 'front' : 'back') + ' camera, '
+                     + (settings.width || overlay.width) + '×' + (settings.height || overlay.height);
+  }
+
+  // Labels only appear after permission is granted, so this runs post-start.
+  async function countCameras() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      if (cams.length < 2) {
+        const back = camSeg.querySelector('[data-mode="environment"]');
+        back.disabled = true;
+        back.title = 'This device reports only one camera.';
+      }
+    } catch (e) { /* enumeration is optional */ }
+  }
+
+  async function start() {
+    btnStart.disabled = true;
+    try {
+      boot.textContent = 'Loading models…';
+      await human.load();
+      boot.textContent = 'Warming up…';
+      await human.warmup();
+
+      boot.textContent = 'Opening camera…';
+      await openCamera(facing);
+
+      running = true;
+      btnEnrol.disabled = false;
+      persist();
+      countCameras();
+      loop();
+    } catch (err) {
+      btnStart.disabled = false;
+      boot.textContent = 'Could not start: ' + err.message;
+      say('bad', 'Camera unavailable',
+          'The browser refused the camera. This page must be served over HTTPS ' +
+          '(or localhost), and the camera permission must be allowed.');
+    }
+  }
+
+  async function loop() {
+    if (!running) return;
+    const t0 = performance.now();
+    const result = await human.detect(video);
+    const interp = human.next(result);
+    // result.canvas is the frame Human worked on — already flipped when the
+    // front camera is in use. Drawing the raw video instead would put the
+    // boxes on the wrong side of the picture.
+    human.draw.canvas(result.canvas || video, overlay);
+    await human.draw.all(overlay, interp);
+
+    const face = (result.face && result.face[0]) || null;
+    lastFace = (face && face.embedding) ? face : null;
+
+    if (face) {
+      meter('m-face', face.faceScore ?? face.score ?? 0, true);
+      // Human reports these as "probability it is genuine".
+      const real = typeof face.real === 'number' ? face.real : null;
+      const live = typeof face.live === 'number' ? face.live : null;
+      const spMin = parseFloat($('sp').value);
+      meter('m-real', real ?? 0, real === null ? null : real >= spMin);
+      meter('m-live', live ?? 0, live === null ? null : live >= spMin);
+    } else {
+      meter('m-face', 0, false); meter('m-real', 0, null); meter('m-live', 0, null);
+    }
+    $('kMs').textContent = (performance.now() - t0).toFixed(0) + ' ms';
+    paintObjects(result.object || []);
+
+    requestAnimationFrame(loop);
+  }
+
+  // Three shots a moment apart, so the enrolment covers more than one instant.
+  async function enrol() {
+    btnEnrol.disabled = true;
+    const shots = [];
+    for (let i = 1; i <= 3; i++) {
+      say('', 'Enrolling…', ' Hold still — shot ' + i + ' of 3.');
+      await new Promise(r => setTimeout(r, 700));
+      if (!lastFace) {
+        say('bad', 'No face found', ' Nothing was captured. Face the camera and try again.');
+        btnEnrol.disabled = false;
+        return;
+      }
+      shots.push(Array.from(lastFace.embedding));
+    }
+    enrolled = shots;
+    persist();
+    btnEnrol.disabled = false;
+    say('ok', 'Enrolled', ' Three samples stored in this browser. Press Verify to test them.');
+  }
+
+  function verify() {
+    if (!lastFace) {
+      say('bad', 'No face found', ' Face the camera and try again.');
+      return;
+    }
+    const live = Array.from(lastFace.embedding);
+    // Best of the enrolled samples, which is how a real system scores it.
+    let best = 0;
+    for (const e of enrolled) {
+      const s = human.match.similarity(live, e);
+      if (s > best) best = s;
+    }
+    const th = parseFloat($('th').value);
+    const spMin = parseFloat($('sp').value);
+    const real = typeof lastFace.real === 'number' ? lastFace.real : 1;
+
+    meter('m-sim', best, best >= th);
+
+    if (real < spMin) {
+      say('bad', 'Rejected — not a live face',
+          ' Similarity was ' + best.toFixed(3) + ', which would have passed, but the ' +
+          'anti-spoof score was ' + real.toFixed(3) + ', under the ' + spMin.toFixed(2) +
+          ' floor. A photo or a screen is the usual cause.');
+      return;
+    }
+    if (best >= th) {
+      say('ok', 'Match',
+          ' Similarity ' + best.toFixed(3) + ' at a ' + th.toFixed(2) +
+          ' threshold, anti-spoof ' + real.toFixed(3) + '.');
+    } else {
+      say('bad', 'No match',
+          ' Similarity ' + best.toFixed(3) + ' is under the ' + th.toFixed(2) +
+          ' threshold. Either a different person, or the enrolment needs redoing ' +
+          'in this lighting.');
+    }
+  }
+
+  // Strongest first, so whatever you are holding up leads the list.
+  function paintObjects(objects) {
+    const box = $('objects');
+    if (!objects.length) {
+      box.innerHTML = '';
+      const e = document.createElement('span');
+      e.className = 'objempty';
+      e.textContent = 'Nothing detected yet.';
+      box.appendChild(e);
+      return;
+    }
+    const sorted = objects.slice().sort((a, b) => b.score - a.score);
+    box.innerHTML = '';
+    for (const o of sorted) {
+      const el = document.createElement('div');
+      el.className = 'obj' + (o.label === 'person' ? ' person' : '');
+      const b = document.createElement('b');
+      b.textContent = o.label;
+      const sc = document.createElement('span');
+      sc.textContent = o.score.toFixed(2);
+      el.appendChild(b); el.appendChild(sc);
+      box.appendChild(el);
+    }
+  }
+
+  // ── sharing ────────────────────────────────────────────────────────────
+  const btnShare = $('btnShare');
+  if (btnShare) {
+    btnShare.addEventListener('click', async () => {
+      btnShare.disabled = true;
+      const out = $('shareOut');
+      try {
+        const r = await fetch('/api/admin/prototype/share', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok || !d.url) throw new Error(d.error || ('HTTP ' + r.status));
+        out.hidden = false;
+        out.innerHTML = '';
+        const p = document.createElement('div');
+        p.textContent = 'Anyone with this link can open the prototype. No sign-in, no password.';
+        const i = document.createElement('input');
+        i.readOnly = true; i.value = d.url;
+        i.addEventListener('focus', () => i.select());
+        out.appendChild(p); out.appendChild(i);
+        i.focus();
+      } catch (err) {
+        out.hidden = false;
+        out.textContent = 'Could not create a link: ' + err.message;
+      }
+      btnShare.disabled = false;
+    });
+  }
+
+  camSeg.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-mode]');
+    if (!btn || btn.disabled || btn.classList.contains('on')) return;
+    const mode = btn.dataset.mode;
+    camSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+    if (!running) { facing = mode; return; }     // chosen before starting
+    try {
+      await openCamera(mode);
+    } catch (err) {
+      boot.textContent = 'Could not switch camera: ' + err.message;
+      // Put the highlight back where it was.
+      camSeg.querySelectorAll('button').forEach(
+        b => b.classList.toggle('on', b.dataset.mode === facing));
+    }
+  });
+
+  btnStart.addEventListener('click', start);
+  btnEnrol.addEventListener('click', enrol);
+  btnVerify.addEventListener('click', verify);
+  btnClear.addEventListener('click', () => {
+    enrolled = [];
+    persist();
+    meter('m-sim', 0, null);
+    say('', 'Enrolment cleared', ' Enrol a face to test again.');
+  });
+  $('th').addEventListener('input', e => { $('thLbl').textContent = (+e.target.value).toFixed(2); });
+  $('sp').addEventListener('input', e => { $('spLbl').textContent = (+e.target.value).toFixed(2); });
+
+  persist();
+  if (enrolled.length) say('', 'Enrolment found', ' ' + enrolled.length + ' samples in this browser. Start the camera and press Verify.');
+})();
+</script>
+</body>
+</html>

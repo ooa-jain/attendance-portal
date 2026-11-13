@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Admin console · Office of Academics</title>
-<meta name="theme-color" content="#0A1324">
+<meta name="theme-color" content="#F1F2F5">
 
 <!-- App logo as favicon -->
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
@@ -13,46 +13,62 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-admin.css') }}">
+<script>
+  // Set before the first paint, so a reload in dark mode never flashes white.
+  try { if (localStorage.getItem('oaTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+</script>
 </head>
 <body>
 
-<div class="oa-shell">
+<div class="oa-shell has-rail">
 
   <!-- ══ LEFT RAIL ════════════════════════════════════════════ -->
   <aside class="oa-rail">
     <div class="oa-rail-head">
       <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
       <div>
-        <div class="org">OFFICE OF ACADEMICS</div>
+        <div class="org">Office of Academics</div>
         <div class="sub">Admin console</div>
       </div>
     </div>
     <nav class="oa-rail-nav">
+      <div class="oa-nav-group">Today</div>
       <button class="oa-navitem on ad-tab" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave requests</button>
-      <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations &amp; Map</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early sign-outs</button>
+
+      <div class="oa-nav-group">Records</div>
+      <button class="oa-navitem ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="oa-navitem ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
+
+      <div class="oa-nav-group">Manage</div>
+      <button class="oa-navitem ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave requests</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
+      <button class="oa-navitem ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <div class="oa-dsep"></div>
+      <button type="button" class="oa-themeswitch" onclick="openPw()">
+        <i class="fas fa-key"></i><span>Change password</span>
+      </button>
+      <button type="button" class="oa-themeswitch" onclick="toggleTheme()">
+        <i class="fas fa-circle-half-stroke"></i>
+        <span class="lbl-light">Dark mode</span>
+        <span class="lbl-dark">Light mode</span>
+      </button>
       <button class="oa-navitem danger" onclick="logout()"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</button>
     </nav>
     <div class="oa-rail-foot">
-      Signed in as <strong style="color:var(--gold-400)">{{ current_user.username }}</strong><br>
+      Signed in as <strong>{{ current_user.full_name or current_user.username }}</strong><br>
       Head Office, Bengaluru
-      <div style="font-size:0.75rem;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:var(--t2)">
-        <i class="fas fa-location-dot" style="color:#0071e3"></i> JAIN Campus (12.9248, 77.5702)
-      </div>
+      <div class="loc"><i class="fas fa-location-dot"></i> JAIN Campus (12.9248, 77.5702)</div>
     </div>
   </aside>
 
@@ -60,13 +76,29 @@
   <header class="oa-topbar">
     <img class="brandmark" src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
     <div class="titles">
-      <div class="org">ADMIN CONSOLE</div>
-      <div class="sub">Office of Academics · Head Office</div>
+      <div class="org" id="lunoCrumb">Dashboard</div>
+      <div class="sub">Admin console</div>
     </div>
-    <div class="oa-pill" style="background:rgba(238,189,27,.14)">
-      <i class="fas fa-user-shield"></i> {{ current_user.username }}
+    <div class="lu-search">
+      <i class="fas fa-magnifying-glass"></i>
+      <input id="lunoQ" type="search" autocomplete="off"
+             placeholder="Search people, notes or a section…"
+             oninput="lunoSearch(this.value)">
     </div>
-    <button class="oa-btn oa-btn-sm oa-only-mobile" style="background:rgba(255,255,255,.1);color:var(--on-ink)" onclick="logout()">
+    <div class="lu-actions">
+      <button type="button" class="lu-ico lu-opt" title="Full screen" onclick="lunoFullscreen()">
+        <i class="fas fa-expand"></i></button>
+      <button type="button" class="lu-ico" title="Notices" onclick="goTab('notices')">
+        <i class="fas fa-bell"></i><span class="lu-dot" id="lunoNoticeDot" hidden></span></button>
+      <button type="button" class="lu-ico" title="Leave requests" onclick="goTab('leaves')">
+        <i class="fas fa-envelope"></i><span class="lu-dot" id="lunoLeaveDot" hidden></span></button>
+      <button type="button" class="lu-ico" title="Switch theme" onclick="toggleTheme()">
+        <i class="fas fa-circle-half-stroke"></i></button>
+    </div>
+    <div class="lu-avatar" title="{{ current_user.full_name or current_user.username }}">
+      {{ ((current_user.full_name or current_user.username).split()|map('first')|join|upper)[:2] }}
+    </div>
+    <button class="oa-iconbtn oa-only-mobile" aria-label="Sign out" onclick="logout()">
       <i class="fas fa-arrow-right-from-bracket"></i>
     </button>
   </header>
@@ -74,34 +106,85 @@
   <main class="oa-main">
     <div id="alertContainer"></div>
 
+    <div class="lu-crumbs">
+      <button type="button" onclick="goTab('dashboard')">Home</button>
+      <span class="sep">/</span>
+      <span class="here">Admin</span>
+    </div>
+
     <!-- Mobile tab strip (rail handles this on web) -->
-    <div class="ad-tabs oa-only-mobile">
+    <div class="ad-tabs oa-only-mobile no-js-underline">
       <button class="ad-tab on" onclick="switchTab('dashboard', event)"><i class="fas fa-gauge"></i> Overview</button>
-      <button class="ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
-      <button class="ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
-      <button class="ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
-      <button class="ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave</button>
-      <button class="ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
       <button class="ad-tab" onclick="switchTab('locations', event)"><i class="fas fa-map-location-dot"></i> Locations</button>
       <button class="ad-tab" onclick="switchTab('early', event)"><i class="fas fa-triangle-exclamation"></i> Early outs</button>
+      <button class="ad-tab" onclick="switchTab('analysis', event)"><i class="fas fa-chart-pie"></i> Analysis</button>
+      <button class="ad-tab" onclick="switchTab('calendar', event)"><i class="fas fa-calendar-days"></i> Calendar</button>
       <button class="ad-tab" onclick="switchTab('export', event)"><i class="fas fa-file-arrow-down"></i> Export</button>
+      <button class="ad-tab" onclick="switchTab('users', event)"><i class="fas fa-users"></i> People</button>
+      <button class="ad-tab" onclick="switchTab('leaves', event)"><i class="fas fa-calendar-xmark"></i> Leave</button>
+      <button class="ad-tab" onclick="switchTab('notices', event)"><i class="fas fa-bullhorn"></i> Notices</button>
+      <button class="ad-tab" onclick="switchTab('face', event)"><i class="fas fa-shield-halved"></i> Security</button>
     </div>
 
     <!-- ════════ OVERVIEW ════════ -->
     <div id="dashboard-tab" class="ad-panel on">
-      <div class="oa-masthead">
-        <div class="greet">Today at a glance</div>
-        <div class="who" style="font-size:1.45rem">Attendance Portal</div>
-        <div class="lede">Office of Academics · Head Office, Bengaluru</div>
+      <div class="lu-greet">
+        <div>
+          <h1>Hi, {% set _parts = (current_user.full_name or current_user.username).split() %}{% set _first = _parts|reject('in', ['Dr.','Dr','Mr.','Mr','Ms.','Ms','Mrs.','Mrs','Prof.','Prof'])|list %}{{ (_first or _parts)[0] }}!</h1>
+          <div class="lede" id="lunoLede">Office of Academics · Head Office, Bengaluru</div>
+        </div>
+        <div class="lu-greet-right">
+          <div class="lu-daterange"><i class="fas fa-calendar-day"></i><span id="lunoToday">—</span></div>
+          <div class="lu-quick">
+            <button type="button" title="Mail today's summary" onclick="goTab('notices')">
+              <i class="fas fa-envelope"></i></button>
+            <button type="button" title="Export a report" onclick="goTab('export')">
+              <i class="fas fa-download"></i></button>
+            <button type="button" title="Open the calendar" onclick="goTab('calendar')">
+              <i class="fas fa-calendar-days"></i></button>
+            <button type="button" title="Share a read-only link" onclick="goTab('analysis')">
+              <i class="fas fa-share-nodes"></i></button>
+          </div>
+        </div>
       </div>
 
-      <div class="stats-grid" style="margin-bottom:16px">
-        <div class="stat-card"><div class="value">{{ users|length }}</div><div class="label">People</div></div>
-        <div class="stat-card"><div class="value" id="todayAttendance">0</div><div class="label">Present today</div></div>
-        <div class="stat-card"><div class="value" id="pendingLeaves">0</div><div class="label">Leave pending</div></div>
-        <div class="stat-card"><div class="value" id="earlyLogouts">0</div><div class="label">Early sign-outs</div></div>
-        <div class="stat-card"><div class="value" id="faceLogs24h">0</div><div class="label">Face checks</div></div>
-        <div class="stat-card"><div class="value" id="faceFailures">0</div><div class="label">Face failures</div></div>
+      <div class="stats-grid" id="lunoStats" style="margin-bottom:18px">
+        <div class="stat-card acc-info">
+          <div class="label">People</div>
+          <div class="lu-tico"><i class="fas fa-users"></i></div>
+          <div class="value">{{ users|length }}</div>
+          <div class="lu-note">On the rolls</div>
+        </div>
+        <div class="stat-card acc-ok">
+          <div class="label">Present today</div>
+          <div class="lu-tico"><i class="fas fa-user-check"></i></div>
+          <div class="value" id="todayAttendance">0</div>
+          <div class="lu-note">Signed in so far</div>
+        </div>
+        <div class="stat-card acc-warn">
+          <div class="label">Leave pending</div>
+          <div class="lu-tico"><i class="fas fa-calendar-xmark"></i></div>
+          <div class="value" id="pendingLeaves">0</div>
+          <div class="lu-note">Awaiting a decision</div>
+        </div>
+        <div class="stat-card acc-bad">
+          <div class="label">Early sign-outs</div>
+          <div class="lu-tico"><i class="fas fa-triangle-exclamation"></i></div>
+          <div class="value" id="earlyLogouts">0</div>
+          <div class="lu-note">Left before the full day</div>
+        </div>
+        <div class="stat-card acc-gold">
+          <div class="label">Face checks</div>
+          <div class="lu-tico"><i class="fas fa-shield-halved"></i></div>
+          <div class="value" id="faceLogs24h">0</div>
+          <div class="lu-note">Last 24 hours</div>
+        </div>
+        <div class="stat-card acc-bad">
+          <div class="label">Face failures</div>
+          <div class="lu-tico"><i class="fas fa-user-xmark"></i></div>
+          <div class="value" id="faceFailures">0</div>
+          <div class="lu-note">Last 24 hours</div>
+        </div>
       </div>
 
       <section class="oa-card flush">
@@ -119,6 +202,7 @@
           </table>
         </div>
       </section>
+
     </div>
 
     <!-- ════════ ANALYSIS (Power-BI style) ════════ -->
@@ -130,7 +214,7 @@
           <input type="date" id="analysisDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadAnalysisOverview()">
           <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadAnalysisOverview()"><i class="fas fa-rotate"></i> Refresh</button>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           Every registered person for the selected day — who signed in properly, who left early,
           who never signed in, and each person's 30-day progress.
         </p>
@@ -166,12 +250,12 @@
       </div>
 
       <!-- ── Build a group → download Excel or create a no-login shareable link ── -->
-      <section class="oa-card" style="margin-top:16px">
-        <div class="ad-analysis" style="margin:0;background:transparent;border:none;padding:0">
+      <section class="oa-card">
+        <div class="ad-analysis">
           <div class="ad-analysis-boxhead">
             <strong><i class="fas fa-file-excel"></i> Download or share a group</strong>
           </div>
-          <p class="ad-hint" style="margin-top:-6px;margin-bottom:12px">
+          <p class="ad-hint">
             Pick a From→To date range and the people to include, then download the working-hours
             Excel or create a link anyone can open — <strong>no login</strong> — to see who signed in,
             who didn't, and download the same Excel.
@@ -191,12 +275,18 @@
               <span>Users</span>
               <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(true)">Select all</button>
               <button type="button" class="oa-btn oa-btn-quiet oa-btn-sm" onclick="anUsersAll(false)">Clear</button>
+              {% if departments %}
+              <select class="oa-input" id="anDept" style="width:auto;min-height:38px;padding:6px 12px" onchange="anPickDept(this.value)" aria-label="Pick a department">
+                <option value="">Pick a department…</option>
+                {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+              </select>
+              {% endif %}
               <span class="spacer"></span>
               <span id="anUsersCount" class="oa-tag">All users</span>
             </div>
             <div id="anUsers" class="ad-users-box">
               {% for u in users %}
-                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" onchange="anUsersChanged()"> {{ u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
+                <label class="an-user-chk"><input type="checkbox" class="an-user" value="{{ u.username }}" data-dept="{{ u.department or '' }}" onchange="anUsersChanged()"> {{ u.full_name or u.username }}{% if u.role == 'admin' %} <span class="an-role">admin</span>{% endif %}</label>
               {% endfor %}
             </div>
             <small class="ad-hint">Leave every box unchecked to include everyone.</small>
@@ -255,11 +345,11 @@
       </section>
 
       <!-- Individual attendance: pick a person → month calendar of login days -->
-      <section class="oa-card" style="margin-top:16px">
+      <section class="oa-card">
         <div class="oa-card-head">
           <h2>Individual attendance calendar</h2>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           Click a name to see, on a month calendar, exactly which days that person signed in
           and how many days in the month.
         </p>
@@ -268,10 +358,11 @@
         <div id="anUserCalList" class="an-namelist">
           {% for u in users %}
             {% if u.role != 'admin' %}
-            <button type="button" class="an-name" data-name="{{ u.username|lower }}"
-                    data-uid="{{ u._id }}" data-fullname="{{ u.username }}"
+            {% set nm = u.full_name or u.username %}
+            <button type="button" class="an-name" data-name="{{ (nm ~ ' ' ~ u.username)|lower }}"
+                    data-uid="{{ u._id }}" data-fullname="{{ nm }}"
                     onclick="openUserCalendar(this)">
-              <span class="an-name-av">{{ u.username[0]|upper }}</span>{{ u.username }}
+              <span class="an-name-av">{{ nm[0]|upper }}</span>{{ nm }}
             </button>
             {% endif %}
           {% endfor %}
@@ -289,7 +380,7 @@
           <span class="oa-tag" id="acMonthLabel">—</span>
           <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="acShiftMonth(1)"><i class="fas fa-chevron-right"></i></button>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">Click any day to see everyone who signed in — times, locations and their work note.</p>
+        <p class="ad-hint">Click any day to see everyone who signed in — times, locations and their work note.</p>
         <div id="acGrid">
           <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
         </div>
@@ -310,14 +401,37 @@
         </div>
         <div id="acDayList"></div>
       </section>
+
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Holidays</h2>
+          <span class="spacer"></span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="holShiftYear(-1)" aria-label="Previous year"><i class="fas fa-chevron-left"></i></button>
+          <span class="oa-tag" id="holYear">—</span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="holShiftYear(1)" aria-label="Next year"><i class="fas fa-chevron-right"></i></button>
+        </div>
+        <p class="ad-hint">
+          A holiday is never counted as an absence, shows on everyone's calendar, and cannot be applied for as leave.
+          Add next year's list here — no code change needed.
+        </p>
+        <form class="hol-add" onsubmit="holAdd(event)">
+          <div class="oa-field"><label for="holDate">Date</label><input type="date" id="holDate" required></div>
+          <div class="oa-field hol-name"><label for="holName">Name</label><input type="text" id="holName" maxlength="120" placeholder="e.g. Founders' Day" required></div>
+          <button type="submit" class="oa-btn oa-btn-primary"><i class="fas fa-plus"></i> Add holiday</button>
+        </form>
+        <div class="hol-list" id="holList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+      </section>
     </div>
 
+    <!-- (holidays card is appended to the Calendar tab by the block above) -->
     <!-- ════════ PEOPLE ════════ -->
     <div id="users-tab" class="ad-panel">
 
       <!-- ── Bulk shift control ── -->
       <div class="ad-bulk">
-        <i class="fas fa-layer-group" style="font-size:1.4rem;color:var(--gold-400)"></i>
+        <i class="fas fa-layer-group" style="font-size:1.4rem"></i>
         <div class="bd">
           <div class="t">Shift attendance</div>
           <div class="s">
@@ -339,16 +453,53 @@
         <div class="oa-card-head"><h2>Add a person</h2></div>
         <form method="POST" action="{{ url_for('admin_create_user') }}">
           <div class="oa-formgrid">
-            <div class="oa-field"><label for="nu">Username</label><input type="text" id="nu" name="username" required autocapitalize="none"></div>
+            <div class="oa-field">
+              <label for="nfn">Full name <span style="font-weight:400;color:var(--t3)">— shown everywhere</span></label>
+              <input type="text" id="nfn" name="full_name" placeholder="e.g. Dr. Madhavi R">
+            </div>
+            <div class="oa-field">
+              <label for="nu">Username <span style="font-weight:400;color:var(--t3)">— used to sign in</span></label>
+              <input type="text" id="nu" name="username" required autocapitalize="none" placeholder="e.g. madhavi">
+            </div>
             <div class="oa-field"><label for="ne">Email</label><input type="email" id="ne" name="email"></div>
             <div class="oa-field"><label for="np">Password</label><input type="password" id="np" name="password" required></div>
             <div class="oa-field"><label for="nr">Role</label>
-              <select id="nr" name="role"><option value="intern">Intern</option><option value="admin">Admin</option></select>
+              <select id="nr" name="role">
+                <option value="intern">Intern</option>
+                <option value="employee">Employee</option>
+                <option value="admin">Admin</option>
+              </select>
             </div>
             <div class="oa-field"><label for="nh">Daily hours target</label><input type="number" id="nh" name="work_hours" step="0.5" value="8" required></div>
+            <div class="oa-field"><label for="nd">Department <span style="font-weight:400;color:var(--t3)">— optional</span></label>
+              <input type="text" id="nd" name="department" list="deptOptions" maxlength="60" placeholder="e.g. Admissions">
+            </div>
           </div>
+          <p class="ad-hint" style="margin:-4px 0 12px">
+            Keep the username short and lower-case — it is what they type to sign in, and it never
+            changes. The full name is what appears on their dashboard, in your lists and on reports.
+            Interns and employees both record attendance; admins do not.
+          </p>
           <button type="submit" class="oa-btn oa-btn-primary"><i class="fas fa-user-plus"></i> Create account</button>
         </form>
+      </section>
+
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Add many people at once</h2>
+          <span class="spacer"></span>
+          <a class="oa-btn oa-btn-ghost oa-btn-sm" href="{{ url_for('admin_import_template') }}"><i class="fas fa-download"></i> Template</a>
+        </div>
+        <p class="ad-hint">
+          Upload a CSV or Excel file with one person per row. Columns: <strong>username</strong> (required), full_name, email,
+          role, department, work_hours, password. Leave password empty and one is made up for that person — you see it once,
+          after creating. Nothing is created until you check the file and confirm.
+        </p>
+        <div class="imp-pick">
+          <input type="file" id="impFile" class="oa-input" accept=".csv,.xlsx" onchange="impReset()">
+          <button class="oa-btn oa-btn-primary" id="impCheckBtn" onclick="impRun(true)"><i class="fas fa-list-check"></i> Check file</button>
+        </div>
+        <div id="impOut"></div>
       </section>
 
       <div class="ad-notice">
@@ -364,20 +515,53 @@
         </div>
       </div>
 
-      <div class="oa-rule"><span class="tick"></span><span class="lbl">All people ({{ users|length }})</span></div>
+      <datalist id="deptOptions">{% for d in departments %}<option value="{{ d }}">{% endfor %}</datalist>
+
+      <div class="oa-rule"><span class="tick"></span><span class="lbl">All people (<span id="peopleCount">{{ users|length }}</span>)</span></div>
+      <div class="ad-peoplebar">
+        <input type="search" class="oa-input" id="peopleSearch" placeholder="Search a name…" oninput="filterPeople()" aria-label="Search people">
+        <select class="oa-input" id="peopleDept" onchange="filterPeople()" aria-label="Department">
+          <option value="">All departments</option>
+          {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+          <option value="__none__">No department</option>
+        </select>
+      </div>
 
       <div class="ad-usergrid">
         {% for user in users %}
-        <div class="ad-user" id="ucard-{{ user._id }}">
+        {% set shown_name = user.full_name or user.username %}
+        <div class="ad-user" id="ucard-{{ user._id }}" data-dept="{{ user.department or '' }}"
+             data-name="{{ (shown_name ~ ' ' ~ user.username)|lower }}">
           <div class="ad-user-head">
-            <div class="ad-user-av">{{ user.username[0]|upper }}</div>
-            <span class="nm">{{ user.username }}</span>
-            <span class="oa-tag {% if user.role == 'admin' %}gold{% endif %}">{{ user.role }}</span>
+            <div class="ad-user-av">{{ shown_name[0]|upper }}</div>
+            <span class="nm" data-name-of="{{ user._id }}">{{ shown_name }}</span>
+            <span class="oa-tag {% if user.role == 'admin' %}gold{% endif %}" data-role-tag="{{ user._id }}">{{ user.role }}</span>
           </div>
 
           <div class="ad-meta">
+            <div><i class="fas fa-at"></i> Signs in as <strong>{{ user.username }}</strong></div>
             <div><i class="fas fa-envelope"></i> {{ user.email or 'No email on file' }}</div>
             <div><i class="fas fa-clock"></i> Target {{ user.work_hours or 8 }} hours per day</div>
+            <div><i class="fas fa-people-group"></i> <span data-dept-of="{{ user._id }}">{{ user.department or 'No department' }}</span></div>
+          </div>
+
+          <div class="ad-control">
+            <div class="ad-control-title"><i class="fas fa-id-badge"></i> Name, role &amp; department</div>
+            <div class="ad-profile-row">
+              <input type="text" class="oa-input" id="pfname-{{ user._id }}"
+                     value="{{ user.full_name or '' }}" placeholder="Full name, e.g. Dr. Madhavi R">
+              <select class="oa-input" id="pfrole-{{ user._id }}">
+                <option value="intern"   {% if user.role == 'intern'   %}selected{% endif %}>Intern</option>
+                <option value="employee" {% if user.role == 'employee' %}selected{% endif %}>Employee</option>
+                <option value="admin"    {% if user.role == 'admin'    %}selected{% endif %}>Admin</option>
+              </select>
+              <input type="text" class="oa-input" id="pfdept-{{ user._id }}" list="deptOptions" maxlength="60"
+                     value="{{ user.department or '' }}" placeholder="Department" aria-label="Department">
+              <button class="oa-btn oa-btn-primary oa-btn-sm"
+                      onclick="saveUserProfile('{{ user._id }}')">
+                <i class="fas fa-check"></i> Save
+              </button>
+            </div>
           </div>
 
           {% if user.role != 'admin' %}
@@ -530,6 +714,156 @@
     </div>
 
     <!-- ════════ FACE LOG ════════ -->
+    <!-- ════════ NOTICES ════════ -->
+    <div id="notices-tab" class="ad-panel">
+
+      <!-- ── What the office gets by email ── -->
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Email reports</h2>
+          <span class="spacer"></span>
+          <span class="oa-tag" id="mailStatusTag">Checking…</span>
+        </div>
+        <p class="ad-hint">
+          Leave applications are mailed the moment someone applies. The daily summary —
+          who signed in and out, who didn't, and any requests waiting on you — goes out
+          on a schedule, with the day's spreadsheet attached.
+        </p>
+
+        <div class="ml-grid" id="mailSettings">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
+          <div class="oa-field" style="margin:0">
+            <label for="mailDate">Summary for</label>
+            <input type="date" id="mailDate" class="oa-input" style="width:auto" value="{{ today_date }}">
+          </div>
+          <button class="oa-btn oa-btn-primary" onclick="sendMailReport()">
+            <i class="fas fa-paper-plane"></i> Send it now
+          </button>
+          <button class="oa-btn oa-btn-ghost" id="remindBtn" onclick="remindSignout()">
+            <i class="fas fa-bell"></i> Remind people still signed in
+          </button>
+        </div>
+
+        <div class="ml-monthly">
+          <div class="bd">
+            <div class="t">Monthly reports</div>
+            <div class="s">Each intern and employee gets their own month by email, with their day-by-day Excel attached.
+              Runs on the 1st from cron (<code>send_monthly.py</code>); send a month by hand here.</div>
+          </div>
+          <div class="oa-field" style="margin:0">
+            <label for="mrMonth">Month</label>
+            <input type="month" id="mrMonth" class="oa-input" style="width:auto">
+          </div>
+          <button class="oa-btn oa-btn-primary" id="mrBtn" onclick="sendMonthly(this)">
+            <i class="fas fa-paper-plane"></i> Send to everyone
+          </button>
+        </div>
+        <p class="ad-hint" style="margin-top:10px">
+          Use <strong>Send it now</strong> to check mail is working before relying on the
+          nightly run. If it fails, the error it shows is the real SMTP error.
+        </p>
+      </section>
+
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Write a notice</h2>
+          <span class="spacer"></span>
+          <button class="oa-btn oa-btn-gold oa-btn-sm" onclick="ntPreset()">
+            <i class="fas fa-wand-magic-sparkles"></i> Use the "new reports" template
+          </button>
+        </div>
+        <p class="ad-hint">
+          People see this when they open their dashboard — as a card with the JAIN mark. It keeps
+          appearing until the days run out, they have seen it the set number of times, or they
+          tap "Got it". Nothing is emailed; it shows inside the portal.
+        </p>
+
+        <div class="oa-formgrid">
+          <div class="oa-field" style="grid-column:1/-1">
+            <label for="ntfTitle">Title</label>
+            <input type="text" id="ntfTitle" maxlength="120" placeholder="e.g. New: download your report in Excel and Word">
+          </div>
+          <div class="oa-field" style="grid-column:1/-1">
+            <label for="ntfBody">Message</label>
+            <textarea id="ntfBody" rows="5" maxlength="2000" placeholder="Say what changed and what they can do with it."></textarea>
+          </div>
+          <div class="oa-field">
+            <label for="ntfKind">Style</label>
+            <select id="ntfKind">
+              <option value="feature">New feature</option>
+              <option value="info">Information</option>
+              <option value="warning">Important</option>
+            </select>
+          </div>
+          <div class="oa-field">
+            <label for="ntfDays">Show for (days)</label>
+            <input type="number" id="ntfDays" min="1" max="60" value="2">
+          </div>
+          <div class="oa-field">
+            <label for="ntfViews">Show at most (sign-ins)</label>
+            <input type="number" id="ntfViews" min="1" max="20" value="2">
+          </div>
+          <div class="oa-field">
+            <label for="ntfCta">Button label (optional)</label>
+            <input type="text" id="ntfCta" maxlength="40" placeholder="e.g. Show me">
+          </div>
+          <div class="oa-field">
+            <label for="ntfTab">Button opens</label>
+            <select id="ntfTab">
+              <option value="">Nothing — just close</option>
+              <option value="stats">Statistics (reports)</option>
+              <option value="calendar">Calendar</option>
+              <option value="normal">Today</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="oa-field" style="margin-top:6px">
+          <label>Who gets it</label>
+          <div class="nt-aud">
+            <label class="nt-radio"><input type="radio" name="ntAud" value="all" checked onchange="ntAudChanged()"> Everyone</label>
+            <label class="nt-radio"><input type="radio" name="ntAud" value="some" onchange="ntAudChanged()"> Only the people I pick</label>
+          </div>
+          <div id="ntPeople" style="display:none;margin-top:10px">
+            <input type="text" class="oa-input" id="ntPeopleSearch" placeholder="Search a name…" oninput="ntFilterPeople()" style="margin-bottom:8px">
+            <div class="nt-people">
+              {% for u in users %}
+                {% if u.role != 'admin' %}
+                {% set nm = u.full_name or u.username %}
+                <label class="nt-person" data-name="{{ (nm ~ ' ' ~ u.username)|lower }}">
+                  <input type="checkbox" class="nt-pick" value="{{ u.username }}"> {{ nm }}
+                </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+          <button class="oa-btn oa-btn-primary" onclick="ntCreate(true)">
+            <i class="fas fa-paper-plane"></i> Start sending
+          </button>
+          <button class="oa-btn oa-btn-secondary" onclick="ntCreate(false)">
+            <i class="fas fa-floppy-disk"></i> Save without sending
+          </button>
+        </div>
+      </section>
+
+      <section class="oa-card">
+        <div class="oa-card-head">
+          <h2>Notices</h2>
+          <span class="spacer"></span>
+          <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadNotices()"><i class="fas fa-rotate"></i> Refresh</button>
+        </div>
+        <div id="ntList">
+          <div class="oa-empty"><i class="fas fa-circle-notch spin"></i><p>Loading…</p></div>
+        </div>
+      </section>
+    </div>
+
     <div id="face-tab" class="ad-panel">
 
       <!-- ── Integrity signals for one day ── -->
@@ -540,7 +874,7 @@
           <input type="date" id="secDate" class="oa-input" style="width:auto" value="{{ today_date }}" onchange="loadSecurityInsights()">
           <button class="oa-btn oa-btn-quiet oa-btn-sm" onclick="loadSecurityInsights()"><i class="fas fa-rotate"></i> Refresh</button>
         </div>
-        <p class="ad-hint" style="margin-top:-4px">
+        <p class="ad-hint">
           Signals worth a second look for the chosen day — not accusations. The one that matters
           most is a <strong>shared device</strong>: one phone or browser used by two different
           people is what a proxy sign-in looks like.
@@ -577,12 +911,12 @@
         </div>
       </section>
 
-      <section class="oa-card" style="border-color:var(--gold-400);background:var(--gold-050)">
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-          <i class="fas fa-broom" style="font-size:1.2rem;color:var(--gold-600)"></i>
-          <div style="flex:1;min-width:190px">
-            <div style="font-size:.82rem;font-weight:800;color:var(--ink-800)">Clear out old snapshots</div>
-            <div style="font-size:.7rem;color:var(--t2)">Deletes face log entries older than the number of days you choose.</div>
+      <section class="oa-card ad-callout">
+        <div class="row">
+          <i class="fas fa-broom"></i>
+          <div class="bd">
+            <div class="t">Clear out old snapshots</div>
+            <div class="s">Deletes face log entries older than the number of days you choose.</div>
           </div>
           <input type="number" id="purgedays" value="30" min="1" class="oa-input" style="width:96px">
           <button class="oa-btn oa-btn-ghost oa-btn-sm" onclick="purgeOldLogs()"><i class="fas fa-trash"></i> Purge</button>
@@ -627,7 +961,7 @@
     <div id="export-tab" class="ad-panel">
       <section class="oa-card">
         <div class="oa-card-head"><h2>Export attendance</h2></div>
-        <p style="font-size:.78rem;color:var(--t2);margin-bottom:16px">
+        <p class="oa-lede">
           Downloads a CSV with sign-in and sign-out times, hours, locations and device details
           for every entry in the range.
         </p>
@@ -677,7 +1011,8 @@
         <label class="cal-fld">From <input type="date" id="calFrom" class="oa-input"></label>
         <label class="cal-fld">To <input type="date" id="calTo" class="oa-input"></label>
         <button class="oa-btn oa-btn-primary oa-btn-sm" onclick="loadCalendar()"><i class="fas fa-magnifying-glass-chart"></i> Analyse</button>
-        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
+        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserReport('excel')"><i class="fas fa-file-excel"></i> Excel</button>
+        <button class="oa-btn oa-btn-secondary oa-btn-sm" onclick="downloadUserReport('word')"><i class="fas fa-file-word"></i> Word</button>
         <span class="spacer"></span>
         <span class="oa-tag" id="calDaysCount">0 days</span>
       </div>
@@ -703,10 +1038,13 @@
   </div>
 </div>
 
+{% include "_password_sheet.html" %}
+
 <script>
   window.OA_MAPS_KEY = "{{ google_maps_api_key }}";
   window.OA_TODAY = "{{ today_date }}";
 </script>
+<script src="{{ url_for('static', filename='js/oa-nav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/admin-dashboard.js') }}"></script>
 </body>
 </html>

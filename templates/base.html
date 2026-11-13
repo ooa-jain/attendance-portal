@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>{% block title %}Attendance{% endblock %} · Office of Academics</title>
-<meta name="theme-color" content="#0A1324">
+<meta name="theme-color" content="#F1F2F5">
 
 <!-- ── App logo as favicon (all surfaces) ── -->
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/applogo.png') }}">
@@ -15,10 +15,14 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-core.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/oa-components.css') }}">
+<script>
+  // Set before the first paint, so a reload in dark mode never flashes white.
+  try { if (localStorage.getItem('oaTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+</script>
 {% block head %}{% endblock %}
 </head>
 <body>
@@ -30,39 +34,28 @@
 </div>
 {% endif %}
 
-<div class="oa-shell">
+<div class="oa-shell plain">
 
-  <!-- ── Left rail (web) ── -->
-  <aside class="oa-rail">
-    <div class="oa-rail-head">
-      <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
-      <div>
-        <div class="org">OFFICE OF ACADEMICS</div>
-        <div class="sub">JAIN (Deemed-to-be University)</div>
+  <header class="st-nav">
+    <div class="st-nav-in">
+      <a class="st-brand" href="{{ url_for('index') }}">
+        <img src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
+        <div style="min-width:0">
+          <div class="org">{% block bartitle %}Office of Academics{% endblock %}</div>
+          <div class="sub">{% block barsub %}Attendance Portal{% endblock %}</div>
+        </div>
+      </a>
+      <div class="st-right">
+        {% block barextra %}{% endblock %}
+        <button class="oa-iconbtn" title="Light / dark" aria-label="Switch light or dark mode" onclick="toggleTheme()"><i class="fas fa-circle-half-stroke"></i></button>
+        {% block rail %}
+        {% if current_user.is_authenticated %}
+          <a class="oa-btn oa-btn-ghost oa-btn-sm" href="{{ url_for('index') }}"><i class="fas fa-house"></i> Dashboard</a>
+          <a class="oa-iconbtn" href="/logout" title="Sign out" aria-label="Sign out"><i class="fas fa-arrow-right-from-bracket"></i></a>
+        {% endif %}
+        {% endblock %}
       </div>
     </div>
-    <nav class="oa-rail-nav">
-      {% block rail %}
-      {% if current_user.is_authenticated %}
-        <a class="oa-navitem" href="{{ url_for('index') }}"><i class="fas fa-house"></i> Dashboard</a>
-        <a class="oa-navitem danger" href="/logout"><i class="fas fa-arrow-right-from-bracket"></i> Sign out</a>
-      {% endif %}
-      {% endblock %}
-    </nav>
-    <div class="oa-rail-foot">
-      Head Office · Bengaluru<br>
-      <span style="opacity:.65">Attendance Portal</span>
-    </div>
-  </aside>
-
-  <!-- ── Top bar ── -->
-  <header class="oa-topbar">
-    <img class="brandmark" src="{{ url_for('static', filename='images/applogo.png') }}" alt="">
-    <div class="titles">
-      <div class="org">{% block bartitle %}OFFICE OF ACADEMICS{% endblock %}</div>
-      <div class="sub">{% block barsub %}Attendance Portal{% endblock %}</div>
-    </div>
-    {% block barextra %}{% endblock %}
   </header>
 
   <main class="oa-main">
@@ -80,6 +73,7 @@
   </main>
 </div>
 
+<script src="{{ url_for('static', filename='js/oa-nav.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
